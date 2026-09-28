@@ -172,3 +172,28 @@ the child takes the core writer lock. No path takes them in reverse order.
    or production RPO/RTO is claimed here. Keep reports before the 1000-run rotation.
 
 Verdict: ready for draft review; native deployment validation remains pending.
+
+## Publication attempt
+
+Local coherent commits are present on `feat/collection-ops`. The implementation
+commit is `a0b0235`; reviewed fixes/runbook commit is `0fb90ba`.
+The subsequent handoff-only commit records this publication result.
+
+`git -c credential.interactive=never push -u origin feat/collection-ops` failed:
+Git could not obtain credentials. The connected GitHub API returned 404 for both
+repository metadata lookup and branch creation. No remote branch or PR was created.
+No merge or force push occurred. A Git bundle and draft PR description are provided
+as transfer artifacts outside the repository, preserving the exact commit history.
+
+Once repository access is restored, publish from this isolated checkout (or a new
+clone of the bundle):
+
+```sh
+git push -u origin feat/collection-ops
+gh pr create --draft --base main --head feat/collection-ops \
+  --title "Add unattended collection operations and SQLite recovery" \
+  --body-file /absolute/path/to/PR-description.md
+```
+
+Keep the PR in draft until the native Mac validation above is recorded. The
+publication failure does not change scheduler status: no Mac service was deployed.
