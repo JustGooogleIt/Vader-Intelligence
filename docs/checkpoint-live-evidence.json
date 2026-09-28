@@ -1,0 +1,34 @@
+{
+  "invoked_at": "2026-09-28T09:00:48.103081+00:00",
+  "command": [
+    ".venv/bin/vader",
+    "--config",
+    "data/checkpoint-f00b95d0-7c6a-4597-95cb-fe777bc79d4e/live.toml",
+    "live-check"
+  ],
+  "configuration_toml": "[collector]\ndatabase = \"live.sqlite3\"\nmax_pages = 3\nmax_markets = 50\nconnect_timeout = 4.0\nread_timeout = 5.0\nrequest_budget = 8.0\nmax_attempts = 2\n",
+  "outer_timeout_seconds": 90,
+  "database": "/Users/ashwin/Documents/github-repos/Vader-Intelligence/data/checkpoint-f00b95d0-7c6a-4597-95cb-fe777bc79d4e/live.sqlite3",
+  "exit_code": 0,
+  "stdout": {
+    "archive_integrity": "verified_after_reopen",
+    "books": 16,
+    "books_this_pass": 16,
+    "elapsed_seconds": 17.15681516705081,
+    "eligibility_reasons": {
+      "eligible": 16
+    },
+    "entities": 92,
+    "errors": [],
+    "fetches": 30,
+    "observations": 48,
+    "run_id": "af7b2e19-2811-4a1b-a2e2-7ab4485399ae",
+    "status": "complete"
+  },
+  "stderr": "",
+  "finished_at": "2026-09-28T09:01:05.718036+00:00",
+  "code_hash": "1cbac82f5e34845756880aa380ca91056eaf2ac1d28af4098b0024aa739df278",
+  "unique_games": 8,
+  "pregame_timing_verified": 16,
+  "schema_version": 1
+}

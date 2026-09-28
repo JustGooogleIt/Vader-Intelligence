@@ -1,0 +1,18 @@
+[collector]
+# Paths resolve relative to this TOML file. No credentials or provider URL overrides.
+database = "data/vader.sqlite3"
+requests_per_second = 2.0
+connect_timeout = 5.0
+read_timeout = 10.0
+request_budget = 45.0
+max_attempts = 3
+max_pages = 100
+page_size = 100
+max_markets = 100
+max_json_bytes = 2097152
+max_document_bytes = 10485760
+schedule_max_age = 120.0
+pregame_buffer = 120.0
+lookahead_days = 7
+health_stale_seconds = 180.0
+min_free_bytes = 536870912
