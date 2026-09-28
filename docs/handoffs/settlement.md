@@ -10,9 +10,9 @@ Branch: `feat/settlement-v1`. Isolated worktree:
 - [x] Read AGENTS, baseline handoff, plan, executor and relevant source.
 - [x] Create isolated worktree/environment; confirm private remote.
 - [x] Verify current Kalshi schema/lifecycle, baseball terms and live response shapes.
-- [ ] Add explicit schema-2 migration and append-only evidence/version tables.
-- [ ] Implement conservative mapping and independent provider outcome models.
-- [ ] Implement bounded refresh, replay, inspection and minimal CLI integration.
+- [x] Add explicit schema-2 migration and append-only evidence/version tables.
+- [x] Implement conservative mapping and independent provider outcome models.
+- [x] Implement bounded refresh, replay, inspection and minimal CLI integration.
 - [ ] Test baseline migration, corrections, ambiguity, exceptional/missing payouts,
   repeated ingestion, interruption/replay and existing collector behavior.
 - [ ] Run independent bounded live settlement check, review diff, commit and draft PR.
@@ -87,3 +87,13 @@ Environment: `python3 -m venv .venv`, then
 `.venv/bin/python -m pip install 'uv==0.12.19'` and `.venv/bin/uv sync --locked`.
 Next: implement schema/models, then refresh and tests in this worktree only.
 Verification/results and migration instructions will be appended in coherent commits.
+
+Implementation checkpoint: schema, mapping, provider models, bounded refresh with
+resume, inspection, and replay are implemented. Initial full offline suite: **140
+passed** (network forbidden); lint passed. Synthetic fixtures are labelled in tests.
+First separate live run `6ce90956-853e-4851-9e12-a714b2b95df7` completed against
+`KXMLBGAME-26SEP261915CHCBOS-CHC`; all five public retrievals succeeded, but mapping
+was correctly quarantined because the current MLB schedule did not establish the
+original identity. This is evidence of live archival, not a successful game match.
+Remaining: deeper review/edge cases, final build/CLI verification, live archive
+reopen/hash/replay evidence, operator documentation and draft PR.
