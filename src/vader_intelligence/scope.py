@@ -74,7 +74,8 @@ def eligible(market, event, event_markets, schedule, schedule_at, now, config):
         return reject("schedule_stale")
     metadata = event.get("product_metadata", {})
     if (
-        event.get("series_ticker") != "KXMLBGAME"
+        not isinstance(metadata, dict)
+        or event.get("series_ticker") != "KXMLBGAME"
         or metadata.get("competition") != "Pro Baseball"
         or metadata.get("competition_scope") != "Game"
     ):
@@ -152,6 +153,8 @@ def eligible(market, event, event_markets, schedule, schedule_at, now, config):
     ):
         return reject("rescheduled_game")
     status = game.get("status", {})
+    if not isinstance(status, dict):
+        return reject("not_scheduled_pregame")
     if status.get("startTimeTBD") is not False:
         return reject("start_time_unknown")
     if status.get("abstractGameState") != "Preview" or status.get("detailedState") not in {
@@ -160,7 +163,10 @@ def eligible(market, event, event_markets, schedule, schedule_at, now, config):
     }:
         return reject("not_scheduled_pregame")
     try:
-        start = datetime.fromisoformat(game["gameDate"].replace("Z", "+00:00"))
+        raw_start = game.get("gameDate")
+        if not isinstance(raw_start, str):
+            return reject("start_time_unknown")
+        start = datetime.fromisoformat(raw_start.replace("Z", "+00:00"))
         if start.utcoffset() is None:
             return reject("start_time_unknown")
     except (KeyError, ValueError, TypeError):

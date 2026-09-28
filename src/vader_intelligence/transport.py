@@ -120,7 +120,9 @@ class Reader:
     def close(self):
         self.client.close()
 
-    def get(self, run_id, stage, key, url, params=None, *, apply=None, budget=None):
+    def get(
+        self, run_id, stage, key, url, params=None, *, apply=None, budget=None, before_attempt=None
+    ):
         params = params or {}
         source = validate_source(url, params)
         request = self.store.request(run_id, stage, key, url, params)
@@ -144,8 +146,9 @@ class Reader:
             remaining = end - self.monotonic()
             if remaining <= 0:
                 raise DeadlineExceeded("request budget exhausted")
+            if before_attempt:
+                before_attempt()
             started = self.monotonic()
-            self.next_request = started + 1 / self.config.requests_per_second
             fetch_id = self.store.begin_fetch(request["id"], timestamp(self.now()))
             body = bytearray()
             status = None
@@ -160,6 +163,14 @@ class Reader:
                 else self.config.max_json_bytes
             )
             try:
+                # Persistence, rate waits, retries or host sleep may invalidate the
+                # eligibility checked by the caller. Recheck just before every send.
+                if before_attempt:
+                    before_attempt()
+                remaining = end - self.monotonic()
+                if remaining <= 0:
+                    raise DeadlineExceeded("request budget exhausted before send")
+                self.next_request = self.monotonic() + 1 / self.config.requests_per_second
                 with deadline_guard(remaining):
                     with self.client.stream(
                         "GET",

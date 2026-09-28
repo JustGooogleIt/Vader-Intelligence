@@ -180,3 +180,29 @@ def test_total_deadline_interrupts_trickling_stream(store, config, run):
 def test_unapproved_network_targets_rejected_before_request(url, params):
     with pytest.raises(ValueError):
         validate_source(url, params)
+
+
+def test_malformed_schedule_structure_preserves_body(store, config, run):
+    reader = reader_for(store, config, lambda r: response(data={"dates": [None]}))
+    with pytest.raises(CollectionError, match="schedule date must be an object"):
+        reader.get(run, "schedule", "k", "https://statsapi.mlb.com/api/v1/schedule", {"sportId": 1})
+    row = store.db.execute("SELECT state,body_sha256 FROM fetches").fetchone()
+    assert row["state"] == "parse_error" and row["body_sha256"] is not None
+
+
+def test_persistence_delay_counts_against_request_budget(store, config, run, monkeypatch):
+    clock = Clock()
+    begin = store.begin_fetch
+
+    def slow_begin(*args):
+        result = begin(*args)
+        clock.value += 46
+        return result
+
+    monkeypatch.setattr(store, "begin_fetch", slow_begin)
+    calls = []
+    reader = reader_for(store, config, lambda r: calls.append(r), clock)
+    with pytest.raises(CollectionError, match="DeadlineExceeded"):
+        reader.get(run, "status", "k", KALSHI + "/exchange/status")
+    assert not calls
+    assert store.db.execute("SELECT state FROM fetches").fetchone()[0] == "error"

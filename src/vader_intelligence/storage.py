@@ -263,7 +263,9 @@ class Store:
         return values
 
     def health(self, stale_seconds=180):
-        row = self.db.execute("SELECT * FROM runs ORDER BY rowid DESC LIMIT 1").fetchone()
+        row = self.db.execute(
+            "SELECT * FROM runs WHERE kind!='fixture' ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
         book = self.db.execute(
             "SELECT f.retrieved_at FROM observations o JOIN fetches f ON f.id=o.fetch_id "
             "JOIN requests req ON req.id=f.request_id JOIN runs r ON r.id=req.run_id "

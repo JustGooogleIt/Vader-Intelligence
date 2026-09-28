@@ -93,6 +93,9 @@ def test_verified_match(config, fixture_data):
         ("wrong_league", "unsupported_event_scope"),
         ("closed", "market_not_open"),
         ("nonbinary", "unsupported_market_scope"),
+        ("null_metadata", "unsupported_event_scope"),
+        ("null_status", "not_scheduled_pregame"),
+        ("null_start", "start_time_unknown"),
     ],
 )
 def test_ineligible_cases_fail_closed(config, fixture_data, case, reason):
@@ -125,6 +128,12 @@ def test_ineligible_cases_fail_closed(config, fixture_data, case, reason):
         m["status"] = "finalized"
     elif case == "nonbinary":
         m["market_type"] = "scalar"
+    elif case == "null_metadata":
+        event["event"]["product_metadata"] = None
+    elif case == "null_status":
+        game["status"] = None
+    elif case == "null_start":
+        game["gameDate"] = None
     assert eligible(m, event["event"], event["markets"], schedule, at, now, config).reason == reason
 
 

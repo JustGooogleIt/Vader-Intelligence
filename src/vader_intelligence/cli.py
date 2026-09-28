@@ -72,15 +72,20 @@ def execute(args):
                 errors = reopened.verify_integrity()
                 result["archive_integrity"] = "failed" if errors else "verified_after_reopen"
                 result["errors"].extend(errors)
+                if errors:
+                    result["status"] = "failed"
                 for stage in ("series", "document", "event", "schedule", "markets", "book"):
                     count = reopened.db.execute(
                         "SELECT COUNT(*) FROM fetches f JOIN requests r ON r.id=f.request_id "
                         "WHERE r.run_id=? AND r.stage=? AND f.state='ok'",
                         (result["run_id"], stage),
                     ).fetchone()[0]
-                    if not count:
+                    # Empty live universes legitimately have no event or book retrieval.
+                    if not count and not (
+                        result["status"] == "inconclusive" and stage in {"event", "book"}
+                    ):
                         result["errors"].append("live check lacks successful " + stage)
-                if result["errors"] and result["status"] == "complete":
+                if result["errors"] and result["status"] in {"complete", "inconclusive"}:
                     result["status"] = "failed"
                 reopened.finish_run(result["run_id"], result["status"], result)
             finally:

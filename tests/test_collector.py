@@ -1,5 +1,6 @@
 import json
 from dataclasses import replace
+from datetime import timedelta
 
 import pytest
 from conftest import Clock, response
@@ -220,3 +221,33 @@ def test_resume_with_only_historical_books_is_inconclusive(store, config, fixtur
     assert result["books"] == 1
     assert result["books_this_pass"] == 0
     assert result["status"] == "inconclusive"
+
+
+@pytest.mark.parametrize("expired", ["schedule", "cutoff"])
+def test_retry_never_sends_book_after_evidence_expires(store, config, fixture_data, expired):
+    handler, _, _ = handler_for(fixture_data)
+    clock = Clock()
+    if expired == "cutoff":
+        clock.origin = clock.origin.replace(hour=19, minute=2, second=50)
+    book_calls = []
+
+    def transient(request):
+        if "/events/" in request.url.path and expired == "schedule":
+            clock.origin += timedelta(seconds=110)
+        if request.url.path.endswith("/orderbook"):
+            book_calls.append(request)
+            if expired == "cutoff":
+                # Wall time advances across host sleep independently of the request clock.
+                clock.origin += timedelta(hours=1)
+            return response(429, headers={"Retry-After": "15" if expired == "schedule" else "1"})
+        return handler(request)
+
+    result = Collector(store, reader_for(store, config, transient, clock), config).run()
+    assert len(book_calls) == 1
+    assert result["books"] == 0
+    assert result["status"] == "partial"
+    assert (
+        "stale schedule" in result["errors"][0]
+        if expired == "schedule"
+        else "cutoff" in result["errors"][0]
+    )

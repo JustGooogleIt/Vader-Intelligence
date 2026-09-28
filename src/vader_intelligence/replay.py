@@ -66,11 +66,38 @@ def import_fixture(store, path, config):
         source = validate_source(entry["url"], entry.get("params", {}))
         body = entry["body"].encode()
         existing = store.db.execute(
-            "SELECT body_sha256 FROM fetches WHERE id=?", (entry["id"],)
+            "SELECT f.body_sha256,f.state,f.started_at,f.retrieved_at,r.run_id,r.stage,r.url,"
+            "r.params_json FROM fetches f JOIN requests r ON r.id=f.request_id WHERE f.id=?",
+            (entry["id"],),
         ).fetchone()
         if existing:
-            if existing[0] != hashlib.sha256(body).hexdigest():
-                raise ValueError("fixture ID reused with different bytes")
+            expected = (
+                hashlib.sha256(body).hexdigest(),
+                entry["started_at"],
+                entry["retrieved_at"],
+                run_id,
+                entry["stage"],
+                entry["url"],
+                json_text(entry.get("params", {})),
+            )
+            actual = tuple(
+                existing[k]
+                for k in (
+                    "body_sha256",
+                    "started_at",
+                    "retrieved_at",
+                    "run_id",
+                    "stage",
+                    "url",
+                    "params_json",
+                )
+            )
+            if actual != expected:
+                raise ValueError("fixture ID reused with different bytes or provenance")
+            if existing["state"] != "ok":
+                raise ValueError(
+                    "fixture retrieval previously failed; inspect archive and use replay"
+                )
             continue
         request = store.request(
             run_id, entry["stage"], str(index), entry["url"], entry.get("params", {})

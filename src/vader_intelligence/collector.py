@@ -181,6 +181,17 @@ class Collector:
                         budget = (cutoff - self.reader.now()).total_seconds()
                         if budget <= 0:
                             continue
+
+                        def check_before_attempt():
+                            current = self.reader.now()
+                            age = (
+                                current - datetime.fromisoformat(schedule_response.retrieved_at)
+                            ).total_seconds()
+                            if current >= cutoff:
+                                raise CollectionError("book request reached pregame cutoff")
+                            if not 0 <= age <= self.config.schedule_max_age:
+                                raise CollectionError("book request has stale schedule evidence")
+
                         self.reader.get(
                             run_id,
                             "book",
@@ -189,6 +200,7 @@ class Collector:
                             {"depth": 0},
                             apply=normalizer("book", market["ticker"]),
                             budget=budget,
+                            before_attempt=check_before_attempt,
                         )
                         books_this_pass += 1
                 except HTTPFailure as exc:

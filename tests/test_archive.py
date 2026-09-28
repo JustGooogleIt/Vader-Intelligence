@@ -186,3 +186,30 @@ def test_readonly_health_reports_low_space_without_writing(store, config):
             s.db.execute("DELETE FROM runs")
     finally:
         s.close()
+
+
+@pytest.mark.parametrize("field", ["run_id", "started_at", "url"])
+def test_fixture_ids_cannot_relabel_existing_provenance(
+    store, config, fixture_data, tmp_path, field
+):
+    import_fixture(store, FIXTURE, config)
+    if field == "run_id":
+        fixture_data[field] += "-different"
+    elif field == "url":
+        fixture_data["responses"][0][field] = (
+            "https://external-api.kalshi.com/trade-api/v2/exchange/status"
+        )
+    else:
+        fixture_data["responses"][0][field] = "2026-09-27T16:00:00+00:00"
+    path = tmp_path / "changed.json"
+    path.write_text(json.dumps(fixture_data))
+    with pytest.raises(ValueError, match="different bytes or provenance"):
+        import_fixture(store, path, config)
+
+
+def test_fixture_run_cannot_mask_latest_live_failure(store, config):
+    store.start_run(RunProvenanceV1("live-failed", "collect", "code", {}))
+    store.finish_run("live-failed", "failed", {"status": "failed"})
+    import_fixture(store, FIXTURE, config)
+    assert store.health()["latest_run"]["id"] == "live-failed"
+    assert store.health()["latest_run"]["status"] == "failed"

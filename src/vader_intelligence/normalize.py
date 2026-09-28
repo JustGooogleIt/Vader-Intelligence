@@ -176,6 +176,8 @@ def normalizer(stage, key=""):
             if not isinstance(dates, list) or len(dates) > 32:
                 raise ValueError("invalid schedule date window")
             for date in dates:
+                if not isinstance(date, dict):
+                    raise ValueError("schedule date must be an object")
                 games = date.get("games")
                 if not isinstance(games, list) or len(games) > 100:
                     raise ValueError("invalid schedule games")

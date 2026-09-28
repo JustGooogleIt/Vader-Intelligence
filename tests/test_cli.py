@@ -33,6 +33,9 @@ def test_replay_rejects_late_book_but_preserves_raw(store, config, fixture_data,
         "SELECT body_sha256,state FROM fetches ORDER BY seq DESC LIMIT 1"
     ).fetchone()
     assert row[0] is not None and row[1] == "parse_error"
+    with pytest.raises(ValueError, match="previously failed"):
+        import_fixture(store, path, config)
+    assert store.db.execute("SELECT status FROM runs").fetchone()[0] != "complete"
 
 
 @pytest.mark.parametrize(
@@ -51,3 +54,22 @@ def test_replay_rejects_late_book_but_preserves_raw(store, config, fixture_data,
 def test_configuration_cannot_relax_safety_contract(values):
     with pytest.raises(ValueError):
         Config(**values)
+
+
+@pytest.mark.parametrize("corrupted", [False, True])
+def test_live_check_empty_universe_distinguishes_integrity_failure(
+    tmp_path, fixture_data, monkeypatch, corrupted
+):
+    from test_collector import handler_for
+    from test_transport import reader_for
+
+    from vader_intelligence import cli
+
+    handler, _, _ = handler_for(fixture_data, no_games=True)
+    monkeypatch.setattr(cli, "Reader", lambda store, config: reader_for(store, config, handler))
+    if corrupted:
+        monkeypatch.setattr(cli.Store, "verify_integrity", lambda self: ["body hash mismatch"])
+    result = cli.execute(cli.parser().parse_args(["--db", str(tmp_path / "live.db"), "live-check"]))
+    assert result["status"] == ("failed" if corrupted else "inconclusive")
+    assert result["archive_integrity"] == ("failed" if corrupted else "verified_after_reopen")
+    assert bool(result["errors"]) == corrupted
