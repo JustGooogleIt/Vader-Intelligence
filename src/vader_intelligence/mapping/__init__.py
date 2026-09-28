@@ -4,16 +4,22 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from ..provenance import json_text
 from ..scope import ALIASES, RULE
-from ..settlement.models import dollar, games, instant, validate_game
+from ..settlement.models import dollar, games, instant, mlb_result, validate_game
+
+# Verified on live KXMLBGAME-26SEP251305CHCBOSG1, 2026-09-28.
+MAPPING_RULE = re.compile(
+    RULE.pattern.replace("game originally", "game(?: ([12]) of the double header)? originally")
+)
 
 
 def rule_identity(market):
     rule = market.get("rules_primary")
-    match = RULE.fullmatch(rule) if isinstance(rule, str) else None
+    match = MAPPING_RULE.fullmatch(rule) if isinstance(rule, str) else None
     if not match:
         raise ValueError("unrecognized_full_game_rule")
-    winner, away, home, day, clock, zone = match.groups()
+    winner, away, home, rule_number, day, clock, zone = match.groups()
     if any(x not in ALIASES for x in (winner, away, home)):
         raise ValueError("unknown_team_alias")
     ids = [ALIASES[x] for x in (winner, away, home)]
@@ -29,12 +35,14 @@ def rule_identity(market):
     if original.tzname() != zone:
         raise ValueError("rule_timezone_mismatch")
     suffix = re.search(r"G([12])$", market.get("event_ticker", ""))
+    if rule_number and suffix and rule_number != suffix[1]:
+        raise ValueError("conflicting_game_number")
     return {
         "team_id": ids[0],
         "away_id": ids[1],
         "home_id": ids[2],
         "original_start": original.isoformat(),
-        "game_number": int(suffix[1]) if suffix else None,
+        "game_number": int(rule_number) if rule_number else int(suffix[1]) if suffix else None,
     }
 
 
@@ -72,9 +80,11 @@ def resolve(market, event, schedule, *, reviewed_terms, prior=None):
         return reject(str(exc))
     result.update(identity)
     original = instant(identity["original_start"])
-    candidates, reversed_ids = [], []
+    candidates, reversed_ids, related_ids = [], [], []
+    variants = {}
     for game in games(schedule):
         validate_game(game)
+        variants.setdefault(game["gamePk"], set()).add(json_text(mlb_result(game)))
         teams = game.get("teams", {})
         pair = tuple(teams.get(s, {}).get("team", {}).get("id") for s in ("away", "home"))
         if (
@@ -84,6 +94,7 @@ def resolve(market, event, schedule, *, reviewed_terms, prior=None):
             reversed_ids.append(game["gamePk"])
         if pair != (identity["away_id"], identity["home_id"]):
             continue
+        related_ids.append(game["gamePk"])
         if (
             identity["game_number"] is not None
             and game.get("gameNumber") != identity["game_number"]
@@ -109,7 +120,12 @@ def resolve(market, event, schedule, *, reviewed_terms, prior=None):
             exact, linked = False, False
         if exact or linked or trusted:
             candidates.append(game)
-    result["candidate_ids"] = [g["gamePk"] for g in candidates]
+    candidates = list({g["gamePk"]: g for g in candidates}.values())
+    result["candidate_ids"] = sorted(
+        {g["gamePk"] for g in candidates} or set(related_ids) or set(reversed_ids)
+    )
+    if any(len(variants[g["gamePk"]]) > 1 for g in candidates):
+        return reject("conflicting_schedule_entries")
     if len(candidates) != 1:
         return reject(
             "ambiguous_game"

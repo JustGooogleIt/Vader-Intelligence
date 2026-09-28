@@ -27,6 +27,8 @@ class SettlementRefresh:
         require_schema(self.store)
         if not 1 <= limit <= 50 or not 1 <= max_pages <= 5 or not 1 <= budget <= 300:
             raise ValueError("require limit 1..50, max-pages 1..5, budget 1..300 seconds")
+        if limit > self.config.max_markets or max_pages > self.config.max_pages:
+            raise ValueError("settlement limits exceed configured market/page limits")
         if status not in ("settled", "closed", "all"):
             raise ValueError("unsupported discovery status")
         targets = sorted({ticker(t) for t in tickers})

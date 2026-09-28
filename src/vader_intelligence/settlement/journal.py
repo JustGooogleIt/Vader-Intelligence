@@ -3,7 +3,7 @@
 import hashlib
 import json
 
-from ..mapping import resolve
+from ..mapping import resolve, rule_identity
 from ..normalize import decode
 from ..provenance import json_text
 from .models import games, kalshi_result, mlb_result
@@ -167,8 +167,23 @@ def normalizer(stage, key):
                 raise ValueError("event identity mismatch")
             column = "event_fetch_id"
         elif stage == "settlement-schedule":
+            grouped = {}
             for game in games(data):
-                record(db, "mlb", game["gamePk"], fetch_id, mlb_result(game))
+                parsed = mlb_result(game)
+                grouped.setdefault(game["gamePk"], {})[json_text(parsed)] = parsed
+            for game_id, variants in grouped.items():
+                parsed = (
+                    next(iter(variants.values()))
+                    if len(variants) == 1
+                    else {
+                        "gamePk": game_id,
+                        "lifecycle": "ambiguous",
+                        "winner_team_id": None,
+                        "flags": ["conflicting_schedule_entries"],
+                        "variants": [variants[k] for k in sorted(variants)],
+                    }
+                )
+                record(db, "mlb", game_id, fetch_id, parsed)
             column = "schedule_fetch_id"
         else:
             raise ValueError("unknown settlement stage")
@@ -178,6 +193,11 @@ def normalizer(stage, key):
         db.execute(f"UPDATE settlement_targets SET {column}=? WHERE id=?", (fetch_id, key))
         if stage == "settlement-schedule":
             map_target(db, key)
+        elif stage == "settlement-event":
+            try:
+                rule_identity(market)
+            except ValueError:
+                map_target(db, key)
         return {"target_id": key, "fetch_id": fetch_id}
 
     return apply

@@ -35,7 +35,14 @@ def execute(args, config):
                 return {"status": "complete", "schema_version": 2, "database": str(store.path)}
             require_schema(store)
             if args.settlement_command == "inspect":
-                return inspect(store, target=args.ticker, limit=args.limit, history=args.history)
+                # One consistent WAL read snapshot across the joined inspection queries.
+                store.db.execute("BEGIN")
+                try:
+                    return inspect(
+                        store, target=args.ticker, limit=args.limit, history=args.history
+                    )
+                finally:
+                    store.db.execute("ROLLBACK")
             if args.settlement_command == "replay":
                 return replay(store)
             reader = Reader(store, config)

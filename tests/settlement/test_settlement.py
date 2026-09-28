@@ -315,11 +315,6 @@ def test_interruption_after_market_commit_resumes_without_duplicates(runner, sto
 
 def test_authorization_failure_aborts_all_targets(runner, store, monkeypatch):
     service, calls = runner
-    monkeypatch.setattr(
-        service.reader.client,
-        "stream",
-        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("not used")),
-    )
     # A real mock transport response exercises the existing terminal HTTP handling.
     service.reader = reader_for(store, service.config, lambda req: response(403))
     result = service.run(tickers=[TICKER])
@@ -347,3 +342,155 @@ def test_total_budget_and_invalid_bounds(runner, store):
         service.run(limit=51)
     with pytest.raises(ValueError):
         service.run(budget=float("nan"))
+
+
+def test_verified_doubleheader_rule_and_number_conflict(evidence):
+    evidence["market"]["rules_primary"] = evidence["market"]["rules_primary"].replace(
+        "game originally", "game 1 of the double header originally"
+    )
+    assert mapping(evidence)["game_id"] == 123
+    evidence["market"]["event_ticker"] += "G2"
+    evidence["event"]["event_ticker"] += "G2"
+    assert mapping(evidence)["reason"] == "conflicting_game_number"
+
+
+def test_repeated_schedule_rows_and_conflicting_game_quarantine(runner, store, evidence):
+    game = evidence["schedule"]["dates"][0]["games"][0]
+    evidence["schedule"]["dates"].append({"games": [deepcopy(game)]})
+    assert runner[0].run(tickers=[TICKER])["mapping_states"] == {"mapped": 1}
+    evidence["schedule"]["dates"][1]["games"][0]["gameDate"] = "2026-09-27T23:15:00Z"
+    assert runner[0].run(tickers=[TICKER])["mapping_states"] == {"quarantined": 1}
+    value = inspect(store)["records"][0]
+    assert value["latest_mapping"]["reason"] == "conflicting_schedule_entries"
+    mlb = store.db.execute(
+        "SELECT data_json FROM settlement_versions WHERE kind='mlb' ORDER BY id DESC LIMIT 1"
+    ).fetchone()[0]
+    import json
+
+    assert json.loads(mlb)["lifecycle"] == "ambiguous"
+
+
+def test_unknown_rule_quarantined_atomically_and_replayed(runner, store, evidence):
+    evidence["market"]["rules_primary"] = "If a first inning run is scored..."
+    assert runner[0].run(tickers=[TICKER])["mapping_states"] == {"quarantined": 1}
+    assert counts(store)["fetches"] == 4
+    assert replay(store)["status"] == "complete"
+
+
+def test_empty_discovery_is_inconclusive(runner, store, monkeypatch):
+    service, _ = runner
+    old = service.reader.client._transport.handler
+
+    def handler(request):
+        return (
+            response(data={"markets": [], "cursor": ""})
+            if request.url.path.endswith("/markets")
+            else old(request)
+        )
+
+    monkeypatch.setattr(service.reader.client._transport, "handler", handler)
+    assert service.run()["status"] == "inconclusive"
+
+
+def test_discovery_cursor_loop_and_cap_are_visible(runner, store, monkeypatch):
+    service, _ = runner
+    old = service.reader.client._transport.handler
+
+    def handler(request):
+        return (
+            response(data={"markets": [], "cursor": "repeat"})
+            if request.url.path.endswith("/markets")
+            else old(request)
+        )
+
+    monkeypatch.setattr(service.reader.client._transport, "handler", handler)
+    result = service.run(max_pages=3)
+    assert result["status"] == "partial" and "cursor loop" in str(result["errors"])
+    result = service.run(max_pages=1)
+    assert result["status"] == "partial" and result["selection_truncated"]
+
+
+def test_migration_rolls_back_on_ddl_failure(store):
+    store.db.execute("CREATE TABLE settlement_targets (existing TEXT)")
+    import sqlite3
+
+    with pytest.raises(sqlite3.OperationalError):
+        migrate(store)
+    assert store.db.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert not store.db.execute(
+        "SELECT 1 FROM sqlite_master WHERE name='settlement_versions'"
+    ).fetchone()
+    assert store.db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
+
+
+def test_interruption_inside_materialization_rolls_back_entire_fetch(runner, store, monkeypatch):
+    service, _ = runner
+    original = journal.map_target
+
+    def crash(db, key):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(journal, "map_target", crash)
+    with pytest.raises(KeyboardInterrupt):
+        service.run(tickers=[TICKER])
+    row = store.db.execute("SELECT * FROM fetches ORDER BY seq DESC LIMIT 1").fetchone()
+    assert row["state"] == "pending" and row["body_sha256"] is None
+    assert (
+        store.db.execute("SELECT COUNT(*) FROM settlement_versions WHERE kind='mlb'").fetchone()[0]
+        == 0
+    )
+    run = store.db.execute("SELECT id FROM runs ORDER BY rowid DESC LIMIT 1").fetchone()[0]
+    monkeypatch.setattr(journal, "map_target", original)
+    assert service.run(tickers=[TICKER], resume=run)["status"] == "complete"
+    assert (
+        store.db.execute("SELECT state FROM fetches WHERE id=?", (row["id"],)).fetchone()[0]
+        == "interrupted"
+    )
+    assert not store.verify_integrity()
+
+
+def test_ordered_rebuild_from_archived_evidence(runner, store, evidence):
+    service, _ = runner
+    service.run(tickers=[TICKER])
+    evidence["market"].update(result="no", settlement_value_dollars="0.0000")
+    service.run(tickers=[TICKER])
+    original = [
+        tuple(r)
+        for r in store.db.execute(
+            "SELECT kind,entity_key,revision,digest,change_kind FROM settlement_versions ORDER BY id"
+        )
+    ]
+    # Explicitly destroy DERIVED state in this synthetic, isolated test database.
+    with store.transaction():
+        store.db.execute("UPDATE settlement_targets SET mapping_version_id=NULL,state='pending'")
+        store.db.execute("DELETE FROM settlement_observations")
+        store.db.execute("UPDATE settlement_versions SET previous_id=NULL")
+        store.db.execute("DELETE FROM settlement_versions")
+    assert replay(store)["status"] == "complete"
+    rebuilt = [
+        tuple(r)
+        for r in store.db.execute(
+            "SELECT kind,entity_key,revision,digest,change_kind FROM settlement_versions ORDER BY id"
+        )
+    ]
+    assert rebuilt == original
+
+
+def test_collector_health_not_masked_by_settlement(runner, store, run):
+    store.finish_run(run, "partial", {"status": "partial"})
+    runner[0].run(tickers=[TICKER])
+    assert store.health()["latest_run"]["id"] == run
+
+
+def test_baseline_archived_books_survive_migration_and_replay(store, config):
+    from conftest import FIXTURE
+
+    from vader_intelligence.replay import import_fixture
+
+    import_fixture(store, FIXTURE, config)
+    tables = ("blobs", "fetches", "entities", "observations", "eligibility")
+    before = {t: [tuple(r) for r in store.db.execute(f"SELECT * FROM {t}")] for t in tables}
+    migrate(store)
+    assert replay(store)["status"] == "complete"
+    assert {t: [tuple(r) for r in store.db.execute(f"SELECT * FROM {t}")] for t in tables} == before
+    assert not store.verify_integrity()

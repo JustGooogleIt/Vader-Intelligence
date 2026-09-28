@@ -110,9 +110,6 @@ def games(schedule):
             raise ValueError("MLB schedule exceeds 1000 games")
     if any(not isinstance(g, dict) or type(g.get("gamePk")) is not int for g in result):
         raise ValueError("MLB game lacks integer gamePk")
-    ids = [g["gamePk"] for g in result]
-    if len(ids) != len(set(ids)):
-        raise ValueError("duplicate MLB game identity in response")
     return result
 
 
