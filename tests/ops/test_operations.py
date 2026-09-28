@@ -20,10 +20,22 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
-from ops import archive, launchd, manage, runner
-from ops.common import command, digest, label, load, lock, read_state, validate, write_json
-
 REPO = Path(__file__).resolve().parents[2]
+# pytest's console entry point need not include the repository root on sys.path.
+sys.path.insert(0, str(REPO))
+
+from ops import archive, launchd, manage, runner  # noqa: E402
+from ops.common import (  # noqa: E402
+    command,
+    digest,
+    label,
+    load,
+    lock,
+    read_state,
+    validate,
+    write_json,
+)
+
 FAKE = """import json, os, sqlite3, sys, time
 mode = os.environ.get("VADER_OPS_TEST_MODE", "empty")
 if mode == "hang":
