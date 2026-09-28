@@ -1,0 +1,39 @@
+{
+  "run_id": "312d248b-38a2-42dd-baeb-b1202389a886",
+  "started_at": "2026-09-27T16:30:17.871456+00:00",
+  "finished_at": "2026-09-27T16:30:39.145464+00:00",
+  "code_hash": "3e686df136ac3aefe39502055a1d8a0717245c81379a3c983c028ce2fc10cd2c",
+  "summary": {
+    "archive_integrity": "verified_after_reopen",
+    "books": 22,
+    "books_this_pass": 22,
+    "elapsed_seconds": 21.256628208095208,
+    "eligibility_reasons": {
+      "eligible": 22,
+      "not_scheduled_pregame": 2,
+      "schedule_rule_time_mismatch": 4,
+      "unmapped_game": 2
+    },
+    "entities": 142,
+    "errors": [],
+    "fetches": 43,
+    "observations": 82,
+    "run_id": "312d248b-38a2-42dd-baeb-b1202389a886",
+    "status": "complete"
+  },
+  "unique_games": 11,
+  "archive_counts_after_two_runs": {
+    "blobs": 82,
+    "fetches": 86,
+    "entities": 284,
+    "observations": 164,
+    "eligibility": 60
+  },
+  "replay": {
+    "errors": [],
+    "processed": 86,
+    "status": "complete"
+  },
+  "pregame_timing_verified": 22,
+  "database_bytes": 2105344
+}

@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "description": "Synthetic, deterministic offline fixture. Does not prove live connectivity or liquidity.",
+  "run_id": "fixture-mlb-v1",
+  "started_at": "2026-09-27T15:00:00+00:00",
+  "responses": [
+    {
+      "id": "fixture-series-0",
+      "stage": "series",
+      "url": "https://external-api.kalshi.com/trade-api/v2/series/KXMLBGAME",
+      "params": {},
+      "started_at": "2026-09-27T15:00:00+00:00",
+      "retrieved_at": "2026-09-27T15:00:00+00:00",
+      "body": "{\"series\":{\"ticker\":\"KXMLBGAME\",\"category\":\"Sports\",\"contract_terms_url\":\"https://assets.kalshi.com/contract_terms/BASEBALLGAMEWIN.pdf\",\"contract_url\":\"https://assets.kalshi.com/regulatory/product-certifications/BASEBALLGAMEWIN.pdf\"}}"
+    },
+    {
+      "id": "fixture-document-1",
+      "stage": "document",
+      "url": "https://assets.kalshi.com/contract_terms/BASEBALLGAMEWIN.pdf",
+      "params": {},
+      "started_at": "2026-09-27T15:00:01+00:00",
+      "retrieved_at": "2026-09-27T15:00:01+00:00",
+      "body": "%PDF-1.4\n% SYNTHETIC OFFLINE FIXTURE ONLY\n%%EOF"
+    },
+    {
+      "id": "fixture-markets-2",
+      "stage": "markets",
+      "url": "https://external-api.kalshi.com/trade-api/v2/markets",
+      "params": {
+        "series_ticker": "KXMLBGAME",
+        "status": "open",
+        "limit": 1
+      },
+      "started_at": "2026-09-27T15:00:02+00:00",
+      "retrieved_at": "2026-09-27T15:00:02+00:00",
+      "body": "{\"markets\":[{\"ticker\":\"KXMLBGAME-26SEP271505HOUATH-HOU\",\"event_ticker\":\"KXMLBGAME-26SEP271505HOUATH\",\"title\":\"Houston wins\",\"yes_sub_title\":\"Houston\",\"market_type\":\"binary\",\"notional_value_dollars\":\"1.0000\",\"status\":\"active\",\"rules_primary\":\"If Houston wins the Houston vs A's professional baseball game originally scheduled for Sep 27, 2026 at 3:05 PM EDT, then the market resolves to Yes.\",\"rules_secondary\":\"Synthetic fixture: rescheduling is excluded from collection.\",\"yes_bid_dollars\":\"0.6400\",\"yes_ask_dollars\":\"0.6500\",\"volume_fp\":\"10.25\",\"open_interest_fp\":\"4.50\",\"open_time\":\"2026-09-25T00:00:00Z\",\"close_time\":\"2026-09-30T19:05:00Z\"}],\"cursor\":\"fixture-next\"}"
+    },
+    {
+      "id": "fixture-markets-3",
+      "stage": "markets",
+      "url": "https://external-api.kalshi.com/trade-api/v2/markets",
+      "params": {
+        "series_ticker": "KXMLBGAME",
+        "status": "open",
+        "limit": 1,
+        "cursor": "fixture-next"
+      },
+      "started_at": "2026-09-27T15:00:03+00:00",
+      "retrieved_at": "2026-09-27T15:00:03+00:00",
+      "body": "{\"markets\":[{\"ticker\":\"KXMLBGAME-26SEP271505HOUATH-ATH\",\"event_ticker\":\"KXMLBGAME-26SEP271505HOUATH\",\"title\":\"A's wins\",\"yes_sub_title\":\"A's\",\"market_type\":\"binary\",\"notional_value_dollars\":\"1.0000\",\"status\":\"active\",\"rules_primary\":\"If A's wins the Houston vs A's professional baseball game originally scheduled for Sep 27, 2026 at 3:05 PM EDT, then the market resolves to Yes.\",\"rules_secondary\":\"Synthetic fixture: rescheduling is excluded from collection.\",\"yes_bid_dollars\":\"0.6400\",\"yes_ask_dollars\":\"0.6500\",\"volume_fp\":\"10.25\",\"open_interest_fp\":\"4.50\",\"open_time\":\"2026-09-25T00:00:00Z\",\"close_time\":\"2026-09-30T19:05:00Z\"}],\"cursor\":\"\"}"
+    },
+    {
+      "id": "fixture-event-4",
+      "stage": "event",
+      "url": "https://external-api.kalshi.com/trade-api/v2/events/KXMLBGAME-26SEP271505HOUATH",
+      "params": {},
+      "started_at": "2026-09-27T15:00:04+00:00",
+      "retrieved_at": "2026-09-27T15:00:04+00:00",
+      "body": "{\"event\":{\"event_ticker\":\"KXMLBGAME-26SEP271505HOUATH\",\"series_ticker\":\"KXMLBGAME\",\"product_metadata\":{\"competition\":\"Pro Baseball\",\"competition_scope\":\"Game\"}},\"markets\":[{\"ticker\":\"KXMLBGAME-26SEP271505HOUATH-HOU\",\"event_ticker\":\"KXMLBGAME-26SEP271505HOUATH\",\"title\":\"Houston wins\",\"yes_sub_title\":\"Houston\",\"market_type\":\"binary\",\"notional_value_dollars\":\"1.0000\",\"status\":\"active\",\"rules_primary\":\"If Houston wins the Houston vs A's professional baseball game originally scheduled for Sep 27, 2026 at 3:05 PM EDT, then the market resolves to Yes.\",\"rules_secondary\":\"Synthetic fixture: rescheduling is excluded from collection.\",\"yes_bid_dollars\":\"0.6400\",\"yes_ask_dollars\":\"0.6500\",\"volume_fp\":\"10.25\",\"open_interest_fp\":\"4.50\",\"open_time\":\"2026-09-25T00:00:00Z\",\"close_time\":\"2026-09-30T19:05:00Z\"},{\"ticker\":\"KXMLBGAME-26SEP271505HOUATH-ATH\",\"event_ticker\":\"KXMLBGAME-26SEP271505HOUATH\",\"title\":\"A's wins\",\"yes_sub_title\":\"A's\",\"market_type\":\"binary\",\"notional_value_dollars\":\"1.0000\",\"status\":\"active\",\"rules_primary\":\"If A's wins the Houston vs A's professional baseball game originally scheduled for Sep 27, 2026 at 3:05 PM EDT, then the market resolves to Yes.\",\"rules_secondary\":\"Synthetic fixture: rescheduling is excluded from collection.\",\"yes_bid_dollars\":\"0.6400\",\"yes_ask_dollars\":\"0.6500\",\"volume_fp\":\"10.25\",\"open_interest_fp\":\"4.50\",\"open_time\":\"2026-09-25T00:00:00Z\",\"close_time\":\"2026-09-30T19:05:00Z\"}]}"
+    },
+    {
+      "id": "fixture-schedule-5",
+      "stage": "schedule",
+      "url": "https://statsapi.mlb.com/api/v1/schedule",
+      "params": {
+        "sportId": 1,
+        "startDate": "2026-09-27",
+        "endDate": "2026-09-27"
+      },
+      "started_at": "2026-09-27T15:00:05+00:00",
+      "retrieved_at": "2026-09-27T15:00:05+00:00",
+      "body": "{\"dates\":[{\"date\":\"2026-09-27\",\"games\":[{\"gamePk\":824948,\"gameType\":\"R\",\"gameDate\":\"2026-09-27T19:05:00Z\",\"officialDate\":\"2026-09-27\",\"gameNumber\":1,\"doubleHeader\":\"N\",\"status\":{\"abstractGameState\":\"Preview\",\"detailedState\":\"Scheduled\",\"startTimeTBD\":false},\"teams\":{\"away\":{\"team\":{\"id\":117,\"name\":\"Houston Astros\"}},\"home\":{\"team\":{\"id\":133,\"name\":\"Athletics\"}}}}]}]}"
+    },
+    {
+      "id": "fixture-book-6",
+      "stage": "book",
+      "url": "https://external-api.kalshi.com/trade-api/v2/markets/KXMLBGAME-26SEP271505HOUATH-HOU/orderbook",
+      "params": {
+        "depth": 0
+      },
+      "started_at": "2026-09-27T15:00:06+00:00",
+      "retrieved_at": "2026-09-27T15:00:06+00:00",
+      "body": "{\"orderbook_fp\":{\"yes_dollars\":[[\"0.6350\",\"2.50\"],[\"0.6400\",\"10.25\"]],\"no_dollars\":[[\"0.3500\",\"5.75\"]]}}",
+      "eligibility": {
+        "ticker": "KXMLBGAME-26SEP271505HOUATH-HOU",
+        "game_id": 824948,
+        "cutoff": "2026-09-27T19:03:00+00:00",
+        "schedule_fetch_id": "fixture-schedule-5",
+        "market_fetch_id": "fixture-event-4"
+      }
+    }
+  ]
+}

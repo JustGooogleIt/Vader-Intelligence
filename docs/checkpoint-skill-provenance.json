@@ -1,0 +1,82 @@
+{
+  "upstream_version": "1.2.0",
+  "upstream_commit": "e46e79805be0ee5877fa9bc993492064bbb40aa5",
+  "skills": {
+    "code-review": {
+      "sha256": {
+        "code-review/SKILL.md": "5f4b5fe3e5799187c98d394724e706756e131dbb6a6aea9d6fbcace0db19327a"
+      },
+      "local_differences_from_pin": []
+    },
+    "reverse-branching": {
+      "sha256": {
+        "reverse-branching/SKILL.md": "83ef17cce2129a212c36840fe4fb28db7d99a280f16ae1e49988075a0e333e46",
+        "reverse-branching/references/01-the-reversibility-contract.md": "f625d8fe24f504bcb5f081ed271becb50bd71d3790991c14903a189460295144",
+        "reverse-branching/references/02-release-engineering.md": "5acecf8647f704f74feea0027b9d23a297c9bf33c178070f3ea03bf208dd1570",
+        "reverse-branching/references/03-progressive-rollout-and-canary.md": "f553f5fbd39865a99b07664d9548d86789c034af0a08f587c8815f8f1a79c093",
+        "reverse-branching/references/04-change-induced-emergency.md": "34ab201ae43efc8f11ee06648e61dc5aaf68ad531f8f9c18d284dfcdd2057b37",
+        "reverse-branching/references/05-locating-the-bad-change.md": "41c63526f562f6e6073b6d6077ddfc28435c5b9c919e3522dd8e08fb4fabce18",
+        "reverse-branching/references/06-data-and-schema-reversibility.md": "34615915ff41e610b4c65bff018f6c97fce415b57a2dd08da90f4b678cc0eeca",
+        "reverse-branching/references/07-automation-safety.md": "92aa9865930be03ab6e72271e333347f4724f143af6732a5cf32d614303e41be",
+        "reverse-branching/references/08-agent-and-operator-shortcuts.md": "312f5a1443c8b35cea04dadc00b9c24f26c2a78f67c17285fe17b9086de57b4e",
+        "reverse-branching/references/09-launch-coordination.md": "6c55416b002363f9c5c44a594c3b0d779ff80c98e4997782d7c4703777a99792",
+        "reverse-branching/references/rollback-hazard-catalog.md": "a9af96a454d6874e53de64d792dfd6146ef072721a4995ef4f8c1b021e4eec8f"
+      },
+      "local_differences_from_pin": []
+    },
+    "data-systems-design": {
+      "sha256": {
+        "data-systems-design/SKILL.md": "cf42c836fdf89b2fe5085762c028e0e6da240cb4475a36aeaafa33b23b3daa60",
+        "data-systems-design/references/01-reliability-scalability-maintainability.md": "49076aaee877caa8bfd3547f66c7e816816bb748c34e53ee79f8a2fa6ef96550",
+        "data-systems-design/references/02-data-models.md": "43a7ee1467821404c1ed4b04d42c01b03a957af4df3390c30c127a6725359c55",
+        "data-systems-design/references/03-storage-and-retrieval.md": "66fb0aa3f762e242644f83d81a94740f5a66ddac87b18e934813e49fd77b4730",
+        "data-systems-design/references/04-encoding-and-evolution.md": "21761ca39e87430abd15bbd8f76f3f2b4da89cdf38d4316750ea99fc90bcc474",
+        "data-systems-design/references/05-replication.md": "718c916729344b83f170065c45c73feecc5087b330adbfa2f30cd975793d7957",
+        "data-systems-design/references/06-partitioning.md": "2ce683e36d1dfa8fdd172bb5001d7d8a7e5befb1e9be0e604930f5a1d76fcb0d",
+        "data-systems-design/references/07-transactions.md": "5a6ac5195e3acf233780950d8de37056ebce893ccdac417d2d35b8183b01598d",
+        "data-systems-design/references/08-distributed-systems-faults.md": "a635d454a750206a681a91e15301e85b3a8fc9dff5b9b7af2c8741a7492b885b",
+        "data-systems-design/references/09-consistency-and-consensus.md": "76d645fdd93ead5f3fbdc67ed29677ce2082638c103aa9c9e3986d803a4fcde3",
+        "data-systems-design/references/10-batch-processing.md": "c122d92d2195c081f7af446c5c97f4a826c57d17531bef92a694ad6b800d3529",
+        "data-systems-design/references/11-stream-processing.md": "6b46591e1cd7d13c81986eb7b3ac4a36434f035def61abdf84e55455f32553c9",
+        "data-systems-design/references/12-correctness-and-integrity.md": "6190b06259c6e61546de0f1d3199ee787faaf177ab3e50737be9e22830e93fe0",
+        "data-systems-design/references/hazard-catalog.md": "aeedaf9cf4ff17c861abc96df722d5727ecabbc9e8bb3caf06c2470a3517ffc5"
+      },
+      "local_differences_from_pin": []
+    },
+    "security-engineering": {
+      "sha256": {
+        "security-engineering/SKILL.md": "8ff9cac77b19ab35fcff37569d8887a5838bd3dca898248f9c444dee28228187",
+        "security-engineering/references/01-threat-model-and-security-services.md": "039d1df06c6453189a472dc8b589df8635fc14295f4fb160cec42e1bf903a4f0",
+        "security-engineering/references/02-cryptographic-primitives-and-modes.md": "3feede02eb4200c2923a0a22b43446c6b9d10b4e0f827137059b8b274ae4dedd",
+        "security-engineering/references/03-randomness-and-key-management.md": "cc89bbe6c9b92246d1411bdf3c5eb6c7432121695ab40dbe88d55354d4350e0e",
+        "security-engineering/references/04-public-key-and-key-exchange.md": "0ca066664bf9ae0363b8ea286c9a640399fb2385755406bf30b2ef0f2c845c0a",
+        "security-engineering/references/05-integrity-hashes-and-macs.md": "c0422cbb93aeafe51dd998091cb32088df2580595ad9d360d7f1edb24d19e6f1",
+        "security-engineering/references/06-signatures-and-authentication-protocols.md": "8209f763f3cccd9956ce7af18af5bb9421c41ce9b4ee443e6d859200d2628245",
+        "security-engineering/references/07-identity-certificates-and-pki.md": "3e0833c85800b4532bf2cc0b11043dca72c7bfb76ed7b217b1a63039768c1181",
+        "security-engineering/references/08-transport-and-channel-security.md": "9cbf7b2842cbc4b38f333ef3740004230de2d71dd449a486f220205d2cd4cd74",
+        "security-engineering/references/09-authentication-and-access-control.md": "cb0a888033b7f3567429c734a31f69ca2e69abd60299ae8f57e71414abebed11",
+        "security-engineering/references/10-intrusion-detection-and-audit.md": "d04cdf26803bbe7733fe41e7ed63d0bea3727b1d8f44f778c7f5e67d16169986",
+        "security-engineering/references/11-malicious-software-and-availability.md": "dd5567bb77501321f988c5a35737f8a13e9e4a192fc115e649a2c7df8b1f2bd1",
+        "security-engineering/references/12-perimeter-and-trusted-systems.md": "c050173ecf765c36743c6c42bd7dc6372615bb0f940e05d8a1cfade62ff80312",
+        "security-engineering/references/vulnerability-catalog.md": "41289201893b9cc999aba48a1a16282a8cef54a5aa871abdfe73b1325133993c"
+      },
+      "local_differences_from_pin": []
+    },
+    "systems-programming": {
+      "sha256": {
+        "systems-programming/SKILL.md": "d342a7614f128dd593fa122a690046de9a8bd77a5a7eb22a2e3ad401a404cf4c",
+        "systems-programming/references/01-file-descriptors-and-io.md": "f0f08f874d7fce23b9acfb30446b8e379b9c1f4d67006bb03418019eeac32c92",
+        "systems-programming/references/02-files-and-directories.md": "97e032d43675bc52edfa8a639502d2b547cfe3fe9c8963306c910c1bdd0ce807",
+        "systems-programming/references/03-standard-io-and-buffering.md": "06f7a3a43f705c78d6b7e05ab59b02f66ed0204d597810ca57318ae063b9495c",
+        "systems-programming/references/04-processes-and-execution.md": "059ab24fcc054330f3f6ea3d92589e5d5d3984bfbb0dee7670f95d4a80c83334",
+        "systems-programming/references/05-signals.md": "b4e804f9f78fde373ee3f0f4561d8e2e3cad8b48f2b5ac66c5182b8fcfe9bd23",
+        "systems-programming/references/06-threads-and-concurrency.md": "cd42529d7e8e79f390eadf1f2dde6402e588a62d3cdb97ff189c4fa8777fa073",
+        "systems-programming/references/07-ipc-and-sockets.md": "2c5f06d90e06e031fbd67a5116a04166798ff5578f7987ed1ffe2c3e46759644",
+        "systems-programming/references/08-toolchain-and-machine-model.md": "5653d03b805dcd741ba523caee1cb50aabb4079c56bd2c24b6a8cf0389aa6d14",
+        "systems-programming/references/failure-catalog.md": "8288399bcbd7cb82015feed468b422e8eae9e0036e80dbfc19b158e2c261c6e4"
+      },
+      "local_differences_from_pin": []
+    }
+  },
+  "local_files_modified_by_this_task": false
+}
