@@ -41,7 +41,12 @@ Shared skill installations are untouched.
 - Read baseline, AGENTS.md, README, collector CLI, configuration, collector and schema.
 - Verified the branch starts at the exact requested baseline.
 - Windows has no WSL installation; native launchd validation must run later on Mac.
-- Implementation and verification in progress.
+- Implemented separate CLI, bounded runner/history, launchd lifecycle and SQLite backup/restore.
+- First portable suite: 22 tests passed in 10.068 seconds on Windows/Python 3.12.
+- Tests use actual temporary WAL databases and subprocess locks. launchctl is mocked.
+- Fixed Windows backup fsync by opening the completed destination with a writable descriptor.
+- Added an opt-in native Mac launchd drill with synthetic input and a random test label.
+- Runbook, final review and additional failure-path checks remain in progress.
 
 ## Integration requests
 

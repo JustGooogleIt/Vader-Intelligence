@@ -1,0 +1,8 @@
+# Based on the baseline's successful ~17-second run. Database is always overridden
+# by the operations config's absolute --db argument.
+[collector]
+requests_per_second = 2.0
+request_budget = 8.0
+max_attempts = 2
+max_pages = 3
+max_markets = 50
