@@ -199,7 +199,14 @@ def run_locked(config):
             exit_code = code if code in (0, 1, 3, 130) else 1
             if entry["status"] not in {"collected_eligible_games", "discovery_no_eligible_games"}:
                 exit_code = exit_code or 1
-    except (OSError, ValueError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as exc:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        RuntimeError,
+        sqlite3.Error,
+        subprocess.SubprocessError,
+    ) as exc:
         entry.update(status="wrapper_failed", error=str(exc)[:1000])
     finally:
         entry.update(

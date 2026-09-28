@@ -5,6 +5,7 @@ Uses real SQLite WAL databases, locks, pipes and children. launchctl is simulate
 """
 
 import argparse
+import io
 import json
 import os
 import plistlib
@@ -313,6 +314,19 @@ class RunnerTests(Fixture):
 
 
 class ArchiveTests(Fixture):
+    def test_cli_backup_restore_inspect_with_space_arguments(self):
+        backup = self.root / "cli backup.sqlite3"
+        restore = self.root / "cli restore.sqlite3"
+        base = [sys.executable, str(REPO / "ops/manage.py")]
+        for args in (
+            ["backup", "--source", str(self.db), "--destination", str(backup)],
+            ["restore", "--source", str(backup), "--destination", str(restore)],
+            ["inspect", "--database", str(restore)],
+        ):
+            result = subprocess.run(base + args, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["integrity"], "ok")
+
     def test_live_wal_backup_restore_and_inspect(self):
         with closing(sqlite3.connect(self.db)) as db, db:
             db.execute("PRAGMA journal_mode=WAL")
@@ -359,6 +373,46 @@ class ArchiveTests(Fixture):
 
 
 class LaunchdTests(Fixture):
+    def test_inventory_checks_unloaded_plists_and_opaque_loaded_labels(self):
+        agents = self.root / "Library/LaunchAgents"
+        agents.mkdir(parents=True)
+        (agents / "legacy.plist").write_bytes(
+            plistlib.dumps(
+                {
+                    "Label": "old-name",
+                    "ProgramArguments": ["/stable/vader", "collect", "--once"],
+                }
+            )
+        )
+
+        def execute(argv):
+            if argv[-1] in ("gui/99999", "user/99999", "system"):
+                return "services = {\n0 - opaque-label\n}\n"
+            return "program = /stable/.venv/bin/python\narguments = vader_intelligence.cli"
+
+        with (
+            patch.object(Path, "home", return_value=self.root),
+            patch.object(launchd.os, "getuid", return_value=99999, create=True),
+            patch.object(launchd, "execute", side_effect=execute),
+            patch.object(
+                launchd.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess([], 1, "", "no crontab for test"),
+            ),
+        ):
+            conflicts = launchd.inventory()
+        self.assertTrue(any(item.get("label") == "old-name" for item in conflicts))
+        self.assertEqual(len([item for item in conflicts if "loaded" in item]), 3)
+
+    def test_preflight_refuses_worktree_and_temporary_checkout(self):
+        (self.root / ".git").write_text("gitdir: /some/other/worktree")
+        with self.assertRaisesRegex(ValueError, "standalone"):
+            launchd.preflight(self.config)
+        (self.root / ".git").unlink()
+        (self.root / ".git").mkdir()
+        with self.assertRaisesRegex(ValueError, "temporary"):
+            launchd.preflight(self.config)
+
     def mocks(self):
         path = self.root / (label(self.config) + ".plist")
         patches = [
@@ -427,6 +481,44 @@ class LaunchdTests(Fixture):
         self.assertFalse(launchd.is_collector("ordinary unrelated service"))
         with self.assertRaises(ValueError):
             launchd.services("unknown format")
+
+    def test_loaded_exit_failure_and_missing_service(self):
+        domain_patch = patch.object(launchd, "domain", return_value="gui/99999")
+        domain_patch.start()
+        self.addCleanup(domain_patch.stop)
+        failed = subprocess.CompletedProcess([], 0, "state = waiting\n last exit code = 124\n", "")
+        with patch.object(launchd.subprocess, "run", return_value=failed):
+            result = launchd.loaded(self.config)
+            self.assertEqual(result["last_exit_code"], 124)
+        missing = subprocess.CompletedProcess([], 113, "", "Could not find service x in domain")
+        with patch.object(launchd.subprocess, "run", return_value=missing):
+            self.assertFalse(launchd.loaded(self.config)["loaded"])
+        unknown = subprocess.CompletedProcess([], 1, "", "permission denied")
+        with patch.object(launchd.subprocess, "run", return_value=unknown):
+            with self.assertRaises(RuntimeError):
+                launchd.loaded(self.config)
+
+    def test_status_does_not_mask_boot_failure_with_old_success(self):
+        self.invoke()
+        with (
+            patch.object(manage.sys, "platform", "darwin"),
+            patch.object(launchd, "loaded", return_value={"loaded": True, "last_exit_code": 1}),
+            patch.object(sys, "stdout", new_callable=io.StringIO) as output,
+        ):
+            code = manage.main(["--config", str(self.config_path), "status"])
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(output.getvalue())["status"], "scheduler_failed")
+
+    def test_modified_config_can_stop_but_cannot_restart(self):
+        path, _ = self.mocks()
+        launchd.install(self.config, self.config_path)
+        changed = dict(self.config, cadence=180)
+        write_json(self.config_path, changed)
+        launchd.lifecycle(changed, self.config_path, "stop")
+        with self.assertRaises(ValueError):
+            launchd.lifecycle(changed, self.config_path, "restart")
+        launchd.lifecycle(changed, self.config_path, "uninstall")
+        self.assertFalse(path.exists())
 
     def test_install_lock_contention(self):
         self.mocks()

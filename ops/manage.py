@@ -120,6 +120,12 @@ def main(argv=None):
                             "detail": "not macOS; target Mac status unverified",
                         }
                     )
+                    scheduler = result["scheduler"]
+                    if scheduler.get("last_exit_code") not in (None, 0, 3) or scheduler.get(
+                        "last_terminating_signal"
+                    ):
+                        result["collection_status"] = result["status"]
+                        result["status"] = "scheduler_failed"
                 print(json.dumps(result, indent=2))
                 healthy = result["status"] in {
                     "collected_eligible_games",
@@ -134,7 +140,14 @@ def main(argv=None):
                 result = launchd.lifecycle(config, args.config, args.action)
         print(json.dumps(result, indent=2))
         return 0
-    except (OSError, ValueError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as exc:
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        RuntimeError,
+        sqlite3.Error,
+        subprocess.SubprocessError,
+    ) as exc:
         print(json.dumps({"status": "failed", "error": str(exc)}), file=sys.stderr)
         return 1
 

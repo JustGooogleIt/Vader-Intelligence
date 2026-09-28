@@ -70,6 +70,7 @@ def main():
             },
         )
         definition = launchd.plist(config, path)
+        definition["ThrottleInterval"] = 1
         definition["ProgramArguments"][1] = str(repo / "ops/manage.py")
         target = f"gui/{os.getuid()}/{label(config)}"
         plist_path = root / f"{label(config)}.plist"

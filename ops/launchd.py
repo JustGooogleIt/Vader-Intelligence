@@ -155,7 +155,14 @@ def loaded(config):
         timeout=10,
     )
     if result.returncode == 0:
-        return {"loaded": True, "detail": result.stdout}
+        code = re.search(r"(?m)^\s*last exit code = (-?\d+)\s*$", result.stdout)
+        sig = re.search(r"(?m)^\s*last terminating signal = (\d+)\s*$", result.stdout)
+        return {
+            "loaded": True,
+            "detail": result.stdout,
+            "last_exit_code": int(code[1]) if code else None,
+            "last_terminating_signal": int(sig[1]) if sig else None,
+        }
     if "could not find service" in result.stderr.lower():
         return {"loaded": False, "detail": result.stderr}
     raise RuntimeError(f"launchctl status unknown: {result.stderr}")
