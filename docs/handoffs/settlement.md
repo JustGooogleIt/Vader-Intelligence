@@ -15,7 +15,7 @@ Branch: `feat/settlement-v1`. Isolated worktree:
 - [x] Implement bounded refresh, replay, inspection and minimal CLI integration.
 - [x] Test baseline migration, corrections, ambiguity, exceptional/missing payouts,
   repeated ingestion, interruption/replay and existing collector behavior.
-- [ ] Run independent bounded live settlement check, review diff, commit and draft PR.
+- [x] Run independent bounded live settlement check, review diff, commit and draft PR.
 
 ## Implementation specification (F2)
 
@@ -221,9 +221,10 @@ Review findings fixed: actual doubleheader wording was initially unsupported;
 repeated MLB game IDs initially rejected unrelated games; unknown-rule quarantine
 needed atomic event progress; inspection needed a consistent read snapshot.
 Regression coverage and passing validation above substantiate the fixes.
-No remaining material code defect identified in this scoped review. No unrelated
-refactor, secret, environment, database, downloaded provider payload or build output
-is intended for the commit. Final staged-file scan is required before push.
+No remaining material code defect identified in this scoped review. Final staged
+diff check and all 44 tracked-file scans passed: no forbidden artifacts or matching
+credential patterns. The ownership exclusion check passed. No unrelated refactor,
+environment, database, downloaded provider payload or build output was committed.
 
 Limitations: conflicting same-ID schedule variants stay ambiguous; there is no
 automatic cross-window reschedule search or manual override workflow. Latest
@@ -240,8 +241,12 @@ visibility. Applied the user's authorized privacy change and verified
 `private=true`, `visibility=private` before pushing any settlement commits.
 Remote `main` already exists; it is not changed by this workstream.
 
-Next: inspect the final staged diff/artifact scan, commit, push `feat/settlement-v1`
-without force, and open a draft PR targeting `checkpoint/milestone-1-reviewed`.
-After publication, review that PR with the operations branch in a later integration
+Published `feat/settlement-v1` without force. [Draft PR #2](https://github.com/JustGooogleIt/Vader-Intelligence/pull/2)
+targets `checkpoint/milestone-1-reviewed`; main remains untouched. Implementation
+and verification checkpoint: `78329cddd9357d340ce3fea0989521e35235c444`; the following
+documentation-only commit records publication. The final branch SHA is returned to
+the operator and can be verified with `git rev-parse HEAD` and the PR head SHA.
+
+Next: review that PR with the operations branch in a later integration
 task, run the combined suite and backup/migration checks, then choose deployment
 and scheduling explicitly. No merge is authorized or performed here.
