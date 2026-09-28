@@ -75,4 +75,6 @@ No continuous collection, 24-hour endurance, sleep-gap monitoring, automated
 backup restoration, settlement reconciliation, forecast scoring or predictive
 advantage has been demonstrated. Those are milestones 2–4. A manual collection
 ends after one pass; health becomes stale once its freshness window expires.
-Source files are local and have not been committed or pushed.
+As of this original 2026-09-27 verification, source files had not been committed or
+pushed. The later [checkpoint review](checkpoint-review.md) and
+[parallel-work handoff](handoffs/baseline.md) record the reviewed publishing baseline.

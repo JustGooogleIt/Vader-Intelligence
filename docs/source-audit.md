@@ -1,7 +1,10 @@
 # Setup and source audit — 2026-09-27
 
 Authenticated repository access and the remote were verified before creating this
-checkout from the empty private `JustGooogleIt/Vader-Intelligence` repository.
+checkout from the empty `JustGooogleIt/Vader-Intelligence` repository. Correction:
+Git access alone did not establish privacy. On 2026-09-28 the authenticated GitHub
+API reported public visibility; the checkpoint task changed it to private and
+verified that result in a separate request before any push.
 No project-mirror or synced reference files were edited.
 
 Engineering skills source: [version 1.2.0, commit e46e798](https://github.com/Cool-Coder174/engineering-skills/tree/e46e79805be0ee5877fa9bc993492064bbb40aa5).

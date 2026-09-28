@@ -1,5 +1,8 @@
 # Vader Intelligence
 
+For the shared reviewed checkpoint and parallel development boundaries, start with
+[the baseline handoff](docs/handoffs/baseline.md) and [checkpoint review](docs/checkpoint-review.md).
+
 Milestone 1: a read-only MLB prediction-market archive on this Mac. It collects
 Kalshi `KXMLBGAME` full-game team winner contracts and full order books only when
 fresh official MLB schedule evidence establishes that the game is pregame.

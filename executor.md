@@ -123,3 +123,14 @@ alias. Regression coverage includes interrupted resume with no currently eligibl
 games and late raw-only book responses. No acceptance-blocking discrepancy remains
 for F1. Operational endurance, settlement and evaluation are deliberately unverified
 until their respective milestones.
+
+### Checkpoint review — 2026-09-28
+
+The checkpoint preserves schema/parser/mapping version 1. Per-attempt book guards
+now recheck wall-clock cutoff and configured schedule freshness after waits and
+before network sends; persistence time counts against the request deadline.
+Fixture reuse validates immutable source provenance and rejects failed records.
+Live-check integrity failures override inconclusive status; fixture runs cannot
+mask live health failures. Malformed schedule/eligibility shapes fail closed.
+See `docs/checkpoint-review.md` for regression results and fresh live evidence,
+and `docs/handoffs/baseline.md` for the two independent ownership boundaries.
