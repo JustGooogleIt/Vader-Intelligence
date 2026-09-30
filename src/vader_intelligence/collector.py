@@ -114,6 +114,24 @@ class Collector:
         errors = []
         status = "complete"
         books_this_pass = 0
+        eligibility_after = self.store.db.execute(
+            "SELECT COALESCE(MAX(id),0) FROM eligibility"
+        ).fetchone()[0]
+        checked, eligible_contracts, eligible_games = set(), set(), set()
+        discovery_complete = False
+
+        def pass_summary():
+            return {
+                "discovery_complete": discovery_complete,
+                "eligible_contracts": len(eligible_contracts),
+                "eligible_games": len(eligible_games),
+                "eligibility_after_id": eligibility_after,
+                "eligibility_through_id": self.store.db.execute(
+                    "SELECT COALESCE(MAX(id),0) FROM eligibility"
+                ).fetchone()[0],
+                "books_this_pass": books_this_pass,
+            }
+
         try:
             self.reader.get(run_id, "status", session, KALSHI + "/exchange/status")
             series_response = self.reader.get(
@@ -175,6 +193,10 @@ class Collector:
                             schedule_response.fetch_id,
                             event_response.fetch_id,
                         )
+                        checked.add(market["ticker"])
+                        if check.eligible:
+                            eligible_contracts.add(market["ticker"])
+                            eligible_games.add(check.game_id)
                         if not check.eligible or kind == "discover":
                             continue
                         cutoff = datetime.fromisoformat(check.cutoff)
@@ -209,6 +231,11 @@ class Collector:
                     errors.append(str(exc))
                 except (CollectionError, ValueError, TypeError, KeyError) as exc:
                     errors.append(f"{event_id}: {exc}")
+            discovery_complete = checked == set(candidates)
+            if not discovery_complete and not errors:
+                errors.append(
+                    "candidate eligibility incomplete; event response omitted discovered contracts"
+                )
             if errors:
                 status = "partial"
         except (CollectionError, ValueError, TypeError, KeyError) as exc:
@@ -220,6 +247,7 @@ class Collector:
                 status="interrupted",
                 errors=["process interrupted"],
                 elapsed_seconds=time.monotonic() - started,
+                **pass_summary(),
             )
             self.store.finish_run(run_id, "interrupted", result)
             raise
@@ -229,7 +257,7 @@ class Collector:
         result.update(
             status=status,
             errors=errors,
-            books_this_pass=books_this_pass,
+            **pass_summary(),
             elapsed_seconds=time.monotonic() - started,
         )
         self.store.finish_run(run_id, status, result)

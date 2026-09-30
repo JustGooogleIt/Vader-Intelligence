@@ -73,7 +73,7 @@ class Store:
 
     def migrate(self):
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version > 2:
+        if version not in (0, 1, 2):
             raise RuntimeError(f"unsupported database schema version {version}")
         if version == 0:
             script = files("vader_intelligence").joinpath("migrations/001_initial.sql").read_text()

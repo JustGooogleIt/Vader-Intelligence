@@ -41,7 +41,7 @@ def plist(config, config_path):
         "StartInterval": config["cadence"],
         "RunAtLoad": True,
         "ProcessType": "Background",
-        "ExitTimeOut": config["grace"] + 5,
+        "ExitTimeOut": 2 * config["grace"] + 5,
         "ThrottleInterval": config["cadence"],
         # The runner owns bounded logs. No append-only launchd log files.
         "StandardOutPath": "/dev/null",

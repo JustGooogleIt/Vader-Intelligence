@@ -5,6 +5,7 @@ Uses real SQLite WAL databases, locks, pipes and children. launchctl is simulate
 """
 
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -36,9 +37,13 @@ from ops.common import (  # noqa: E402
     write_json,
 )
 
-FAKE = """import json, os, sqlite3, sys, time
+FAKE = """import json, os, signal, sqlite3, sys, time
 mode = os.environ.get("VADER_OPS_TEST_MODE", "empty")
-if mode == "hang":
+if mode in ("hang", "stubborn"):
+    if os.environ.get("VADER_OPS_TEST_PID_FILE"):
+        open(os.environ["VADER_OPS_TEST_PID_FILE"], "w").write(str(os.getpid()))
+    if mode == "stubborn":
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
     time.sleep(30)
 if mode == "large":
     print("x" * 100000)
@@ -51,6 +56,7 @@ if mode == "stderr":
     sys.exit(1)
 database = sys.argv[sys.argv.index("--db") + 1]
 db = sqlite3.connect(database)
+after = db.execute("SELECT COALESCE(MAX(id),0) FROM eligibility").fetchone()[0]
 run_id = str(time.time_ns())
 status, code, books, eligible, errors = "inconclusive", 3, 0, 0, []
 if mode == "books":
@@ -61,12 +67,14 @@ if mode == "partial":
     status, code, errors = "partial", 1, ["injected request failure"]
 if mode == "interrupted":
     status, code, errors = "interrupted", 130, ["interrupted"]
-result = dict(run_id=run_id, status=status, errors=errors, books_this_pass=books)
+result = dict(run_id=run_id, status=status, errors=errors, books_this_pass=books,
+              discovery_complete=not errors, eligible_contracts=eligible, eligible_games=eligible,
+              eligibility_after_id=after, eligibility_through_id=after+eligible)
 db.execute("INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
            (run_id,"collect","start","end",status,"{}",json.dumps(result)))
 for i in range(eligible):
-    db.execute("INSERT INTO eligibility(run_id,ticker,checked_at,eligible,reason,data_json) "
-               "VALUES (?,?,?,1,?,?)",(run_id,str(i),"now","eligible","{}"))
+    db.execute("INSERT INTO eligibility(run_id,ticker,checked_at,eligible,reason,data_json,game_id) "
+               "VALUES (?,?,?,1,?,?,?)",(run_id,str(i),"now","eligible","{}",i))
 db.commit()
 db.close()
 print(json.dumps(result))
@@ -183,6 +191,30 @@ class ConfigurationTests(Fixture):
 
 
 class RunnerTests(Fixture):
+    @unittest.skipIf(os.name == "nt", "POSIX process group cleanup")
+    def test_dead_leader_does_not_leave_descendant_or_open_pipe(self):
+        marker = self.root / "orphan-wrote-after-wrapper"
+        child = (
+            "import time,pathlib; time.sleep(1); pathlib.Path("
+            + repr(str(marker))
+            + ").touch(); time.sleep(30)"
+        )
+        parent = (
+            "import subprocess,sys; subprocess.Popen([sys.executable,'-c'," + repr(child) + "])"
+        )
+        started = time.monotonic()
+        code, reason = runner.supervise(
+            self.config,
+            [sys.executable, "-c", parent],
+            self.state / "orphan-out",
+            self.state / "orphan-err",
+        )
+        self.assertEqual(code, 0)
+        self.assertIsNone(reason)
+        self.assertLess(time.monotonic() - started, 2)
+        time.sleep(1.1)
+        self.assertFalse(marker.exists())
+
     def test_success_no_games_and_exit_codes(self):
         for mode, expected, status in (
             ("books", 0, "collected_eligible_games"),
@@ -326,6 +358,27 @@ class RunnerTests(Fixture):
 
 
 class ArchiveTests(Fixture):
+    def test_schema_two_requires_all_columns_and_migration_records(self):
+        with closing(sqlite3.connect(self.db)) as db, db:
+            db.executescript(
+                (REPO / "src/vader_intelligence/migrations/002_settlement.sql").read_text()
+            )
+            db.execute("PRAGMA user_version=2")
+            db.execute("INSERT INTO schema_migrations VALUES (2,'now')")
+        result = archive.backup(self.db, self.root / "schema-two-copy.sqlite3")
+        self.assertEqual(result["schema_version"], 2)
+        self.assertEqual(result["counts"]["settlement_versions"], 0)
+        with closing(sqlite3.connect(self.db)) as db, db:
+            db.execute("DROP TABLE settlement_targets")
+        with self.assertRaises(ValueError):
+            archive.inspect(self.db)
+
+    def test_raw_body_corruption_is_not_a_verified_backup(self):
+        with closing(sqlite3.connect(self.db)) as db, db:
+            db.execute("INSERT INTO blobs VALUES ('bad-hash',?,3)", (b"raw",))
+        with self.assertRaisesRegex(ValueError, "hash/length"):
+            archive.backup(self.db, self.root / "corrupt-copy.sqlite3")
+
     def test_cli_backup_restore_inspect_with_space_arguments(self):
         backup = self.root / "cli backup.sqlite3"
         restore = self.root / "cli restore.sqlite3"
@@ -342,7 +395,10 @@ class ArchiveTests(Fixture):
     def test_live_wal_backup_restore_and_inspect(self):
         with closing(sqlite3.connect(self.db)) as db, db:
             db.execute("PRAGMA journal_mode=WAL")
-            db.execute("INSERT INTO blobs VALUES ('evidence',?,?)", (b"research bytes", 14))
+            db.execute(
+                "INSERT INTO blobs VALUES (?,?,?)",
+                (hashlib.sha256(b"research bytes").hexdigest(), b"research bytes", 14),
+            )
             db.commit()
             self.assertTrue(Path(str(self.db) + "-wal").exists())
             backup = self.root / "new backup.sqlite3"
@@ -364,7 +420,7 @@ class ArchiveTests(Fixture):
                 archive.backup(self.db, path)
         self.assertEqual(digest(self.db), before)
         with closing(sqlite3.connect(self.db)) as db, db:
-            db.execute("PRAGMA user_version=2")
+            db.execute("PRAGMA user_version=3")
         with self.assertRaises(ValueError):
             archive.backup(self.db, self.root / "future.sqlite3")
         self.assertFalse((self.root / "future.sqlite3").exists())

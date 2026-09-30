@@ -1,6 +1,14 @@
 # Vader Intelligence
 
-Accepted 2026-09-27. Implementation authorization covers milestone 1 only.
+Initial plan accepted 2026-09-27. Historical phase status below is preserved.
+On 2026-09-30 the user authorized integration of settlement and operations, native
+Mac validation and a draft PR only. No production deployment or forecasting.
+
+## Integration I1
+- [x] Verify exact branch heads/ancestry; merge histories in an isolated worktree.
+- [x] Resolve schema, health and bounded-process compatibility.
+- [x] Verify combined offline, installed-wheel, native Mac and separate live paths.
+- [ ] Document deployment/rollback boundaries and publish draft PR.
 
 ## Requirements and design
 - Sports only: MLB `KXMLBGAME`, full single-game team winner contracts, pregame only.

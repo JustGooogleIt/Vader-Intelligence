@@ -5,9 +5,11 @@ without changing storage, migrations, shared CLI code or settlement. Python 3.11
 and a local filesystem are required. Scheduling and public collection require
 macOS/Unix; portable operations tests also run on Windows.
 
-**Deployment status:** developed on Windows. No Mac service was installed or
-started, and no fresh public collection was performed in this workstream.
-Native launchd verification and the production archive restore drill remain Mac steps.
+**Integration status (2026-09-30):** native Mac launchd, combined schema 1/2,
+installed-wheel, live collection/settlement and isolated backup/restore checks have
+run. See [integration evidence and deployment order](integration.md). No production
+job was installed, started, stopped or switched. Production restore timing and
+24-hour endurance remain unverified.
 
 ## Design and limits
 
@@ -26,8 +28,12 @@ the collector independently caps bursts at 2 requests/second. This sample is not
 a worst-case estimate. The configured caps can reject larger universes, and slow
 requests can exhaust the deadline. Those outcomes remain visible failures.
 
-`--cadence` is configurable from 30 to 86400 seconds. The deadline plus grace must
-fit within it. Before reducing cadence, inspect retained runtimes and API errors.
+`--cadence` is configurable from 30 to 86400 seconds. The deadline plus **two**
+cleanup grace periods must fit within it (100 seconds at the defaults). Termination
+uses half the first grace for SIGINT and the remainder for SIGKILL/reaping; output
+cleanup shares one further grace. Descendants in the child's process group are
+killed even if the leader already exited. launchd ExitTimeOut is `2*grace + 5`.
+Before reducing cadence, inspect retained runtimes and API errors.
 Multiple databases do not share the collector's rate limiter. The installer
 conservatively refuses other detected Vader collectors, even for another database.
 
@@ -179,9 +185,15 @@ ages out. A start without completion is not proof that its log files are complet
 | `never_invoked`, `missed_or_stale`, `clock_regression` | Missing invocation evidence, start spacing beyond cadence plus grace, or wall-clock reversal. |
 | `scheduler_failed` | `launchctl` reports a non-success exit or terminating signal, including failures before the runner started. |
 
-The read-only queries in `ops/archive.py` verify schema 1, select the exact `runs.id`,
-require kind `collect`, compare the persisted summary, and count that run's eligible
-rows. Fixture runs cannot establish operational success. The core `vader health`
+The read-only queries in `ops/archive.py` explicitly support schemas **1 and 2**,
+select the exact `runs.id`, require kind `collect`, compare the persisted summary,
+and corroborate `discovery_complete` plus this invocation's eligibility counts.
+The summary's exclusive `eligibility_after_id` and inclusive `eligibility_through_id`
+bound the rows, also filtered by run ID. Previous positive eligibility on a resumed
+run cannot contaminate a currently empty invocation. Missing fields fail closed.
+Positive decisions retained across a later cutoff crossing never become an empty
+universe claim. Fixture and settlement runs cannot establish collection success.
+The core `vader health`
 command remains unchanged and can report unhealthy because it requires fresh live
 books. Operations health deliberately reports discovery/activity separately.
 
@@ -221,9 +233,13 @@ paid monitoring. The operator owns inspection and disk/backup capacity.
 The implementation uses Python's SQLite online backup API with a read-only source,
 not a raw file copy. This captures committed WAL content. See the
 [SQLite backup documentation](https://www.sqlite.org/backup.html).
-It verifies `user_version=1`, the migration record and expected table columns,
-then reopens the destination for integrity and foreign-key checks and row counts.
-Future schema versions are refused until integration reviews the expected schema.
+It verifies `user_version` is **1 or 2**, matching migration records and expected
+columns, including every settlement table for schema 2. A stable read transaction
+pins the copy's source schema/snapshot. Reopened inspection checks SQLite integrity,
+foreign keys, all raw-response hashes/lengths, and counts every supported table.
+Unknown versions are refused. Neither inspection nor collection migrates a database;
+`vader settlement migrate` remains the explicit schema-2 operation. The old binary
+cannot read schema 2 and is not a valid code-only rollback.
 
 Choose a new backup filename each time. Prefer an independently protected volume
 for eventual disaster recovery. This example's adjacent backup is a local recovery
@@ -246,7 +262,7 @@ Restore uses the same supported API and requires a new destination. It cannot
 overwrite the production database, another backup, an existing file or a symlink.
 If backup/restore fails, the incomplete destination remains for diagnosis; never
 reuse it. Only a successful result with `integrity: ok` is a verified copy. The
-300-second backup-copy deadline does not include the subsequent full integrity scan.
+300-second backup-copy deadline does not include the subsequent full integrity/hash scan.
 Reported runtime includes verification. Large archives need a measured restore
 drill; the tiny test archive timing is not a production RTO. Actual production RPO,
 RTO, backup cadence, and off-host retention remain operator decisions.
@@ -264,4 +280,16 @@ The operator stops/uninstalls it with the commands above, then deploys a reviewe
 revert commit if needed. Code reversal does not erase captured observations or
 recall public GET requests. All archive data is retained. No destructive migration
 or production restore is part of this procedure. Native stop/restart time and
-production restoration time are unmeasured in this Windows session.
+production restoration time remain unmeasured. Isolated native measurements are
+recorded in [integration.md](integration.md).
+
+## Settlement maintenance window
+
+Do not start settlement alongside a running schedule. One operator stops and drains
+the managed collection job, runs a bounded settlement refresh using the **same
+canonical database path and compatible binary**, inspects its result and lock state,
+then restarts that same job. Keep the registration while stopped; do not create a
+second schedule. Exact commands and failure handling are in the integration runbook.
+This avoids repeated collector lock failures and overlapping provider requests.
+Other hosts/databases are outside the local lock and must remain idle during this
+window. No automatic retries or distributed scheduler are added.

@@ -103,8 +103,8 @@ def validate(config):
         value = config[key]
         if type(value) is not int or not low <= value <= high:
             raise ValueError(f"{key} must be an integer in [{low}, {high}]")
-    if config["deadline"] + config["grace"] >= config["cadence"]:
-        raise ValueError("deadline + grace must be less than cadence")
+    if config["deadline"] + 2 * config["grace"] >= config["cadence"]:
+        raise ValueError("deadline + two cleanup grace periods must be less than cadence")
     if type(config["test_label"]) is not bool:
         raise ValueError("test_label must be boolean")
     db = absolute(config["database"])

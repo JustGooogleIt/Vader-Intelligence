@@ -40,15 +40,22 @@ def terminate(process, grace):
     if os.name == "nt":
         process.terminate()
     else:
-        os.killpg(process.pid, signal.SIGINT)
+        signal_group(process, signal.SIGINT)
     try:
-        process.wait(timeout=grace)
+        process.wait(timeout=grace / 2)
     except subprocess.TimeoutExpired:
         if os.name == "nt":
             process.kill()
         else:
-            os.killpg(process.pid, signal.SIGKILL)
-        process.wait(timeout=grace)
+            signal_group(process, signal.SIGKILL)
+        process.wait(timeout=grace / 2)
+
+
+def signal_group(process, sig):
+    try:
+        os.killpg(process.pid, sig)
+    except ProcessLookupError:
+        pass  # The process group already exited during the poll/signal race.
 
 
 def capture(pipe, path, limit, outcome):
@@ -110,9 +117,14 @@ def supervise(config, argv, stdout, stderr):
             time.sleep(0.05)
         if reason:
             terminate(process, config["grace"])
-        code = process.wait()
+        code = process.wait(timeout=config["grace"])
+        # Reap descendants even if their leader has exited; otherwise inherited
+        # pipes (and potentially writer locks) can outlive the scheduled wrapper.
+        if os.name != "nt":
+            signal_group(process, signal.SIGKILL)
+        cleanup_end = time.monotonic() + config["grace"]
         for thread in threads:
-            thread.join(timeout=config["grace"])
+            thread.join(timeout=max(0, cleanup_end - time.monotonic()))
         if any(thread.is_alive() for thread in threads):
             raise RuntimeError("collector output pipe did not close")
         if any("error" in output for output in captures):
@@ -123,6 +135,8 @@ def supervise(config, argv, stdout, stderr):
     finally:
         if process is not None and process.poll() is None:
             terminate(process, config["grace"])
+        if process is not None and os.name != "nt":
+            signal_group(process, signal.SIGKILL)
         for sig, handler in handlers.items():
             signal.signal(sig, handler)
 

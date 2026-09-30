@@ -1,5 +1,54 @@
 # Implementation specification
 
+## Integration phase I1 — authorized 2026-09-30
+
+The user's integration request supersedes historical phase/ownership restrictions.
+Starting main f0b0419 already contains checkpoint 04c57ee. Preserve both workstream
+histories (settlement 812a38a, operations 4a46b16) in an isolated worktree.
+
+Ordered work: merge histories; expand operations' explicit schema allowlist to 1/2;
+validate all schema-2 tables and raw hashes on inspection/backup; add per-invocation
+discovery and eligibility summaries with sequence bounds to avoid resumed-run
+misclassification; fix bounded child-group cleanup; test both schemas and the
+native Mac drill; measure separate bounded live collection/settlement; document
+deployment/rollback; publish a draft integration PR without deploying or merging.
+
+Summary contract: discovery_complete is true only after exhaustive bounded market
+pagination, fresh schedule retrieval and an eligibility decision for every candidate
+in this invocation. eligible_contracts/games count unique positive decisions in
+this invocation, even if a subsequent wait crosses cutoff. eligibility_after_id
+(exclusive) and eligibility_through_id (inclusive) identify the exact rows used,
+filtered by run_id. Failure/interruption never asserts complete discovery. Counts
+are observations at decision time, not a promise that books can still be requested.
+Operations corroborates the persisted summary and these bounded rows, never counts
+historical eligibility for a resumed invocation. Missing fields fail closed.
+
+No new schema/migration is introduced. Ordinary collection/inspection preserves
+user_version; settlement migration stays explicit. Backup copies all tables via
+SQLite online backup under a stable read snapshot, then verifies schema, FKs,
+integrity and raw hashes. Unknown future versions remain rejected. Tests compare
+every row before and after schema-2 backup/restore and replay.
+
+No network inside database writes. Existing writer/operations locks stay intact;
+manual settlement is an operator maintenance window: stop/drain the single job,
+run bounded settlement with compatible code, then restart it. No background retry
+loop. Child termination and log joins have bounded grace periods; default total
+deadline plus two grace periods must fit the cadence. Native smoke jobs use only
+random test labels and disposable synthetic databases. Production is inspected
+read-only. Deployment and old-binary/schema-2 rollback are prohibited in this task.
+
+Verification: lint/format, full core pytest, standalone operations unittest, wheel
+build/installed smoke, migration/archive/replay compatibility and future guards,
+native launchctl overlap/deadline/cleanup/restart, separate live reads. Exact actual
+results and remaining limits belong in docs/integration.md. Skills pin unchanged.
+
+I1 verification completed 2026-09-30: combined pytest 191 passed/10 subtests,
+core-only 160, standalone operations 31; lint/format, build and installed-wheel
+smoke passed. Actual native launchctl duplicate bootstrap/overlap, stubborn-child
+deadline, cleanup and restart passed. Separate schema-1/schema-2 live passes each
+collected eight books/four games; bounded settlement and restored archive replay
+passed. No production deployment or migration occurred. See docs/integration.md.
+
 ## Phase F1: MLB discovery and collection
 
 The accepted plan is sufficient authorization to detail and implement this phase without

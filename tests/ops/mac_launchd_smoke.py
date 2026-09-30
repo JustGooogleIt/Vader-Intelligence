@@ -52,7 +52,7 @@ def main():
             "collector_config": str(collector),
             "state": str(state),
             "cadence": 30,
-            "deadline": 1,
+            "deadline": 2,
             "grace": 1,
             "retention": 10,
             "log_bytes": 1024,
@@ -75,8 +75,10 @@ def main():
         target = f"gui/{os.getuid()}/{label(config)}"
         plist_path = root / f"{label(config)}.plist"
         evidence = []
-        for mode in ("hang", "empty"):
+        for mode in ("stubborn", "empty"):
             definition["EnvironmentVariables"]["VADER_OPS_TEST_MODE"] = mode
+            pid_file = root / "test-child.pid"
+            definition["EnvironmentVariables"]["VADER_OPS_TEST_PID_FILE"] = str(pid_file)
             plist_path.write_bytes(plistlib.dumps(definition))
             subprocess.run(["/usr/bin/plutil", "-lint", str(plist_path)], check=True)
             prior = read_state(config)["sequence"]
@@ -87,6 +89,30 @@ def main():
                 )
                 bootstrapped = True
                 deadline = time.monotonic() + 15
+                duplicate = subprocess.run(
+                    ["/bin/launchctl", "bootstrap", f"gui/{os.getuid()}", str(plist_path)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if duplicate.returncode == 0:
+                    raise RuntimeError("launchd accepted a second bootstrap of the loaded label")
+                if mode == "stubborn":
+                    while not pid_file.exists():
+                        if time.monotonic() > deadline:
+                            raise TimeoutError("test child did not start")
+                        time.sleep(0.02)
+                    overlap = subprocess.run(
+                        [sys.executable, str(repo / "ops/manage.py"), "--config", str(path), "run"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if (
+                        overlap.returncode != 75
+                        or json.loads(overlap.stdout)["status"] != "overlap_skipped"
+                    ):
+                        raise RuntimeError(f"native overlap was not rejected: {overlap}")
                 while True:
                     data = read_state(config)
                     if data["sequence"] > prior and data["history"][-1]["ended_at"]:
@@ -95,14 +121,41 @@ def main():
                     if time.monotonic() > deadline:
                         raise TimeoutError("test launchd invocation did not finish")
                     time.sleep(0.1)
-                expected = "deadline_exceeded" if mode == "hang" else "discovery_no_eligible_games"
+                expected = (
+                    "deadline_exceeded" if mode == "stubborn" else "discovery_no_eligible_games"
+                )
                 if entry["status"] != expected:
                     raise RuntimeError(f"expected {expected}: {entry}")
-                evidence.append(entry)
+                if mode == "stubborn" and entry["collector_exit_code"] != -9:
+                    raise RuntimeError("stubborn child was not forcibly terminated")
+                expected_code = 124 if mode == "stubborn" else 3
+                while launchd.loaded(config).get("last_exit_code") != expected_code:
+                    if time.monotonic() > deadline:
+                        raise TimeoutError("launchctl did not confirm wrapper exit")
+                    time.sleep(0.05)
+                if data["sequence"] != prior + 1:
+                    raise RuntimeError("unexpected duplicate scheduled invocation")
+                evidence.append(
+                    {
+                        **entry,
+                        "launchctl_exit_verified": expected_code,
+                        "overlap_verified": mode == "stubborn",
+                        "duplicate_bootstrap_rejected": duplicate.returncode,
+                    }
+                )
             finally:
                 if bootstrapped:
                     launchd.execute(["/bin/launchctl", "bootout", target])
                     launchd.drain(config)
+                    if launchd.loaded(config)["loaded"]:
+                        raise RuntimeError("test service remained loaded after bootout")
+                    if mode == "stubborn":
+                        try:
+                            os.kill(int(pid_file.read_text()), 0)
+                        except ProcessLookupError:
+                            evidence[-1]["child_cleanup_verified"] = True
+                        else:
+                            raise RuntimeError("test child survived cleanup")
         print(
             json.dumps(
                 {"test_label": label(config), "synthetic": True, "evidence": evidence}, indent=2
