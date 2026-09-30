@@ -45,7 +45,7 @@ class Store:
             )
             self.db.row_factory = sqlite3.Row
             self.db.execute("PRAGMA query_only=ON")
-            if self.db.execute("PRAGMA user_version").fetchone()[0] != 1:
+            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2):
                 self.db.close()
                 raise RuntimeError("unsupported database schema")
             return
@@ -73,7 +73,7 @@ class Store:
 
     def migrate(self):
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version > 1:
+        if version not in (0, 1, 2):
             raise RuntimeError(f"unsupported database schema version {version}")
         if version == 0:
             script = files("vader_intelligence").joinpath("migrations/001_initial.sql").read_text()
@@ -264,7 +264,8 @@ class Store:
 
     def health(self, stale_seconds=180):
         row = self.db.execute(
-            "SELECT * FROM runs WHERE kind!='fixture' ORDER BY rowid DESC LIMIT 1"
+            "SELECT * FROM runs WHERE kind NOT IN ('fixture','settlement-refresh') "
+            "ORDER BY rowid DESC LIMIT 1"
         ).fetchone()
         book = self.db.execute(
             "SELECT f.retrieved_at FROM observations o JOIN fetches f ON f.id=o.fetch_id "

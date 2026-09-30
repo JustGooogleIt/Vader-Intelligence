@@ -20,7 +20,7 @@ def replay(store):
     errors = []
     while True:
         rows = store.db.execute(
-            "SELECT f.seq,f.id,f.body_sha256,b.body,r.stage,r.url FROM fetches f "
+            "SELECT f.seq,f.id,f.body_sha256,b.body,r.stage,r.url,r.request_key FROM fetches f "
             "JOIN requests r ON r.id=f.request_id JOIN blobs b ON b.sha256=f.body_sha256 "
             "WHERE f.seq>? AND f.status=200 AND f.truncated=0 AND f.state IN ('ok','parse_error') "
             "ORDER BY f.seq LIMIT 10",
@@ -34,9 +34,13 @@ def replay(store):
                 raise ValueError("archive body hash mismatch")
             try:
                 with store.transaction():
-                    normalizer(row["stage"], key_for(row["stage"], row["url"]))(
-                        store.db, row["id"], row["body"]
-                    )
+                    if row["stage"].startswith("settlement-"):
+                        from .settlement.journal import normalizer as settlement_normalizer
+
+                        apply = settlement_normalizer(row["stage"], row["request_key"])
+                    else:
+                        apply = normalizer(row["stage"], key_for(row["stage"], row["url"]))
+                    apply(store.db, row["id"], row["body"])
             except (ValueError, KeyError, TypeError, UnicodeError, RecursionError) as exc:
                 if len(errors) < 100:
                     errors.append({"fetch_id": row["id"], "error": str(exc)[:300]})

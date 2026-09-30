@@ -63,7 +63,7 @@ def validate_source(url, params):
         path = part.path.removeprefix("/trade-api/v2")
         if not part.path.startswith("/trade-api/v2/") or not re.fullmatch(
             r"/(?:exchange/status|series/KXMLBGAME|markets|events/[A-Z0-9_-]+|"
-            r"markets/[A-Z0-9_-]+/orderbook)",
+            r"markets/[A-Z0-9_-]+/orderbook|markets/KXMLBGAME-[A-Z0-9_-]+)",
             path,
         ):
             raise ValueError("Kalshi endpoint is not allowed")
