@@ -1,6 +1,9 @@
 """Synthetic offline evidence. The autouse network guard remains active."""
 
 import hashlib
+import json
+import subprocess
+import sys
 from copy import deepcopy
 
 import pytest
@@ -98,6 +101,169 @@ def counts(store):
             "settlement_targets",
         )
     }
+
+
+@pytest.mark.parametrize("corrected", [True, False])
+def test_inspection_resumed_target_uses_observation_order(
+    runner, store, monkeypatch, evidence, corrected
+):
+    service, _ = runner
+    original = service.reader.get
+
+    def interrupt(run_id, stage, *args, **kwargs):
+        if stage == "settlement-market":
+            raise KeyboardInterrupt
+        return original(run_id, stage, *args, **kwargs)
+
+    monkeypatch.setattr(service.reader, "get", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        service.run(tickers=[TICKER])
+    a = store.db.execute("SELECT * FROM settlement_targets").fetchone()
+    assert a["market_fetch_id"] is None
+    monkeypatch.setattr(service.reader, "get", original)
+    service.run(tickers=[TICKER])  # B finishes before A retrieves its market.
+    if corrected:
+        evidence["market"].update(result="no", settlement_value_dollars="0.0000")
+    service.run(tickers=[TICKER], resume=a["run_id"])
+    resumed = store.db.execute("SELECT * FROM settlement_targets WHERE id=?", (a["id"],)).fetchone()
+    record = inspect(store)["records"][0]
+    raw = json.loads(journal.body(store.db, record["latest_evidence"]["market_fetch_id"]))
+    print({"latest_result": record["data"]["result"], "evidence_result": raw["market"]["result"]})
+    assert raw["market"]["result"] == record["data"]["result"]
+    assert record["latest_evidence"]["market_fetch_id"] == resumed["market_fetch_id"]
+    assert record["first_evidence"]["market_fetch_id"] == record["first_fetch_id"]
+    assert (record["first_fetch_id"] == resumed["market_fetch_id"]) is corrected
+    before = counts(store)
+    for _ in range(2):
+        assert replay(store)["status"] == "complete"
+        assert inspect(store)["records"][0] == record
+        assert counts(store) == before
+
+
+def test_inspection_a_b_a_history_and_repeated_observation(runner, store, evidence):
+    service, _ = runner
+    for result, payout in [
+        ("yes", "1.0000"),
+        ("no", "0.0000"),
+        ("yes", "1.0000"),
+        ("yes", "1.0000"),
+    ]:
+        evidence["market"].update(result=result, settlement_value_dollars=payout)
+        service.run(tickers=[TICKER])
+    records = inspect(store, history=True)["records"]
+    assert [r["data"]["result"] for r in records] == ["yes", "no", "yes"]
+    for record in records:
+        for name in ("first_evidence", "latest_evidence"):
+            proof = record[name]
+            market = json.loads(journal.body(store.db, proof["market_fetch_id"]))["market"]
+            assert market["result"] == record["data"]["result"]
+            assert proof["version_id"] == record["id"]
+    assert records[0]["first_fetch_id"] != records[0]["latest_evidence"]["market_fetch_id"]
+    assert records[0]["first_fetch_id"] != records[2]["first_fetch_id"]
+    before = counts(store)
+    for _ in range(2):
+        replay(store)
+        assert inspect(store, history=True)["records"] == records
+        assert counts(store) == before
+
+
+def test_inspection_separates_incomplete_result_and_mapping_evidence(
+    runner, store, evidence, monkeypatch
+):
+    service, _ = runner
+    service.run(tickers=[TICKER])
+    old = inspect(store)["records"][0]
+    evidence["market"].update(result="no", settlement_value_dollars="0.0000")
+    original = service.reader.get
+
+    def interrupt(run_id, stage, *args, **kwargs):
+        if stage == "settlement-event":
+            raise KeyboardInterrupt
+        return original(run_id, stage, *args, **kwargs)
+
+    monkeypatch.setattr(service.reader, "get", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        service.run(tickers=[TICKER])
+    record = inspect(store)["records"][0]
+    proof = record["latest_evidence"]
+    assert record["data"]["result"] == "no"
+    assert proof["status"] == "available" and proof["target_status"] == "incomplete"
+    assert proof["event_fetch_id"] is None and proof["schedule_fetch_id"] is None
+    assert record["latest_mapping"] == old["latest_mapping"]
+    assert record["latest_mlb_result"] == old["latest_mlb_result"]
+    mapping_proof = record["latest_mapping"]["latest_evidence"]
+    mlb_proof = record["latest_mlb_result"]["latest_evidence"]
+    assert mapping_proof["run_id"] == mlb_proof["run_id"] != proof["run_id"]
+    assert mapping_proof["market_fetch_id"] == old["latest_evidence"]["market_fetch_id"]
+    assert mlb_proof["schedule_fetch_id"] == mlb_proof["observation"]["fetch_id"]
+    # Inspection must not fill missing refresh fields from that independent mapping.
+    assert proof["mapping_version_id"] is None
+
+
+def test_inspection_missing_associations_are_explicit(runner, store):
+    runner[0].run(tickers=[TICKER])
+    original = inspect(store)["records"][0]
+    # Simulate an incomplete imported association in this disposable test archive.
+    with store.transaction():
+        store.db.execute("DELETE FROM settlement_targets")
+    record = inspect(store)["records"][0]
+    assert record["latest_evidence"]["status"] == "available"
+    assert record["latest_evidence"]["target_reason"] == "target_missing"
+    assert record["latest_evidence"]["market_fetch_id"] == original["first_fetch_id"]
+    assert record["latest_mapping"]["latest_evidence"]["target_status"] == "missing"
+    with store.transaction():
+        store.db.execute("DELETE FROM settlement_observations")
+    record = inspect(store)["records"][0]
+    assert record["first_evidence"]["reason"] == "observation_missing"
+    assert record["latest_evidence"]["market_fetch_id"] is None
+    assert record["latest_mlb_result"]["latest_evidence"]["status"] == "missing"
+
+
+def test_inspection_readonly_cli_without_mapping(runner, store, monkeypatch):
+    service, _ = runner
+    original = service.reader.get
+
+    def interrupt(run_id, stage, *args, **kwargs):
+        if stage == "settlement-event":
+            raise KeyboardInterrupt
+        return original(run_id, stage, *args, **kwargs)
+
+    monkeypatch.setattr(service.reader, "get", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        service.run(tickers=[TICKER])
+    before = counts(store)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "vader_intelligence.cli",
+            "--db",
+            str(store.path),
+            "settlement",
+            "inspect",
+            "--ticker",
+            TICKER,
+            "--history",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    output = json.loads(result.stdout)
+    assert output["evidence_version"] == 2
+    record = output["records"][0]
+    assert record["mapping_status"] == record["mlb_status"] == "missing"
+    assert record["latest_mapping"] is record["latest_mlb_result"] is None
+    assert record["latest_evidence"]["target_status"] == "incomplete"
+    assert counts(store) == before
+    # Even a present target must not supply context if its link no longer matches.
+    with store.transaction():
+        store.db.execute("UPDATE settlement_targets SET market_fetch_id=NULL")
+    record = inspect(store)["records"][0]
+    assert record["latest_evidence"]["target_reason"] == "target_association_missing"
+    assert record["latest_evidence"]["market_fetch_id"] == record["first_fetch_id"]
+    assert record["latest_evidence"]["terms_fetch_id"] is None
 
 
 def mapping(evidence, **kwargs):

@@ -200,7 +200,107 @@ class SettlementRefresh:
         return result
 
 
+def observation_evidence(db, version, *, first=False):
+    """Evidence for this exact revision, never a target's creation-order rank."""
+    observation = db.execute(
+        "SELECT o.fetch_id,o.parser_version,f.seq,f.retrieved_at,r.id AS request_id,"
+        "r.request_key,r.run_id,r.stage FROM settlement_observations o "
+        "JOIN fetches f ON f.id=o.fetch_id JOIN requests r ON r.id=f.request_id "
+        "WHERE o.version_id=? AND o.kind=? AND o.entity_key=? "
+        "AND (? IS NULL OR o.fetch_id=?) ORDER BY f.seq DESC,o.parser_version DESC LIMIT 1",
+        (
+            version["id"],
+            version["kind"],
+            version["entity_key"],
+            version["first_fetch_id"] if first else None,
+            version["first_fetch_id"] if first else None,
+        ),
+    ).fetchone()
+    result = {
+        "status": "missing",
+        "reason": "observation_missing",
+        "version_id": version["id"],
+        "observation": None,
+        "target_status": "missing",
+        "target_reason": "observation_missing",
+        "id": None,
+        "run_id": None,
+        "ticker": None,
+        "terms_fetch_id": None,
+        "market_fetch_id": None,
+        "event_fetch_id": None,
+        "schedule_fetch_id": None,
+        "mapping_version_id": None,
+        "state": None,
+    }
+    if observation is None:
+        return result
+    result.update(status="available", reason=None, observation=dict(observation))
+    # A result's direct market evidence is valid even if refresh context is missing.
+    if version["kind"] == "kalshi":
+        result["market_fetch_id"] = observation["fetch_id"]
+    target = db.execute(
+        "SELECT * FROM settlement_targets WHERE id=? AND run_id=?",
+        (observation["request_key"], observation["run_id"]),
+    ).fetchone()
+    if target is None:
+        result["target_reason"] = "target_missing"
+        return result
+    fetch_id = observation["fetch_id"]
+    associated = {
+        "kalshi": target["ticker"] == version["entity_key"]
+        and target["market_fetch_id"] == fetch_id
+        and observation["stage"] == "settlement-market",
+        "mapping": target["ticker"] == version["entity_key"]
+        and target["mapping_version_id"] == version["id"]
+        and (target["schedule_fetch_id"] or target["event_fetch_id"] or target["market_fetch_id"])
+        == fetch_id,
+        "mlb": target["schedule_fetch_id"] == fetch_id
+        and observation["stage"] == "settlement-schedule",
+    }[version["kind"]]
+    if not associated:
+        result["target_reason"] = "target_association_missing"
+        return result
+    result.update(dict(target))
+    missing = [
+        key
+        for key in ("terms_fetch_id", "market_fetch_id", "event_fetch_id", "schedule_fetch_id")
+        if target[key] is None
+    ]
+    result.update(
+        target_status="incomplete" if missing or target["state"] == "pending" else "available",
+        target_reason="refresh_incomplete" if missing or target["state"] == "pending" else None,
+        missing_fields=missing,
+    )
+    return result
+
+
+def version_view(db, version):
+    if version is None:
+        return None
+    return {
+        **json.loads(version["data_json"]),
+        "version_id": version["id"],
+        "first_fetch_id": version["first_fetch_id"],
+        "first_evidence": observation_evidence(db, version, first=True),
+        "latest_evidence": observation_evidence(db, version),
+    }
+
+
 def inspect(store, *, target=None, limit=20, history=False):
+    # Read-only CLI inspection may run alongside a writer. Keep all claims and
+    # their evidence in one SQLite snapshot, without acquiring the writer lock.
+    own_transaction = not store.db.in_transaction
+    if own_transaction:
+        store.db.execute("BEGIN")
+    try:
+        return inspect_snapshot(store, target=target, limit=limit, history=history)
+    finally:
+        if own_transaction:
+            store.db.execute("ROLLBACK")
+
+
+def inspect_snapshot(store, *, target=None, limit=20, history=False):
     require_schema(store)
     if not 1 <= limit <= 100:
         raise ValueError("inspection limit must be 1..100")
@@ -217,26 +317,14 @@ def inspect(store, *, target=None, limit=20, history=False):
         value = dict(row)
         value["data"] = json.loads(value.pop("data_json"))
         mapping = latest(store.db, "mapping", row["entity_key"])
-        value["latest_mapping"] = (
-            {"version_id": mapping["id"], **json.loads(mapping["data_json"])} if mapping else None
-        )
+        value["latest_mapping"] = version_view(store.db, mapping)
+        value["mapping_status"] = "available" if mapping else "missing"
         game_id = value["latest_mapping"].get("game_id") if mapping else None
         mlb = latest(store.db, "mlb", game_id) if game_id else None
-        value["latest_mlb_result"] = (
-            {
-                "version_id": mlb["id"],
-                "first_fetch_id": mlb["first_fetch_id"],
-                **json.loads(mlb["data_json"]),
-            }
-            if mlb
-            else None
-        )
-        value["latest_evidence"] = dict(
-            store.db.execute(
-                "SELECT * FROM settlement_targets WHERE ticker=? ORDER BY rowid DESC LIMIT 1",
-                (row["entity_key"],),
-            ).fetchone()
-        )
+        value["latest_mlb_result"] = version_view(store.db, mlb)
+        value["mlb_status"] = "available" if mlb else "missing"
+        value["first_evidence"] = observation_evidence(store.db, row, first=True)
+        value["latest_evidence"] = observation_evidence(store.db, row)
         value["observation_count"] = store.db.execute(
             "SELECT COUNT(*) FROM settlement_observations WHERE version_id=?", (row["id"],)
         ).fetchone()[0]
@@ -244,6 +332,7 @@ def inspect(store, *, target=None, limit=20, history=False):
     return {
         "status": "complete",
         "schema_version": 2,
+        "evidence_version": 2,
         "records": records,
         "limit": limit,
         "history": history,

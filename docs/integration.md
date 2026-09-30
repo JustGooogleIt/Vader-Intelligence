@@ -354,3 +354,165 @@ Published `feat/integration-v1` with implementation checkpoint
 The PR links the original settlement PR #2 and operations PR #3. Both original
 workstreams remain open and their branch heads unchanged. Repository visibility
 remains public, as requested. No production deployment was performed.
+
+## PR #4 independent-review correction — 2026-09-30
+
+This section is new verification after reviewed head
+`9d3d1ea2f167d5154dd6c67b3f47f2c7640fced7`; the earlier results above are historical
+and do not claim to have tested this correction. Forecast specification work was
+already checkpointed separately at `3c49998ac8356ec9c4d974292e2c4f8e03b92d82` on
+`docs/forecast-evaluation-spec`; none of it is included in this fix.
+
+### Reproduction and root cause
+
+The independent reviewer reported a P2 inspection-provenance defect. On this native
+macOS 26.6 arm64 host (Python 3.11.6), reconstructed the scenario from the existing
+synthetic settlement fixtures: A creates a target and is interrupted before market
+retrieval; B completes YES/$1; A resumes and retrieves corrected NO/$0. The referenced
+`pr4-resume-repro.py` was not found in the searched repository/attachment directories
+and was **not used**.
+
+With only the two parametrized regression tests added to the reviewed code, both
+failed. Correction case: `{'latest_result': 'no', 'evidence_result': 'yes'}`.
+Unchanged case: both labels were YES, but `latest_evidence.market_fetch_id` still
+pointed to B rather than A's later retrieval. This proves the problem is not merely
+a result-string mismatch. Provider timestamps were unchanged in the fixture.
+
+`settlement/service.py:inspect` selected the current semantic version correctly,
+but chose its evidence through `settlement_targets ORDER BY rowid DESC`. Target
+creation order is not retrieval order when earlier runs resume. Raw responses,
+versions and observation associations were intact; no data repair is needed.
+
+### Corrected evidence contract (inspection `evidence_version=2`)
+
+- Each displayed version now has `first_evidence`, selected by that version's
+  `first_fetch_id` **and its matching observation**, and `latest_evidence`, selected
+  among observations of that exact kind/entity/version by descending `fetches.seq`.
+  Parser version breaks ties within one retrieval. Provider timestamps are retained
+  as provenance, not used as an ordering substitute.
+- The latest observation of an old revision in `--history` stays within that revision.
+  An A→B→A semantic history does not collapse equal payouts across distinct revisions.
+  Repeated unchanged observations advance latest evidence while first evidence stays
+  fixed. Existing top-level `first_fetch_id`, `seq` and `retrieved_at` still describe
+  the version's first retrieval; latest retrieval time is inside `latest_evidence.observation`.
+- Refresh context is obtained from that observation's request key and run ID, with
+  exact target association checks: market fetch for Kalshi, mapping version plus
+  anchor fetch for mapping, schedule fetch for MLB. There is no fallback to another
+  target. Legacy target fields remain in each evidence object when associated.
+- `status=available` means the supporting observation exists; `target_status` separately
+  distinguishes `available`, `incomplete` and `missing`. Missing observation/target or
+  mismatching association has an explicit reason. A directly supported market fetch
+  can remain available even when refresh context is missing. Missing event/schedule
+  fields remain null, never filled from an unrelated refresh.
+- `latest_mapping` and `latest_mlb_result` are **independent latest context**, not
+  assertions about what the displayed Kalshi revision knew. Each now carries its own
+  first/latest evidence and run/retrieval identities. They may refer to another refresh
+  (or be missing). The top-level result evidence's `mapping_version_id` belongs to its
+  own target and is not an alias for the independently displayed latest mapping.
+- Inspection uses one read snapshot, including direct library use; the existing
+  read-only CLI snapshot remains supported. No archive writes, schema/migration,
+  normalization, mapping algorithm or provider interpretation changed.
+
+### Actual correction verification
+
+Commands ran from the isolated integration worktree using its existing environment:
+
+```sh
+# Before the fix, with just the new interleaving regression: 2 failed.
+.venv/bin/pytest -q -s tests/settlement/test_settlement.py -k inspection_resumed_target
+# After the fix, all focused inspection cases:
+.venv/bin/pytest -q -s tests/settlement/test_settlement.py -k inspection
+.venv/bin/ruff check src tests ops
+.venv/bin/ruff format --check src tests ops
+.venv/bin/pytest -q
+.venv/bin/uv build
+.venv/bin/uv pip install --python data/integration/wheel-env/bin/python \
+  --no-deps --reinstall dist/vader_intelligence-0.1.0-py3-none-any.whl
+.venv/bin/python tests/integration/wheel_smoke.py \
+  --python /Users/ashwin/Documents/github-repos/Vader-Intelligence-integration-v1/data/integration/wheel-env/bin/python
+.venv/bin/python tests/ops/mac_lifecycle_smoke.py
+git diff --check
+```
+
+The unchanged two-case regression now passes with NO/NO and YES/YES respectively,
+and asserts the **actual latest fetch identity**, not just matching strings. Six
+focused inspection tests pass: corrected/unchanged interleavings, A→B→A and repeated
+observations, repeated replay with unchanged inspection/counts, independent older
+mapping/MLB context during a newer interrupted refresh, missing associations, and a
+populated read-only CLI inspection with absent mapping. The last also checks mismatched
+target links do not supply unrelated context.
+
+Final combined native pytest: **197 passed, 10 subtests passed in 12.79 seconds**.
+This is an actual combined run, including the standalone operations test cases;
+counts were not assembled from older runs. Ruff lint and format pass (35 Python
+files). Source distribution and wheel build pass; freshly reinstalled wheel passes
+the isolated outside-checkout CLI smoke. No live provider reads were required for this
+inspection-only defect; all new settlement inputs are synthetic. Earlier live evidence
+above remains unchanged and is not presented as a new live validation.
+
+Ignored local evidence: `data/integration/pr4-provenance-before.txt`,
+`pr4-provenance-after.txt`, `pr4-combined-tests.txt`, `pr4-wheel-smoke.json`,
+`pr4-native-lifecycle.json` and `pr4-native-lifecycle.err`. No databases, logs,
+generated artifacts or synthetic checkout commits are published.
+
+### Full native lifecycle drill
+
+The earlier native smoke verified direct bootstrap/deadline/bootout after completion;
+it did **not** establish the full install/stop/restart path or active-child bootout.
+New opt-in `tests/ops/mac_lifecycle_smoke.py` fills that specific gap without altering
+production helpers or weakening preflight. It creates a standalone, clean Git checkout
+outside the OS temporary directory, with a private interpreter and a committed,
+explicitly synthetic CLI. Operations files are copied exactly from the implementation
+under test. No public collector is executed. Real preflight checks ancestry, clean
+tracked files, interpreter/import location, configuration, archive schema/integrity and
+real service inventory. A production/ambiguous conflict would stop installation.
+
+Actual run: **09:06:25.483997–09:06:38.557846 UTC**, 2026-09-30.
+Unique label: `com.vader.test.collection.6c35c1f02589ef7b3f07`.
+Disposable checkout's synthetic commit: `fd270909110922361efb2468e690d1722ff4abaa`
+(local test artifact only, removed with the checkout).
+
+- Real `configure` and `install` helpers passed with native launchctl and intact
+  preflight. Duplicate install rejected (exit 1); concurrent `run` rejected (exit 75).
+- Invoked real `stop` while the synthetic collector and descendant were active,
+  ignoring termination signals and retaining the collector writer lock. The helper
+  disabled/booted out the job; the wrapper killed the child group. Child exit −9,
+  wrapper interrupted exit 130. Stop plus group/lock checks took **1.171 seconds**,
+  well before the configured 60-second wrapper deadline.
+- Both PIDs and process group were absent afterward. A separate process acquired
+  both the operations-run and collector-writer locks, proving drain rather than
+  merely assuming it from launchctl output.
+- Real `restart` reran preflight/inventory and produced exactly one new invocation:
+  synthetic empty discovery, collector/wrapper exit 3, **0.313 seconds**. History and
+  independently recorded child invocations both showed exactly two total starts
+  (one stopped stubborn job and one restarted empty job), without duplicates.
+- Real `stop`/`uninstall` then removed this job's plist and registration. The archive
+  remained until deliberate disposal of the test-owned directory. The disposable
+  checkout, environment and data were removed; subsequent read-only inventory found
+  no collector job. Only resources created by this drill were altered.
+
+This tests genuine Mac lifecycle behavior with injected synthetic work, not a production
+deployment or a 24-hour run. On cleanup failure the drill retains its own directory
+and reports it for diagnosis rather than deleting files beneath a possibly active job.
+
+### Scoped review and remaining limits
+
+Applied `implement`, `code-review`, `data-systems-design`, `systems-programming`,
+Cool Coder **1.2.0**, pin `e46e79805be0ee5877fa9bc993492064bbb40aa5`.
+All 26 files in these installed folders matched the pin on read-only comparison;
+no shared skill or unrelated tooling changed. The requested correction is the
+authorization for this follow-up to I1; no forecast implementation is included.
+
+Reviewed the complete correction diff: bounded observation lookups, exact association
+checks, read-snapshot consistency (H-04/H-20/H-37), unchanged idempotent replay (H-14),
+process-group/lock drain and real helper paths (H-39/H-48), scoped cleanup and checked
+subprocess exits. No outstanding material issue found in this scoped review; the
+secondary reviewer must independently review the newly pushed head before merge.
+
+No schema change or production migration/service alteration. Existing source-hash
+resume checks still require identical code: upgrading does not silently authorize
+resuming a pre-upgrade unfinished run; retain its evidence and start a new refresh
+under the new code when appropriate. Read-only inspection works on existing schema-2
+archives. Production-size restoration, 24-hour endurance, real sleep/network outages
+and unresolved provider mapping cases remain limitations from the earlier integration.
+PR #4 stays draft; no merge or deployment is performed.
