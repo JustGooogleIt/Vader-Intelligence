@@ -6,6 +6,10 @@ PR #4 is independently under review. All proposed shared-interface changes below
 are provisional until that review is reconciled. This document and the
 [handoff](../handoffs/forecast-evaluation-spec.md) are the requested F3 planning
 artifacts; historical `plan.md` and `executor.md` remain unchanged.
+Revised from documentation commit `3c49998ac8356ec9c4d974292e2c4f8e03b92d82`
+to resolve the three specification review findings. Integration head
+`9a34420947f5722109186ff4897f0b1f6cb18f09` is under independent re-review;
+this documentation revision neither changes nor claims to revalidate it.
 
 ## 1. Scope and measured starting point
 
@@ -30,6 +34,7 @@ Grounding at the pinned commit (paths relative to repository root):
 | `migrations/001_initial.sql`: `fetches`, `blobs`, `entities`, `observations`, `eligibility`, `runs` | Raw IDs/bytes, retrieval times, sequence and parser versions exist. `retrieved_at` is HTTP completion, **not database commit time**. Sequence is allocated at request start. Normalized row IDs may be created later by replay. |
 | `normalize.py:book_data`, `normalizer` | Decimal prices; YES ask complements the best NO bid; complete levels and side states retained. Books reference `eligibility_id`. Missing/empty and crossed books are distinct. |
 | `scope.py:eligible`, `collector.py:record_eligibility` | Pregame identity evidence references schedule and event/market fetches. `mapping_version=1` is an algorithm label, not an immutable mapping revision. `scope.eligible` rejects reschedules and requires rule start equal to schedule start. |
+| `collector.py:Collector.run`, `pass_summary` | Discovery/eligibility and book requests currently interleave; completion is summarized at invocation end. F3 requires an immutable discovery-phase summary committed before any book request, independent of book success (§3). This is a future interface change, not existing behavior or a PR #4 edit. |
 | `mapping/__init__.py:rule_identity`, `resolve` | Reviewed aliases; game-number handling; explicit prior identity/reschedule links. `resolve` accepts non-pregame MLB states for settlement: it is **not** a forecast eligibility predicate. |
 | `settlement/journal.py:record`, `map_target`, `latest` | Append-only semantic versions, observation links and complete target evidence tuples. `latest`/`before_seq` is not a decision-time query: anchor sequence alone does not prove every supporting input was available then. |
 | `settlement/models.py:kalshi_result`, `mlb_result` | Independent outcomes. Finalized binary labels require matching exact payout and valid timestamp, with no flags. `is_provisional` does not mean disputed settlement in the verified interpretation. |
@@ -56,20 +61,23 @@ health, locks and restored archives. F3 must retain those behaviors.
 | `book_max_age_seconds` | 300, inclusive at cutoff |
 | `schedule_max_age_seconds` | 300, inclusive at cutoff; separate from the collector's existing stricter 120-second request guard |
 | `market_max_age_seconds` | 300 for event/market status and current rules evidence |
-| `record_grace_seconds` | 150 after cutoff; labels record delay explicitly |
+| `record_grace_seconds` | 150 after cutoff for witnessed operational publication; record actual delay separately from cutoff eligibility |
 | `log_epsilon` | Exact string `0.000001`; evaluation configuration, not a probability edit |
 | `max_games` / `max_contracts` | 100 / 200 per invocation; exceed either => explicit incomplete manifest, never truncate silently |
 | `budget_seconds` | 15 for one offline tick; 30 for evaluation, including database work |
 
-300 seconds permits two nominal 120-second cycles plus 60 seconds of slippage.
-It tolerates a single missed cycle, not an outage. A 120-second threshold would
-reject otherwise expected books when game requests shift within successive passes;
-600 seconds would admit five-cycle-old information without measured justification.
-The choice is a research policy, not proof that a five-minute-old market is current.
-Persist ages and report their distribution. Changing freshness or grace creates
-a new protocol/configuration cohort; do not optimize thresholds on reported results.
-Accept configurable positive freshness up to 600 seconds and grace up to 180 seconds
-for explicitly different protocols; reject zero, negative, nonfinite or unknown settings.
+Keep 300 seconds as the maximum research age, not a collection-service guarantee.
+It does **not generally tolerate one missed cycle**: cutoff offset, collection
+duration and the next tick's visibility receipt can leave the newest qualifying
+book older than 300 seconds. The 120-second cadence alone cannot bound that age.
+Retain tick-before-collection ordering and accept `book_stale` when this happens.
+No extra witnessing phase or enlarged freshness window is part of v1.
+The choice does not prove that a five-minute-old market is current. Persist retrieval
+age and witnessing delay separately. Freshness remains a versioned configuration
+value fixed at 300 seconds for this v1 cohort; do not change it to improve observed
+coverage. A future protocol change needs demonstrated need and separate review,
+not automatic tuning. Reject invalid/nonfinite settings and configuration drift
+within the cohort. Publication grace remains 150 seconds, independent of input age.
 
 ### Three clocks, plus evidence of visibility
 
@@ -86,17 +94,21 @@ entity ID, a provider timestamp or a raw-body hash. A request started before C a
 completed after C is ineligible, even if its source timestamp predates C.
 
 Propose a small append-only **visibility receipt** table (§6). After a read transaction
-has read a previously committed fetch/binding/decision or completed discovery-run
-summary, sample real UTC and monotonic
+has read a previously committed fetch/binding/publication record or immutable
+discovery-phase summary, sample real UTC and monotonic
 time and append a receipt with that observed time and subject digest. That time is
 a conservative upper bound on availability, not an invented exact commit timestamp.
 The read and observation precede receipt insertion. Never write a pre-commit timestamp
 and call it committed. No user-supplied wall time is allowed in live commands.
 Receipts use a local session ID and clock checks, and cannot be imported as live proof.
 
-`forecast tick` witnesses completed retrievals, prepares bindings, then witnesses
-the committed bindings. Future ticks freeze due decisions using only receipts whose
-observation times are <= C. This is all local: no network call inside any transaction.
+`forecast tick` witnesses completed retrievals and discovery-phase summaries from
+prior collection passes, prepares bindings, and witnesses committed bindings within
+that tick. It still runs **before** the next collection pass; do not add a post-book
+or mid-collection witnessing phase. Future ticks compute cutoff decisions using only
+receipts whose observation times are <= C. This is all local: no network call inside
+any transaction. Persisting the discovery summary before books is not itself a receipt;
+the existing next tick observes it, even if that pass's book stage failed or is incomplete.
 Receipt insertion can happen after C only when the actual observation occurred before
 C within that same uninterrupted live invocation; never reconstruct that observation
 time from HTTP metadata. A crash before saving the receipt loses proof, not evidence;
@@ -127,7 +139,9 @@ reuse an older row. An unrelated date query does not erase it.
    pregame status, and unambiguous official evidence; record superseded bindings.
 2. A new earlier C already in the past is `schedule_revision_missed_cutoff`. Do not
    generate an on-time forecast for it. A first-discovered game whose C already
-   passed is likewise `first_seen_after_cutoff`.
+   passed is likewise `first_seen_after_cutoff`. Here first discovery means actual
+   evidence availability, not the later invocation that reads it: a late invocation
+   with an already witnessed pre-C binding does not acquire this exclusion.
 3. The **first reached C is sticky**, whether that invocation succeeded, abstained
    or was missed. A later start change does not create a second forecast opportunity
    for that game/horizon/protocol. Historical simulation follows this same state
@@ -140,50 +154,137 @@ reuse an older row. An unrelated date query does not erase it.
    flags can update a prepared binding under rule 1, but a book collected under a
    different start version cannot be reused. Current collector restrictions may mean
    there is no qualifying book; report that gap rather than broadening collection.
-6. If a forecast already exists when a game is delayed/postponed/rescheduled, retain
-   its original T and C. Report schedule drift separately. If identity is still the
-   same and that exact contract finalizes binary, keep it in the original scoring
-   cohort; do not remove a losing game because it was postponed. A cancellation or
+6. When a game is delayed/postponed/rescheduled after C, retain its original T, C and
+   cutoff-defined research population even if publication never occurred. Report
+   drift separately. If identity is still the same and that exact contract finalizes
+   binary, it can be scored in the cutoff-reconstruction view; actual forward scoring
+   additionally requires successful publication (§5). Do not remove a game from the
+   research population because it was postponed. A cancellation or
    postponement alone never creates a Kalshi outcome. Replaced/ambiguous identity
    prevents scoring, with an explicit outcome-join exclusion.
 
-### Recording and modes
+### Three independent decisions: cutoff, publication, settlement
 
-`forward_shadow`: live command with system timestamps, pre-C witnessed bindings and
-inputs, and durable forecast publication witnessed in `[C, C+150 seconds]` and
-strictly before T. Record both insertion time and the post-commit publication receipt;
-report `record_delay_seconds`. This is a T−60 **information** forecast recorded with
-bounded delay, not a claim of execution exactly at T−60. Earliest invocation before C
-only prepares: it does not substitute an early forecast for the specified horizon.
+1. **Cutoff information:** freeze common eligibility, per-baseline abstention reasons
+   and probabilities using only qualifying evidence available by C. This is a pure
+   function of that evidence and the protocol, independent of when computation or
+   publication is attempted. Recording a cutoff decision later does not backdate its
+   creation time. No post-C status, warning, invocation delay or publication failure
+   may alter these fields or remove a game from the cutoff-defined population.
+2. **Operational publication:** record actual attempt time, durable publication
+   receipt/time, delay, status, and any veto with its own evidence references. A
+   post-C postponement, cancellation, start or identity warning may veto publication,
+   but cannot change cutoff eligibility, abstention reasons or frozen probabilities.
+3. **Settlement:** later outcome joins determine whether the selected contract has
+   an eligible final binary label. Scoring exclusions belong here (§5), not in either
+   earlier decision. An identity warning may later clear or remain an outcome-join
+   exclusion; neither case edits the research population or its probabilities.
 
-At C+150 precisely, timely publication is allowed; after it, record
-`late_recording` abstention. The check is repeated after commit via the publication
-receipt. If computation/commit crosses the boundary, retain the attempted probability
-but exclude it as `late_publication`. A crash after decision commit but before receipt
-leaves `publication_unconfirmed`; a later receipt cannot backdate it. Such attempts
-are not successful forward-shadow forecasts. Latest evidence already available at
-record time that the game started/cancelled/changed identity is an operational veto
-(`record_time_veto`) with separate post-C references; it never improves the probability.
-No proof of actual first pitch is claimed from a Preview status alone.
+`forward_shadow` is an execution/cohort mode, **not a success flag**. Only a live
+attempt with system timestamps and durable publication witnessed in `[C,C+150s]`,
+strictly before the known T, and no operational veto counts as `published_timely`.
+Store decision insertion time separately from publication time. Publication here means
+explicitly releasing the immutable baseline result pair in the local research ledger;
+merely computing/storing a cutoff decision is not publication. A pair may contain a
+midpoint abstention; publication does not turn that abstention into a probability.
+Before C a tick only prepares; it cannot publish an early substitute for T−60.
 
-`historical_reconstruction`: explicit archive-only command, actual creation time now,
-specified archived source ceiling and configuration. Replays the schedule/selection
-policy from pre-cutoff information. Post-cutoff mapping cannot repair earlier forecast
-eligibility. Strict and availability-unproven diagnostic reconstructions are separated.
-Never call either forward-shadow, including reconstructions recorded before the event
-but beyond the recording grace. Do not silently change an existing forward attempt's mode.
+At C+150 exactly, timely publication is allowed. After that, publication is `missed`
+(reason `late_invocation`), not an information abstention. If an allowed attempt's
+commit/receipt crosses the boundary, it is `late_publication`; if no receipt survives,
+`publication_unconfirmed`. Operational vetoes are `vetoed` with reason and post-C
+evidence (including observation/availability time); write failures are `failed` where
+failure evidence exists. No attempt is `not_attempted`, not implicitly successful.
+These statuses leave cutoff probabilities intact. Latest already available operational
+evidence is checked immediately before the allowed publication record is committed;
+no additional HTTP request or witnessing phase is added. Unknown warnings not yet
+observed cannot be acted on, and Preview alone is not proof of actual first pitch.
+Successful publication is not retroactively revoked by a later warning; append the
+warning/settlement evidence. A retry returns the original publication outcome and
+cannot choose a more favorable time or publish a replacement after a veto (§6).
+
+`historical_reconstruction`: explicit archive-only command with actual creation time,
+archived source ceiling and configuration. Recompute the schedule/selection policy
+from qualifying pre-C evidence, **ignoring actual invocation/publication timing and
+post-C vetoes for information eligibility**. A genuinely missing pre-C binding or
+availability proof remains missing; a later mapping cannot repair it. Publication status
+is `not_applicable` for these research reconstructions. Separate strict qualifying
+results from availability-unproven diagnostics. No reconstruction, unpublished decision,
+late attempt or veto is relabeled as a successful forward forecast. A separate
+reconstruction can reference a failed forward opportunity without rewriting its mode.
 
 `synthetic`: any forecast with fixture/imported synthetic evidence, or injected clocks.
 Fixture lineage is transitive through bindings and receipts, checked using source run
 kind as well as declared mode. Mixed live/fixture evidence stays synthetic. Modes and
-protocol hashes are never pooled in default evaluations.
+protocol hashes are never pooled in evaluations. Synthetic tests may simulate either
+view but must retain synthetic provenance in both.
 
 Clock check: within a process compare UTC elapsed with monotonic elapsed; >2 seconds
 disagreement, negative input ages or receipt-time regression => `clock_untrusted`.
 Across restarts detect regressions against prior receipts; do not claim this detects
 all clock skew. Trust in the Mac's synchronized clock is an explicit residual risk.
+Untrusted pre-C input timestamps affect cutoff-information eligibility; a clock failure
+only during later publication affects publication status, not the frozen cutoff facts.
 
 ## 3. Candidate universe and deterministic contract identity
+
+### Future collector phase boundary (required, not implemented)
+
+Refactor a bounded collection pass into discovery/identity/eligibility followed by
+books. This is necessary because the reference collector interleaves them, and a
+book exception can prevent later candidates from being checked. Do not treat its
+existing end-of-run `summary_json` as the proposed independent discovery fact.
+
+1. Using the existing HTTP bounds and pass deadline, finish allowed-family pagination,
+   series/terms, event membership and official schedule reads. Classify every discovered
+   candidate for identity/scope/pregame eligibility, without requesting any book.
+   Use existing configured page/market limits, further bounded by the research caps;
+   do not raise limits as part of this separation. No network call is inside a write
+   transaction. Phase failure or cap exhaustion is explicitly incomplete.
+2. Before the first book request, atomically persist one immutable `discovery_passes`
+   summary for this invocation/session. It contains:
+   - `pass_id`, `run_id`, session identity, phase start/completion times, summary schema
+     version, collector/parser/mapping policy versions, code/config hashes and digest;
+   - exact series/document/event/schedule retrieval IDs and raw hashes, candidate
+     market source IDs and ordered pagination attempts/checkpoints/cursor chain;
+   - requested family/date window, page count, terminal-cursor evidence, configured
+     caps, truncation/cursor-loop/failure reasons, and `pages_complete`;
+   - candidate contract/event counts, deduplicated ticker list, observed official-game
+     IDs/count, unmatched events/games, plus the complete candidate membership manifest;
+   - `eligibility_after_id` exclusive and `eligibility_through_id` inclusive, filtered
+     by run/pass, exact eligibility-row IDs and their source tuples, checked candidate
+     count, eligible contract/game counts, all exclusions/ambiguities and reason counts;
+   - `eligibility_complete` (every enumerated candidate has a decision) and `complete`
+     (exhaustive unambiguous membership, all required sources and decisions present).
+   Counts must reconcile with the manifest. Membership ambiguity/missing sources fail
+   the affected discovery scope closed. A fully enumerated but identity-ambiguous
+   candidate can have an explicit completed exclusion; it is never eligible merely
+   because the phase finished. Empty complete discovery is distinct from unknown scope.
+3. Only a complete committed phase enables its eligible candidates' book stage.
+   Before each book attempt preserve the existing fresh-schedule/status and T−2
+   guards; append any renewed book-specific eligibility proof separately. These
+   checks can stop a book without changing the earlier phase summary or its row range.
+   Book errors, deadline exhaustion and overall `runs.status='partial'` are independent
+   book/pass outcomes, not updates to discovery completeness.
+4. The existing **next pre-collection forecast tick** reads the committed summary and
+   appends its availability receipt, linking `pass_id` and digest with actual observed
+   UTC/session/clock evidence. This is not a new witnessing phase. Completion time
+   alone is not availability proof. Require that receipt and supporting input receipts
+   by C; if too late or stale, abstain. No requirement that the book stage or whole run
+   has completed successfully. The latest applicable incomplete discovery summary
+   fails closed; do not skip it in favor of an older complete one.
+
+On interruption before a summary commits, no complete discovery fact exists; retain
+raw/checkpoints and surface the missing phase. A discovery fetch witnessed before C
+whose pass has no committed summary establishes incomplete discovery for its scope;
+do not fall back to an older complete pass. A merely post-C attempt cannot invalidate
+a pre-C phase. A resumed invocation gets a new pass ID
+and fresh discovery, without rewriting a prior complete or incomplete summary.
+Order summaries by their witnessed ingestion/phase sequence, not mutable run finish
+time. Unique pass IDs and immutable digests make retries idempotent. Schema 1/2 paths
+retain their existing behavior; this new interface is explicitly enabled on schema 3.
+
+### Population and contract selection
 
 The ledger is built from **all archived official scheduled MLB games in the requested
 original-date range** plus all discovered allowed-family contract/event candidates,
@@ -192,16 +293,16 @@ in the run's immutable provenance manifest; do not start from games with success
 books or finalized outcomes. Surface unmatched official games as `no_contract_known`,
 and unmatched event candidates separately when no reliable game count exists.
 
-For each game at its C, use the most recent complete, pre-C witnessed discovery/event
-evidence covering it (status/rules age <=300 seconds). If discovery is partial, capped,
+For each game at its C, use the most recent pre-C witnessed discovery-phase summary
+covering it, requiring completeness and fresh event evidence (status/rules age <=300
+seconds). If that discovery is partial, capped, ambiguous,
 missing or too old, label `universe_incomplete` and abstain for affected games.
 Still list every observed candidate. No archive proves the count of contracts/games
 it never saw: report `unseen_candidate_count=unknown`, date coverage and collection gaps,
-not 100% market coverage. Complete discovery also needs a pre-C receipt of the
-completed run summary and its exact eligibility/page boundaries. Snapshot that
-summary in the receipt because resumed runs can later mutate `runs.summary_json`;
-a later successful completion cannot prove an earlier complete universe. A later
-audit may append newly noticed missed candidates,
+not 100% market coverage. Use the immutable phase summary and receipt above, not
+mutable `runs.summary_json` or successful book completion. A later successful
+completion cannot prove an earlier complete universe. A later audit may append
+newly noticed missed candidates,
 but cannot modify the original denominator or supply a forecast.
 
 The scoring unit is `(MLB gamePk, horizon=3600, protocol/config cohort, run mode,
@@ -219,8 +320,9 @@ before reading book prices, sizes, forecast success or outcomes:
    duplicate tickers for the selected team, choose bytewise smallest ticker and log
    alternatives. If the lower-ID team's contract is missing, abstain; do not fall back
    to the other team's available book.
-4. Validate open status, notional, rules and book only after selection. A closed or
-   unusable selected contract causes abstention, not a switch to a favorable listing.
+4. Validate open status, notional and rules only after selection; failures affect both
+   baselines. Validate the book additionally for midpoint only. Book failure cannot
+   invalidate constant eligibility or switch selection to a favorable listing.
    Other contracts have disposition `opposing_contract` or `alternate_listing`.
 
 The selected probability means **that contract's YES**. Do not average opposing
@@ -240,9 +342,12 @@ turn an identity abstention into a forecast or choose a different selected contr
 
 ## 4. Probability and abstention policy
 
-Apply common identity, schedule, universe, mode and timeliness checks to both
-baselines. Constant emits exact `0.5` when those checks pass, regardless of book
-availability; midpoint additionally requires the following book checks.
+Apply common **cutoff-information** identity, schedule, universe, source-mode and
+availability checks to both baselines. Invocation time, publication status and later
+vetoes are not common eligibility checks. Constant emits exact `0.5` when the common
+checks pass, regardless of book success or whole-run status. Midpoint additionally
+requires the following book inputs. Later publication/settlement fields never erase
+either baseline's stored cutoff probability.
 
 Select the **latest attempted completed book retrieval** for the chosen ticker
 received and witnessed by C, ordered by retrieval time then `fetches.seq`.
@@ -274,8 +379,9 @@ bid-only estimates or sizes as probabilities. No extra spread/liquidity threshol
 is introduced; such thresholds would alter coverage and require another protocol.
 
 Persist all applicable reasons, with the first applicable stage as the primary
-reason: provenance/clock → universe → identity → schedule/pregame → recording →
-book. Within a stage use a versioned fixed reason order, not dictionary iteration.
+cutoff reason: pre-C provenance/clock → universe → identity → schedule/pregame →
+book. Publication delays/vetoes and settlement exclusions have separate reason lists,
+not entries in this order. Within a stage use a versioned fixed reason order, not dictionary iteration.
 Book reasons include `book_missing`, `book_fetch_failed`, `book_truncated`,
 `book_parse_error`, `book_stale`, `book_side_missing`, `book_side_null`,
 `book_side_empty`, `book_no_positive_quantity`, `book_invalid_price_or_quantity`,
@@ -333,35 +439,77 @@ For p in [0,1]:
   and evaluator version; reproducibility tolerance for recomputed log scores is
   1e−30 under the recorded arithmetic contract, not a claim of portable binary floats.
 
-Compute primary metrics on the **same paired sample**: games where both baselines
-have valid forecasts under the same protocol/mode and a scorable binary outcome.
-Report mean per-game `midpoint_score − constant_score` for both metrics (negative
-favors midpoint), N and per-game differences. Each game has weight 1. Report broader
-constant-only results separately, with their different N and exclusions; never compare
-that mean directly to the smaller midpoint mean.
+### Two evaluation views; never pool them
 
-Every report must include immutable cohort/forecast IDs and outcome-manifest digest;
-mode, protocol/config/evaluator/code versions; original-date range; observed official
-games; identity-resolved games; unresolved event groups (not guessed games); all
-candidate contracts with dispositions; discovery gaps and completeness; common
-eligible games; emitted/abstained counts per baseline and reason; timely/late/unconfirmed
-publication counts; paired forecast count; paired binary-scored N; pending and excluded
-outcomes; scalar/fractional counts; later mapping/schedule changes; clipping count;
-age and record-delay distributions; runtime and cost.
+**`cutoff-reconstruction` — cutoff-based historical reconstruction.** Recompute from
+qualifying pre-C evidence under a fixed protocol. Probability/abstention and inclusion
+in the cutoff-defined population do not depend on actual invocation time, publication
+success or post-C vetoes. Require eligible final settlement before scoring. Label every
+score as reconstruction, even if a corresponding forward opportunity exists; neither
+copying nor recomputing a cutoff result proves publication. Publication metadata may be
+shown as an annotation, but is not a filter for this view.
 
-Ratios: forecast coverage = valid forecasts / observed game opportunities; paired
-coverage = both valid / observed game opportunities; outcome coverage = paired binary
-N / both valid. Display numerators/denominators; zero denominator => null. Also show
-conditional coverage among common-eligible games, clearly named. Unresolved events
-and unknown unseen counts sit alongside those ratios rather than disappearing.
-Finalized-game survival is not the candidate denominator. A report with no paired
-binary outcomes is `inconclusive`, even if scores exist for synthetic fixtures.
+**`forward-shadow` — actual forward performance.** Same cutoff-defined opportunity
+population and information requirements, plus evidence that a probability was actually
+published timely without a veto. Score only those published probabilities with eligible
+final settlements. Include every missed, failed, vetoed, late and unconfirmed opportunity
+in the population and coverage report. Do not impute scores to these failures or move
+them to information abstentions. Successful publication with a midpoint abstention counts
+as a published constant only, not a published midpoint. A later warning cannot revoke a
+successful earlier publication to improve scores. Settlement exclusions still apply.
+
+Each evaluation freezes `view`, compatible record mode, protocol, population and
+outcome evidence. Reject mixed-mode/view manifests, rather than silently pooling or
+dropping incompatible rows. A reconstruction for a failed forward opportunity is a
+separate, labeled record/evaluation; the failed forward record remains failed. Synthetic
+evaluations name the simulated view and always show `source_mode=synthetic`.
+
+Within **each** view, paired metrics use the same games for constant and midpoint:
+both meet that view's forecast requirements and have a scorable binary outcome.
+Report mean per-game `midpoint_score − constant_score` (negative favors midpoint), N
+and per-game differences, weight 1/game. Report broader constant-only results separately,
+with their N/exclusions. Never compare that mean to a smaller midpoint sample as a paired
+result, nor compare the views' potentially different samples as publication-independent
+accuracy. No publication or settlement filter changes the original population manifest.
+
+Coverage definitions (numerators/denominators mandatory, zero denominator => null):
+
+| Quantity | Definition |
+|---|---|
+| `U` | Observed game opportunities in the pre-cutoff population, including information exclusions; no filtering by publication or settlement |
+| `E` | Common cutoff-information eligible games (independent of books) |
+| `K`, `M`, `P` | Cutoff-valid constant, midpoint, and paired counts respectively; K=E; P is their intersection |
+| Cutoff coverage | K/U, M/U, P/U, plus clearly labeled conditional ratios K/E and M/E |
+| `FK`, `FM`, `FP` | Actual timely published constant, midpoint and paired counts; forward view only, each a subset of the corresponding cutoff-valid count |
+| Publication coverage | FK/K, FM/M, FP/P and unconditional FK/U, FM/U, FP/U; show veto/failed/missed/late/unconfirmed/not-attempted counts and all reasons separately |
+| Binary outcome coverage | Reconstruction: paired scored N/P. Forward: paired scored N/FP. Also show settlement eligibility/pending/exclusions for the full cutoff-valid P so publication filters cannot hide them |
+
+Persist one primary information reason, one primary publication status (plus all veto
+flags), and one primary settlement disposition per opportunity. These are orthogonal
+counts, not one combined exclusion funnel. Every report also includes immutable
+population/decision IDs and outcome-manifest digest; view/mode, config/evaluator/code
+versions; date range; unresolved event groups (not guessed games); all candidate
+contracts/dispositions; immutable discovery-phase IDs, completeness, gaps and unknown
+unseen counts; binary/exceptional/pending counts; later mapping/schedule changes;
+clipping count; retrieval ages, witness delays, publication delays; runtime/cost.
+An unattempted opportunity absent from the decision table is still counted from the
+frozen population manifest, never silently dropped by an inner join.
+For unattempted opportunities, derive E/K/M/P as explicitly labeled cutoff-policy
+reconstruction annotations from that manifest. These annotations do not insert a
+successful forward decision, supply a forward probability or enter forward scores;
+FK/FM/FP still require actual publication evidence. Keep any scored reconstruction
+in its own view and compatible record mode.
+
+Finalized-game survival and publication success are not candidate denominators.
+N=0 is `inconclusive` for that view's paired scores; it does not imply U=0 or erase
+coverage failures. An unresolved final identity or exceptional payout may exclude
+scoring in both views, but cannot remove that opportunity or rewrite its probability.
 
 Later settlement corrections append new evaluation runs with `supersedes_id`, the
 same immutable forecast cohort, new outcome IDs and an explicit reason. Preserve
 original forecasts and earlier reports. A→B→A retains three evaluation versions even
 when A's payout reappears. Ordinary repeat evaluation with identical manifests,
-as-of boundary, versions and config returns the existing evaluation. An observation
+as-of boundary, view, versions and config returns the existing evaluation. An observation
 with different retrieval identity changes the evidence manifest, even if the payout
 does not change. Select latest outcome evidence, never the best-performing revision.
 
@@ -373,19 +521,24 @@ baselines, and local compute cost is `unmeasured`, not falsely zero dollars.
 ## 6. Minimal additive persistence and invariants
 
 Recommend explicit migration **003_forecast_evaluation.sql**, reserving schema 3
-subject to integration review. Preserve all schema-1/2 tables and bytes. Five new
-tables suffice; reuse `runs` for bounded execution/provenance. Proposed names below
+subject to integration review. Preserve all schema-1/2 tables and bytes. Seven new
+tables suffice; reuse `runs` for bounded execution/provenance. The two additions to
+the initial spec are the independent discovery summary and publication outcome;
+they separate facts with different completion times rather than adding a workflow
+engine. Proposed names below
 are interfaces to implement, not existing SQL. IDs use INTEGER primary keys except
 existing run/fetch UUID references. All JSON is canonical (`json_text`), versioned,
 bounded and included in a content digest. Foreign keys use restrictive deletion.
 
 | Table | Required record fields and constraints |
 |---|---|
-| `forecast_receipts` | id; subject kind (`fetch`, `binding`, `decision`, `discovery_run`); exactly one typed subject FK to `fetches.id`, `forecast_bindings.id`, `forecast_decisions.id`, or `runs.id`; subject digest; observed UTC; session ID; monotonic offset; observer code version; source mode; clock status; observing run FK. Snapshot payload for mutable discovery-run summaries. Unique subject + digest + observer namespace; first receipt for that content immutable. CHECK exactly one correctly typed subject FK; never accept arbitrary polymorphic strings without FK validation. |
+| `discovery_passes` | id/phase sequence, unique `(run_id, session_id)`, run FK, created/completed times, summary schema/code/config versions, immutable §3 manifest/counts/source references/eligibility bounds/completion flags/reasons and digest. No book-success or whole-run-success prerequisite. No UPDATE on resume. |
+| `forecast_receipts` | id; subject kind (`fetch`, `binding`, `publication`, `discovery_pass`); exactly one typed subject FK to `fetches.id`, `forecast_bindings.id`, `forecast_publications.id`, or `discovery_passes.id`; subject digest; observed UTC; session ID; monotonic offset; observer code version; source mode; clock status; observing run FK. Unique subject + digest + observer namespace; first receipt for that content immutable. CHECK exactly one correctly typed subject FK; never use mutable whole-run summaries as discovery proof. |
 | `forecast_bindings` | id, candidate key, revision, previous binding FK, created_at, run FK, policy/code/config hash, payload digest; nullable gamePk, event/selected ticker, team IDs, original date/start/game number, scheduled T and proposed C, status/reasons; evidence manifest JSON with typed source IDs, terms digest, eligibility/settlement mapping IDs if used and all prior dependencies. UNIQUE(candidate_key, policy/config, source-mode namespace, revision); unchanged semantic/evidence tuple returns existing binding. |
-| `forecast_decisions` | id, scoring-unit idempotency key UNIQUE; run FK; mode/dataset/protocol; gamePk nullable for unresolved event groups; selected ticker/YES team nullable; horizon, T, C; created_at; binding FK; selection/code/config/baseline versions; frozen candidate/input manifest and hash; two baseline results (name, probability string or null, ordered abstention reasons, exact arithmetic inputs); supersedes FK for diagnostic corrections only. |
-| `evaluation_runs` | id, idempotency digest UNIQUE, run FK, supersedes FK, created_at, outcomes_as_of, evaluator/runtime/config/code versions, immutable ordered forecast/cohort manifest, source ceiling, outcome manifest/digest, status and complete report JSON. No completed-report UPDATE. |
-| `evaluation_items` | evaluation FK + decision FK composite PK; gamePk; outcome disposition/reasons; mapping/MLB/Kalshi version and observation references; exact payout/y nullable; two unrounded score strings or null, clipping indicators, paired deltas. UNIQUE(evaluation_id, gamePk, horizon) for resolved scoring units; no duplicate game via multiple candidate keys. |
+| `forecast_decisions` | id, scoring-unit idempotency key UNIQUE; run FK; mode/dataset/protocol; gamePk nullable for unresolved event groups; selected ticker/YES team nullable; horizon, T, C; actual created_at; binding and discovery-pass FKs; selection/code/config/baseline versions; frozen candidate/input manifest and hash; common `cutoff_eligible`/reasons; two baseline results (name, cutoff probability string or null, cutoff abstention reasons, exact arithmetic inputs); supersedes FK for diagnostic corrections only. No publication/outcome facts in information eligibility. |
+| `forecast_publications` | id, decision FK UNIQUE for the single logical primary publication, run FK, actual attempt/created times, decision digest, verdict (`allowed`, `vetoed`, `missed`, `failed`), publication-policy version, operational reasons and evidence references/observed times (post-C allowed). Append-only. Only `allowed` plus a timely post-commit receipt qualifies as `published_timely`; otherwise derive `late_publication` or `publication_unconfirmed`. No row means `not_attempted`; reconstruction is `not_applicable`. Probability values remain solely in the referenced immutable decision. |
+| `evaluation_runs` | id, idempotency digest UNIQUE, run FK, supersedes FK, created_at, outcomes_as_of, **view** and compatible source mode, evaluator/runtime/config/code versions, immutable ordered population/decision manifest (including unattempted opportunities), source ceiling, separate publication and outcome manifests/digests, status and complete report JSON. No completed-report UPDATE. |
+| `evaluation_items` | evaluation FK + opportunity key composite PK; nullable decision FK for unattempted opportunities, gamePk; separate cutoff status/reasons, publication status/reasons/record+receipt references, and outcome disposition/reasons; mapping/MLB/Kalshi references; exact payout/y nullable; view-appropriate score strings or null, clipping indicators, paired deltas. UNIQUE(evaluation_id, gamePk, horizon) for resolved scoring units; no duplicate game via multiple candidate keys. |
 
 Each JSON evidence reference also carries table/kind/parser version, fetch UUID/seq,
 raw SHA-256, retrieved_at, receipt ID/availability bound and relevant entry digest.
@@ -398,7 +551,8 @@ settlement mapping revision. Avoid interpreting `Eligibility.mapping_version` as
 
 The decision result JSON is a fixed pair, not an extensible agent framework; validate
 exactly `constant-v1` and `midpoint-v1`, no duplicate names, decimal/null probabilities
-and reason/probability consistency. This avoids redundant game identity rows while
+and cutoff-reason/probability consistency. Publication veto or late recording cannot
+make a non-null cutoff probability invalid or null. This avoids redundant game identity rows while
 retaining every requested forecast field. Store the run provenance's prompt/provider/
 model/settings as null, not fabricated model calls. Source hash and installed package
 version are authoritative code identities; optional Git SHA is supplementary.
@@ -410,16 +564,27 @@ create another forecast. A historical reconstruction campaign has an explicit fi
 dataset namespace and source ceiling, set before selection. Config changes require
 a new protocol cohort, visibly separate; default reports never combine them.
 
-Completed decisions, receipts, bindings and evaluations are append-only (reject
+Discovery summaries, decisions, publication records, receipts, bindings and evaluations
+are append-only (reject
 UPDATE/DELETE with SQL triggers). Retry conflict returns existing immutable result;
 same key with differing payload is an idempotency conflict, not replacement.
+One primary publication record per decision prevents retries from selecting a later,
+more favorable operational state. An `allowed` record without a receipt can be witnessed
+on retry at the **actual** later time; no backdating or replacement verdict. Additional
+warning evidence remains in the raw archive and separate settlement/publication report
+annotations, not an UPDATE or a second primary publication. A failure before the primary
+record commits is `not_attempted`/unknown in the ledger unless run diagnostics prove
+failure; diagnostics cannot prove publication. Reconstruction creates no publication
+record. Evaluation idempotency includes view and all three evidence manifests.
 Diagnostic forecast correction appends under a distinct correction namespace with
-`supersedes_id`; default reports continue using the original published decisions.
+`supersedes_id`; default reports continue using the original cutoff decisions and
+their actual publication dispositions.
 A correction cannot inherit the earlier publication time or become its replacement
 forward forecast. Outcome corrections use evaluation revisions, not forecast edits.
 
 Indexes: `(subject FK, observed_at)` receipts; `(candidate_key, revision)` bindings;
-unique scoring-unit key and `(mode, protocol, C, id)` decisions; `(created_at,id)`
+unique scoring-unit key and `(mode, protocol, C, id)` decisions; unique publication
+decision FK; `(run_id,session_id)` discovery summaries; `(created_at,id)`
 evaluations. Add bounded lookup indexes on source request stage/key and retrieval
 time if EXPLAIN on representative archives shows full-history scans; schedule blobs
 may contain many games, so cache parsed objects only within a bounded invocation.
@@ -427,8 +592,11 @@ may contain many games, so cache parsed objects only within a bounded invocation
 Transactions: take existing nonblocking canonical `writer_lock`; no new distributed
 lock. Capture a consistent read snapshot and source ceilings (not just MAX seq of
 requests still pending). Compute bounded pure projections; `BEGIN IMMEDIATE` inserts
-each complete decision plus run checkpoint in one transaction. Receipt witnesses
-require a subsequent read of committed rows. Evaluation computes against a frozen
+each complete cutoff decision plus run checkpoint in one transaction. Discovery
+summary commits separately before books. Publication verdict commits separately after
+its operational guard, referencing the committed decision; a veto never rolls back
+that decision. Receipt witnesses require a subsequent read of committed rows within
+the existing tick. Evaluation computes against a frozen
 manifest in bounded pages and writes one complete report/items transaction (max 1000
 games); no externally visible half-report. On budget exhaustion roll back that report,
 finish the ordinary run `partial`, and retain its manifest for deterministic retry.
@@ -446,7 +614,9 @@ second source of truth. Run summaries may progress but cannot rewrite published 
 | One game/horizon sample | Database scoring-unit and evaluation-item unique constraints, deterministic candidate selection |
 | Earlier forecast immutable | Append-only triggers, conflict detection, separate correction namespace |
 | Raw repeated retrieval identity retained | Fetch UUIDs in manifests, no body-hash observation deduplication |
-| No partial published output | One transaction per complete decision/report; post-commit receipt distinguishes publication certainty |
+| Publication cannot change cutoff facts | Separate immutable decision/publication rows and reason domains; view-specific evaluation filters |
+| Book failure cannot change discovery | Pre-book immutable phase summary and own receipt; book/run status excluded from common eligibility |
+| No partial published output | Complete decision precedes publication; post-commit publication receipt distinguishes certainty; atomic complete reports |
 | No synthetic/live mixing | Transitive source-mode validation and separate cohorts |
 | Collector health independent | Explicit collection-kind filtering; new run kinds never satisfy collection health |
 | Outcome corrections auditable | Exact version/observation IDs and superseding immutable evaluations |
@@ -464,12 +634,18 @@ Proposed pure interfaces in new `src/vader_intelligence/forecast/` and
 - `forecast.baselines.constant() -> Decimal`;
   `midpoint(book, notional) -> Decimal | InvalidBook`: pure arithmetic.
 - `forecast.journal.prepare/record/witness`: only persistence layer; transactions,
-  append-only keys, integrity checks and receipt/publication handling.
+  append-only cutoff decisions/bindings and integrity checks.
+- `forecast.publication.decide(decision, actual_now, operational_evidence) -> Verdict`:
+  cannot edit or recompute the cutoff result; persist publication separately through
+  the journal and witness its allowed record. No new provider requests.
+- `collector.py` discovery-phase builder and storage insertion interface: immutable
+  `DiscoveryPassSummary` as specified in §3, committed before book iteration; research
+  selection reads that fact, not the final collection-run status.
 - `evaluation.outcomes.join(decisions, frozen_outcome_view) -> OutcomeItems`:
   provider identity/status policy isolated from scoring.
 - `evaluation.scoring.brier(p,y)`, `log_loss(p,y,epsilon)`,
   `paired_summary(items)`: no SQL, clocks, configuration globals or HTTP.
-- `evaluation.service.evaluate(manifest, as_of, budget) -> EvaluationResult`:
+- `evaluation.service.evaluate(manifest, view, as_of, budget) -> EvaluationResult`:
   freezes evidence then composes pure join/scoring and writes immutable results.
 
 Proposed CLI, **not yet executable**; global `--db`/`--config` precede the subcommand:
@@ -481,12 +657,14 @@ vader --db data/research.sqlite3 forecast inspect --limit 20
 vader --db data/research.sqlite3 forecast reconstruct --research-config research.toml \
   --from 2026-10-01 --through 2026-10-07 --source-ceiling 12345 --dataset archive-study-001
 vader --db data/research.sqlite3 evaluate --forecast-manifest MANIFEST_RUN_ID \
-  --outcomes-as-of 2026-10-09T00:00:00Z --budget 30
+  --view cutoff-reconstruction --outcomes-as-of 2026-10-09T00:00:00Z --budget 30
+# A separate evaluation of a forward-mode manifest uses --view forward-shadow.
 vader --db data/research.sqlite3 evaluation inspect --id EVALUATION_ID
 ```
 
-`tick` is finite: witness preexisting completed evidence; prepare/revise future
-bindings; freeze due decisions; record missed opportunities; exit. It must process
+`tick` is finite: witness preexisting completed evidence and discovery summaries;
+prepare/revise future bindings; compute due cutoff decisions; attempt operational
+publication separately; record missed opportunities; exit. It must process
 receipts before choosing sources and never let a receipt made now authorize an input
 for an earlier C. Prior runs' incomplete pending fetches cannot be skipped forever
 by a MAX-seq cursor: rescan pending IDs within a bounded tracked set. Exceeding the
@@ -500,13 +678,19 @@ successfully recorded complete batch and must not themselves fabricate an error.
 Default F3 operational delivery is the finite commands and an isolated forward
 demonstration, **no automatic launchd installation or change**. Current launchd
 collects only; a 120-second collection cadence does not invoke forecasting. The
-150-second record window tolerates one nominal 120-second research invocation cycle
-plus 30 seconds, but no deployment SLA follows from it. Manual invocations can miss
-it; that produces a recorded missed opportunity, not retrospective forward success.
+150-second publication window is a policy limit, not a promise that a 120-second
+cycle will meet it. Invocation and commit latency can miss it. Such misses change
+actual forward publication coverage, not cutoff information eligibility or qualifying
+reconstruction probabilities. They never imply retrospective forward success.
 
 Later scheduling, if separately authorized, should use one existing serialized
 operations cycle with an archive-only forecast tick **before** collection, one at a
-time, and no added provider requests. The tick examines books from prior passes.
+time, and no added provider requests. The tick examines prior passes' immutable
+discovery summaries and books; collection then completes/commits discovery before
+requesting books. There is no intervening or after-collection witnessing tick. A
+later tick can observe a completed discovery phase even when books failed. If its
+receipt is after C or its inputs are stale, accept the appropriate abstention;
+do not add a witnessing phase or expand freshness simply to recover coverage.
 Its budget must come from a remeasured combined wrapper budget; do not add 15 seconds
 to an unchanged 90-second deadline and claim the same headroom. Keep collection and
 forecast status separate. No second overlapping writer job or unbounded retry loop.
@@ -518,7 +702,7 @@ in `docs/integration.md`; forecast gaps during stopped collection remain visible
 | Reader/writer | Schema 1 | Schema 2 | Proposed schema 3 | Unknown future |
 |---|---|---|---|---|
 | Reference integration code | Supported collection | Supported collection/settlement | Reject | Reject |
-| New F3 collector/ops | Preserve behavior | Preserve behavior | Explicitly supported after tests | Reject |
+| New F3 collector/ops | Preserve legacy behavior | Preserve legacy behavior | Explicit two-phase collection + summary support after tests | Reject |
 | New forecast/evaluation | Explicit migration required | Explicit migration required | Supported | Reject |
 
 `forecast migrate` requires schema 2; on schema 1 instruct the operator to perform
@@ -529,6 +713,10 @@ operations schema/column/count checks and installed-wheel tests together. Preser
 unknown-schema rejection. This is an additive expansion with no contraction or
 automatic historical data backfill. Receipt backfills cannot create historical
 availability. Verify populated 1→2→3 and 2→3 on copies.
+On schema 3, immutable discovery summaries, publication records and their receipts
+must be included in backup/restore/reference checks. Legacy schemas lack the independent
+discovery fact: do not synthesize it from a successful book run or relabel old mutable
+summaries as newly witnessed pre-C evidence. Diagnostic legacy studies stay distinct.
 
 Update core health to a positive allowlist of genuine collection/discovery/live-check
 kinds; forecast/evaluation receipt runs must not mask collector failure. Preserve
@@ -550,16 +738,19 @@ below are **planned**, not claims of execution in this documentation task.
 
 | Step | Files and change | Independently verifiable completion |
 |---|---|---|
-| F3.1 Pure policies | New `forecast/policy.py`, `baselines.py`, `evaluation/scoring.py`; `tests/forecast/test_policy.py`, `test_baselines.py`, `tests/evaluation/test_scoring.py` | Injected-clock schedule state machine, exact midpoint and score golden cases; no IO/import side effects |
+| F3.1 Pure policies | New `forecast/policy.py`, `baselines.py`, `publication.py`, `evaluation/scoring.py`; `tests/forecast/test_policy.py`, `test_baselines.py`, `tests/evaluation/test_scoring.py` | Independent cutoff/publication/settlement decisions, timeline and timing sweeps, exact midpoint/score golden cases; no IO/import side effects |
 | F3.2 Expansion | `migrations/003_forecast_evaluation.sql`, new `forecast/schema.py`, `forecast/journal.py`; minimal `storage.py`, `settlement/schema.py`, `ops/archive.py` compatibility | Explicit idempotent migration and transactional rollback on injected DDL failure; old table fingerprints unchanged; 1/2/3 backups and future guards; append-only/uniqueness/JSON reference checks |
-| F3.3 Evidence/selection | New `forecast/selection.py`, `forecast/service.py`; `tests/forecast/test_selection.py`, `test_journal.py` | Complete candidates, witnessed pre-C evidence, no future mapping, repeat/crash behavior, exact receipt bounds |
+| F3.3a Discovery boundary | Future schema-3 path in `collector.py`, storage summary insertion; `tests/test_collector.py`, `tests/test_integration.py` | Bounded discovery/identity/eligibility summary commits before any book; book outcome variants preserve it; resume uses new pass; incomplete discovery fails closed |
+| F3.3b Evidence/selection | New `forecast/selection.py`, `forecast/service.py`; `tests/forecast/test_selection.py`, `test_journal.py` | Complete candidates, pre-C receipts for summary and inputs, no future mapping, repeat/crash behavior, no added witnessing phase |
 | F3.4 Forecast CLI | New `forecast/cli.py`, dedicated research TOML parser; minimal `cli.py` registration and health filtering; `tests/forecast/test_cli.py` | Bounded tick/reconstruct/inspect, clock/source-mode gates, package entry points, no implicit migration or HTTP |
-| F3.5 Outcome/evaluation | New `evaluation/outcomes.py`, `service.py`, `journal.py`, `cli.py`; `tests/evaluation/test_outcomes.py`, `test_service.py` | Correct latest evidence, paired denominators, immutable corrections, finite arithmetic, manifest replay |
-| F3.6 Integrated proof | Extend `tests/test_integration.py`, `tests/ops/test_operations.py`, `tests/integration/wheel_smoke.py`; later user/operator docs | Populated migration and full backup/restore/forecast+evaluation replay; unchanged collector behavior; fresh installed-wheel smoke; separate real forward evidence or explicit inconclusive outcome |
+| F3.5 Outcome/evaluation | New `evaluation/outcomes.py`, `service.py`, `journal.py`, `cli.py`; `tests/evaluation/test_outcomes.py`, `test_service.py` | Two separate views, invariant cutoff population, orthogonal coverage counts, correct latest outcomes, paired denominators, immutable corrections, manifest replay |
+| F3.6 Integrated proof | Extend `tests/test_integration.py`, `tests/ops/test_operations.py`, `tests/integration/wheel_smoke.py`; later user/operator docs | Populated migration and full backup/restore/forecast+evaluation replay; preserved collector predicates and legacy-schema behavior plus tested new phase boundary; fresh installed-wheel smoke; separate real forward evidence or explicit inconclusive outcome |
 
-No edits to current collector eligibility semantics are required to invent coverage.
-Shared integration-review touchpoints are schema validation, core health run kinds,
-CLI registration/config loading, mapping evidence, replay order and operations backup.
+The collector phase boundary **must change in a future implementation**; preserve
+its predicate rules and per-book freshness guards while removing book-success
+dependence from discovery. No such edit belongs in PR #4 during re-review. Shared
+integration-review touchpoints are this discovery interface, schema validation,
+core health run kinds, CLI/config, mapping evidence, replay order and operations backup.
 After PR #4 review, compare those implementations with this pin, amend the spec if
 necessary, and implement on a new code branch. Do not rebase or edit the integration
 branch on behalf of this spec.
@@ -574,10 +765,16 @@ Focused test matrix (use isolated databases and explicitly synthetic evidence):
 | Schedule T changes before old/new C | New cutoff adopted, old plan retained; latest fresh supporting schedule required |
 | Revision moves C into past; game first seen after C | Explicit missed-cutoff/first-seen abstention |
 | Schedule change/postponement after frozen C | No refreeze/new game sample; retain original decision, annotate drift |
+| T=20:00, C=19:00; attempts 19:00:10/19:01; postponement observed 19:00:30 | Identical cutoff eligibility/probabilities; first scenario may publish, second vetoes; both retained in cutoff population and separate forward coverage (§9) |
 | Latest pre-C status Live/Postponed/TBD; missing game in covered schedule | Abstain despite older Preview record |
 | Book age 300s vs 300s+1µs | First accepted, second stale; zero/future ages tested |
+| Newest qualifying witnessed book is 350 seconds old | Midpoint `book_stale`, no freshness expansion or future-snapshot fallback; constant depends only on common inputs |
 | Receipt/publication at C+150s vs +1µs | Timely vs late; before-C preparation alone never counts as publication |
-| Crash before commit / after commit before receipt / after receipt | No row / unconfirmed publication / original successful result; no backdated receipt |
+| Same pre-C manifest, changed invocation delay or post-C veto | Cutoff decision and reconstruction unchanged; publication/forward coverage may differ, no mixed reason list |
+| Identical discovery sources, receipt and binding; books succeed/fail/timeout/truncate | Common eligibility and constant cutoff coverage unchanged; summary immutable despite partial run; midpoint/paired coverage reflects book result |
+| Partial pages, ambiguous membership, missing eligibility decisions, phase interrupted before commit | No eligible complete-discovery assertion; no books before phase commit; constant and midpoint fail closed for affected scope |
+| Phase complete, crash before/during books, resumed pass | Existing phase fact survives, new invocation has a new summary; receipt time remains actual, no completion backdating |
+| Crash before decision commit / after decision before publication / after allowed publication before receipt | No decision / no published forecast / unconfirmed publication; cutoff facts unchanged once committed |
 | Duplicate tick, competing processes, changed payload same key | One original decision; other writer rejected or returns same result; differing payload fails |
 | Opposing books; duplicate listings; selected book missing | Lower-team-ID/lexical choice unchanged, one game, no fallback |
 | Two doubleheader gamePk values, ambiguous identical starts | Separate proven games or quarantine; never date/team-only deduplication |
@@ -593,6 +790,23 @@ Focused test matrix (use isolated databases and explicitly synthetic evidence):
 | N=0, N=1, midpoint abstains but constant exists | Null paired scores at N=0; exact N, pending/exclusion/coverage counts; no significance claim |
 | Sleep, wall regression, monotonic/UTC divergence, DB busy/full | Missed/clock-untrusted/failed explicit; no unlimited retries or fabricated forecasts |
 | Schema-3 forecast success after failed collect | Collector remains unhealthy; operations still classifies only collection |
+
+**Timing sweep:** drive a deterministic virtual timeline of the single existing
+tick→discovery/eligibility/summary commit→books cycle (nominal starts 120s apart).
+Sweep C offsets `{0,1,60,119,120}` seconds relative to cycle start; discovery+book
+completion durations `{0,10,60,89,91}` seconds (91 exercises the 90s collector
+deadline); next-tick witness delays `{0,1,30,120}` seconds; publication receipt
+latencies `{0,10,60,150,150.000001,180}` seconds after C; and one skipped collection
+cycle versus none. Model actual serial start/finish times and the configured tick
+budget, not overlapping idealized cycles. Include the 350-second book as a fixed
+case. A slow/missing pass can make both common and book evidence stale; the oracle
+checks each separately. For every combination select only retrieved-and-witnessed
+pre-C inputs, enforce age <=300 exactly, and derive publication separately.
+Holding the pre-C manifest fixed while varying only publication latency/veto must
+leave cutoff eligibility and both reconstructed probabilities bit-for-bit unchanged.
+Some one-missed-cycle combinations must abstain; no acceptance criterion requires
+all such cases to remain covered. No simulated extra witness or enlarged freshness
+is permitted to make the sweep pass.
 
 Future verification commands (after implementation, in its own checkout/environment):
 
@@ -619,11 +833,14 @@ from the pure forecast/evaluation tests.
 All dates, game IDs, receipt times and outcomes in this section are **synthetic**.
 
 **Normal:** fictional game 900001 starts 2026-10-01 20:00:00Z; C=19:00:00Z.
-Binding is published/witnessed at 18:57:50Z. Schedule and book received at
-18:58:00Z/18:58:20Z and witnessed at 18:58:30Z. At C the schedule is Preview,
+An initial identity binding is committed/witnessed at 18:57:50Z. Fresh schedule and
+book are received at 18:58:00Z/18:58:20Z, then witnessed and the binding renewed at
+18:58:30Z. The complete discovery summary and every dependency also have pre-C
+receipts and qualifying freshness. At C the schedule is Preview,
 identity/rules unchanged. Selected lower-ID team's best YES bid=0.4001 and NO
 bid=0.5799, both with positive quantities. YES ask=0.4201; midpoint=0.4101.
-Decision inserted at 19:00:12Z, publication witnessed at 19:00:13Z: record delay
+Decision inserted at 19:00:12Z, allowed publication record committed after its guard,
+then publication witnessed at 19:00:13Z: publication delay
 13 seconds. With subsequent synthetic finalized YES payout 1.0000, Brier scores
 are 0.25 and **0.34798201**, delta +0.09798201; constant log loss=ln(2), midpoint
 log loss=−ln(0.4101). One paired game, not two opposing contracts.
@@ -641,10 +858,52 @@ no scheduler invoked then. Do not invent a 20:00 replacement forecast. If instea
 an 18:50 update moves T to 19:30, its C=18:30 is already past: missed-cutoff abstention.
 
 **Late / historical:** first record made 19:03 for the original C=19:00 is beyond
-150 seconds, although still before T. It is not a timely forward result. A separate
+150 seconds, although still before T. Publication is missed; cutoff eligibility and
+qualifying probabilities are unchanged. It is not a timely forward result. A separate
 reconstruction created October 3 records that actual date and reconstruction mode;
 pre-C raw timestamps alone cannot prove availability. A fixture using those same
 timestamps remains synthetic.
+
+**Reviewer's publication timeline:** T=20:00, C=19:00, with the normal example's
+same qualifying pre-C manifest in two alternative first-attempt scenarios. Both
+baselines are cutoff eligible: constant=0.5, midpoint=0.4101. A postponement is
+observed at **19:00:30**. No post-C evidence enters either probability.
+
+| Fact / report field | First attempt at 19:00:10 | First attempt at 19:01:00 |
+|---|---|---|
+| Cutoff eligibility and reasons | E=1, no cutoff abstention | E=1, no cutoff abstention |
+| Reconstructed probability pair | (0.5, 0.4101) | (0.5, 0.4101) |
+| Operational knowledge at attempt | Postponement not yet observed | Observed postponement vetoes publication |
+| Actual publication | Allowed; assume receipt 19:00:11, delay 11s, `published_timely` | `vetoed`, attempt delay 60s, no publication time; retain postponement raw reference/observed time |
+| Cutoff population and coverage | U=K=M=P=1; cutoff paired coverage 1/1 | U=K=M=P=1; cutoff paired coverage 1/1 |
+| Forward publication coverage | FK=FM=FP=1; paired publication coverage 1/1 | FK=FM=FP=0; paired publication coverage 0/1; vetoed opportunities=1 |
+| Reconstruction N if same contract later has eligible binary settlement | 1 | 1 |
+| Forward N with that settlement | 1 | 0, paired scores null/inconclusive |
+
+The later postponement annotates the first scenario but cannot revoke its successful
+publication. In the second scenario, it cannot erase the cutoff decision. If final
+settlement is unresolved/exceptional instead, **both views** lack a binary score for
+that game and show the outcome reason; their original cutoff and publication coverage
+remain as above. These two scenarios are not two game samples to pool. If both times
+are retries in **one** actual ledger, the successful 19:00:10 publication remains the
+single original result; the 19:01 retry returns it and appends no replacement or
+retroactive veto. The warning is retained separately.
+
+**Reviewer's 350-second-old book:** with C=19:00:00, the newest qualifying book was
+retrieved at 18:54:10 and witnessed before C; age=350s. Midpoint abstains `book_stale`.
+Even a book retrieved 18:59:00 but first witnessed 19:00:01 cannot rescue it. If
+discovery/identity/schedule inputs separately qualify, constant remains 0.5, K=1,
+M=P=0 for U=1; otherwise record those independent common exclusions too. Keep 300s
+and the same tick ordering. Do not add a witness between collection passes to obtain
+a nicer result. The timing sweep includes one missed cycle without promising coverage.
+
+**Discovery unchanged, books varied:** freeze one complete discovery-phase summary
+and its pre-C receipt/binding, giving U=E=K=1. In case A the selected book succeeds
+and qualifies, so M=P=1. In case B only that book attempt times out or returns malformed
+data, so M=P=0 with a book reason; even if the whole collection run is partial, E=K=1
+and the immutable discovery summary/digest remain identical. Common eligibility and
+constant cutoff coverage are independent of book success. Missing/ambiguous discovery
+instead would fail the common gate in both cases, not get repaired by a successful book.
 
 **Corrections and exceptions:** evaluation E1 uses finalized YES revision 1 for
 game 900001. A later finalized NO revision 2 yields E2 with `supersedes=E1`, the
@@ -656,7 +915,12 @@ scored N becomes zero with one exceptional outcome. An MLB winner does not fill 
 
 Load assumption (estimate): 30 games/day × 2 baselines = 60 forecast outputs/day;
 at roughly 8 KB per complete game decision+manifest, about 0.24 MB/day (~88 MB/year),
-plus bindings, evaluation versions and receipts. Receipt volume follows ingestion,
+plus bindings, publication records, discovery summaries, evaluation versions and receipts.
+One publication row/game adds roughly 30 rows/day; at 120-second cadence there are
+at most 720 scheduled discovery summaries/day before manual invocations, each bounded
+by the existing discovery caps/manifest-size limit. Measure their actual payload size
+rather than treating the decision-only 0.24 MB/day estimate as total growth.
+Receipt volume follows ingestion,
 not game count: at 30 books/120 seconds, 21,600 books/day × estimated 250 bytes/receipt
 ≈5.4 MB/day before indexes and other retrievals. Measure actual growth. Retain evidence
 in v1; no automatic pruning. Main archive scans, not scoring arithmetic, constrain
@@ -665,7 +929,9 @@ new server. One local SQLite database, one writer, zero extra network QPS suffic
 
 Local responsiveness target (not measured): a 100-game tick p95 <=5s and p99 <=10s
 on this Mac after bounded indexed selection; hard budget 15s. Report measured
-distribution later; do not average percentiles. Missed deadlines reduce coverage.
+distribution later; do not average percentiles. Missed publication deadlines reduce
+forward publication coverage; missing pre-C receipts can independently reduce cutoff
+coverage. A late computation alone does not alter qualifying reconstruction coverage.
 No availability SLA; integrity takes precedence over an on-time forecast. Committed
 rows retain SQLite FULL durability assumptions; host/disk loss is outside local
 redundancy. RPO/RTO depend on verified backups and are unmeasured.
@@ -674,6 +940,8 @@ redundancy. RPO/RTO depend on verified backups and are unmeasured.
 |---|---|
 | Existing SQLite + immutable records | A server/queue adds operations at ~60 outputs/day without improving temporal truth |
 | Conservative availability receipts | HTTP timestamps/sequence masquerading as commit or mapping availability permits leakage |
+| Independent pre-book discovery summary | End-of-run completion conflates book faults with candidate/constant eligibility |
+| Separate cutoff, publication and outcome facts | A single eligibility flag lets post-C warnings or invocation timing select the research sample |
 | One sticky game/horizon decision | Refreezing after postponements or failed forecasts selects favorable opportunities |
 | Fixed contract selection before book tests | Best spread/liquidity/outcome selection changes the sample and can hide failures |
 | Paired scoring with full exclusion ledger | Comparing differently covered samples confounds forecast accuracy and coverage |
@@ -687,7 +955,7 @@ Hazards applicable to this design (Cool Coder data-systems catalog):
 | H-01/02/03/04 lost update, skew, uniqueness, assumed isolation | Shared local writer lock + explicit BEGIN IMMEDIATE + database unique keys; competing-process tests; retry reads existing result |
 | H-07/08/42 long reads, unbounded transaction/result | Bounded date/game limits, keyset pages, source manifests, progress-handler deadlines; partial run on cap, no truncated success |
 | H-09/12 breaking schema/blocking DDL | Explicit additive migration in coordinated maintenance; copies and old-reader refusal verified; no implicit migration |
-| H-14/18 retry and unknown completion | Deterministic key, atomic decision, separate publication witness; unknown stays unknown, never backdated |
+| H-14/18 retry and unknown completion | Deterministic keys, atomic cutoff decision, separate publication verdict/witness; unknown stays unknown, never backdated; pre-book summary survives later book failure |
 | H-20/21/36 clocks and processing windows | UTC for cutoff, monotonic for elapsed; sequence for ingestion; receipt checks; explicit late policy |
 | H-32 dual write | SQLite source of truth; exports derived only after commit |
 | H-37/38 nondeterminism/destructive backfill | Frozen manifests, versioned pure functions, append-only triggers; no live lookup or in-place correction |
@@ -711,9 +979,11 @@ Open integration decisions, with defaults:
 3. **Legacy availability:** insufficient existing durable-visibility proof may leave
    strict reconstruction coverage near zero. Default: keep diagnostic results separate
    and start prospective receipts; do not loosen temporal rules to obtain a score.
-4. **Freshness/record delay:** recommended 300s/150s are explicit research defaults,
-   not validated optimal parameters. Measure coverage/delay without tuning on outcomes;
-   any change starts a separate protocol.
+4. **Measured coverage:** 300s freshness and 150s publication grace are fixed v1 policy,
+   not validated optimal parameters or missed-cycle guarantees. Measure cutoff and
+   publication coverage separately. Accept stale abstentions with the current tick
+   order; no freshness expansion or new witnessing phase without demonstrated need
+   and separately reviewed protocol change.
 5. **Production scheduling:** not selected or authorized here. Default: finite commands
    and controlled forward demonstration first; later remeasure a single serialized
    schedule. Existing collector service status must be inspected anew at deployment.
@@ -724,3 +994,7 @@ Cool Coder engineering-skills **1.2.0**, pin
 matched the pinned upstream archive on a read-only comparison. No installations
 were changed. The user's requested document paths take precedence over the skills'
 default plan/executor persistence paths. This specification stops at milestone 3.
+For this review revision, applied `planner` and `data-systems-design` at that same
+pin, read-only. The three review decisions above are resolved; remaining integration,
+legacy-data and operational measurement items are limitations, not alternative rules
+that may override the separated eligibility/coverage contracts.
