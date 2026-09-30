@@ -8,7 +8,7 @@ Mac validation and a draft PR only. No production deployment or forecasting.
 - [x] Verify exact branch heads/ancestry; merge histories in an isolated worktree.
 - [x] Resolve schema, health and bounded-process compatibility.
 - [x] Verify combined offline, installed-wheel, native Mac and separate live paths.
-- [ ] Document deployment/rollback boundaries and publish draft PR.
+- [x] Document deployment/rollback boundaries and publish draft PR #4 against main.
 
 ## Requirements and design
 - Sports only: MLB `KXMLBGAME`, full single-game team winner contracts, pregame only.

@@ -345,3 +345,12 @@ Conflicting settlement schedule variants stay quarantined. No automatic cross-wi
 mapping or manual override is added. Deadline enforcement bounds children, not arbitrary
 kernel/disk stalls during later metadata persistence or full archive integrity scans.
 Ready for independent code review; deployment awaits that review and a separate action.
+
+## Publication
+
+Published `feat/integration-v1` with implementation checkpoint
+`214db1488ef7db7853577e003df97220604e7d6c` and opened
+[draft PR #4](https://github.com/JustGooogleIt/Vader-Intelligence/pull/4) against `main`.
+The PR links the original settlement PR #2 and operations PR #3. Both original
+workstreams remain open and their branch heads unchanged. Repository visibility
+remains public, as requested. No production deployment was performed.
