@@ -30,18 +30,29 @@ def parser():
     sub = commands.add_parser("replay")
     sub.add_argument("--fixture", help="import deterministic local fixture manifest; no HTTP")
     commands.add_parser("health")
+    from .settlement.cli import register
+
+    register(commands)
     return p
 
 
 def execute(args):
     config = Config.load(args.config, args.db)
+    if args.command == "settlement":
+        from .settlement.cli import execute as settlement_execute
+
+        return settlement_execute(args, config)
     with nullcontext() if args.command == "health" else writer_lock(config.database):
         store = Store(
             config.database, min_free_bytes=config.min_free_bytes, readonly=args.command == "health"
         )
         try:
             if args.command == "db-init":
-                return {"status": "complete", "schema_version": 1, "database": str(store.path)}
+                return {
+                    "status": "complete",
+                    "schema_version": store.db.execute("PRAGMA user_version").fetchone()[0],
+                    "database": str(store.path),
+                }
             if args.command == "health":
                 result = store.health(config.health_stale_seconds)
                 latest = result["latest_run"]
