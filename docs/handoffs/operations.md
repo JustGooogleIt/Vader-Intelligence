@@ -173,27 +173,28 @@ the child takes the core writer lock. No path takes them in reverse order.
 
 Verdict: ready for draft review; native deployment validation remains pending.
 
-## Publication attempt
+## Publication
 
 Local coherent commits are present on `feat/collection-ops`. The implementation
 commit is `a0b0235`; reviewed fixes/runbook commit is `0fb90ba`.
-The subsequent handoff-only commit records this publication result.
+The standalone test-import fix is `ca56eb5`; the final handoff-only commit records
+the resolved publication result.
 
-`git -c credential.interactive=never push -u origin feat/collection-ops` failed:
-Git could not obtain credentials. The connected GitHub API returned 404 for both
-repository metadata lookup and branch creation. No remote branch or PR was created.
-No merge or force push occurred. A Git bundle and draft PR description are provided
-as transfer artifacts outside the repository, preserving the exact commit history.
+Initial publication failed because Git lacked credentials and the connector could
+not access the repository. The operator completed Git Credential Manager browser
+authentication on 2026-09-29. The subsequent noninteractive push succeeded.
 
-Once repository access is restored, publish from this isolated checkout (or a new
-clone of the bundle):
+- Published branch: `feat/collection-ops`.
+- Draft PR: https://github.com/JustGooogleIt/Vader-Intelligence/pull/3, base `main`.
+- The connector lacked PR-creation permission (HTTP 403). The draft was created
+  through GitHub's API using the operator's standard Git credential helper.
+  Credentials were neither printed nor persisted in workspace files.
+- No merge or force push occurred. The working tree is clean.
+- The complete-history Git bundle and copied runbook/handoff are refreshed after
+  the final documentation commit. They contain no databases, logs or credentials.
 
-```sh
-git push -u origin feat/collection-ops
-gh pr create --draft --base main --head feat/collection-ops \
-  --title "Add unattended collection operations and SQLite recovery" \
-  --body-file /absolute/path/to/PR-description.md
-```
+The last code test run after the test-import fix passed all 28 tests in 11.857 seconds;
+Ruff and diff checks also passed. Publication changes only this handoff.
 
-Keep the PR in draft until the native Mac validation above is recorded. The
-publication failure does not change scheduler status: no Mac service was deployed.
+Keep the PR in draft until the native Mac validation above is recorded.
+Publication does not change scheduler status: no Mac service was deployed.
