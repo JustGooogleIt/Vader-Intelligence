@@ -1,0 +1,1 @@
+SYNTHETIC acceptance artifact. No real command or task was verified.
