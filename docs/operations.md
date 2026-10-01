@@ -233,13 +233,21 @@ paid monitoring. The operator owns inspection and disk/backup capacity.
 The implementation uses Python's SQLite online backup API with a read-only source,
 not a raw file copy. This captures committed WAL content. See the
 [SQLite backup documentation](https://www.sqlite.org/backup.html).
-It verifies `user_version` is **1 or 2**, matching migration records and expected
-columns, including every settlement table for schema 2. A stable read transaction
+It verifies `user_version` is **1, 2 or 3**, matching migration records and expected
+columns, including settlement tables for schemas 2/3 and all seven research tables
+for schema 3. Schema-3 inspection also checks immutable record digests, typed JSON
+references, projected keys and complete evaluation item manifests. These are storage
+integrity checks, not proof of forecasting availability, publication or correctness.
+A stable read transaction
 pins the copy's source schema/snapshot. Reopened inspection checks SQLite integrity,
 foreign keys, all raw-response hashes/lengths, and counts every supported table.
 Unknown versions are refused. Neither inspection nor collection migrates a database;
-`vader settlement migrate` remains the explicit schema-2 operation. The old binary
-cannot read schema 2 and is not a valid code-only rollback.
+`vader settlement migrate` remains the explicit schema-2 operation and
+`vader forecast migrate` explicitly expands 2 to 3. Fresh `db-init` still creates 1.
+Schema 3 currently supplies storage only, not discovery/forecast generation or
+visibility witnessing. See [forecast storage handoff](handoffs/forecast-storage.md)
+for the supported paths and separate-platform verification. A schema-2 reader
+cannot read schema 3 and is not a valid code-only rollback after that migration.
 
 Choose a new backup filename each time. Prefer an independently protected volume
 for eventual disaster recovery. This example's adjacent backup is a local recovery

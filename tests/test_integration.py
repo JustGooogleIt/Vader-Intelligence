@@ -152,7 +152,7 @@ def test_missing_candidates_are_not_reported_as_empty_success(store, config, fix
     assert archive.classify({"database": str(store.path)}, result, 1) == "failed_or_partial"
 
 
-@pytest.mark.parametrize("version", [-1, 3, 999])
+@pytest.mark.parametrize("version", [-1, 4, 999])
 def test_future_schema_rejected_everywhere_without_mutation(store, config, tmp_path, version):
     store.db.execute(f"PRAGMA user_version={version}")
     for readonly in (False, True):

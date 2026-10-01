@@ -643,6 +643,8 @@ def test_ordered_rebuild_from_archived_evidence(runner, store, evidence):
 
 
 def test_collector_health_not_masked_by_settlement(runner, store, run):
+    # This fixture normally uses kind='test'; health now allowlists actual collector kinds.
+    store.db.execute("UPDATE runs SET kind='collect' WHERE id=?", (run,))
     store.finish_run(run, "partial", {"status": "partial"})
     runner[0].run(tickers=[TICKER])
     assert store.health()["latest_run"]["id"] == run
