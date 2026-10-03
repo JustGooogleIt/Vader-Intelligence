@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -22,26 +23,76 @@ def decode(raw):
         raise Unavailable("malformed_json") from None
 
 
+@contextmanager
+def termination_request():
+    """Defer SIGTERM/INT until Popen has returned and cleanup has finished."""
+    if threading.current_thread() is not threading.main_thread():
+        raise Unavailable("main_thread_required")
+    requested = []
+    previous = {}
+
+    def request(signum, _frame):
+        if not requested:
+            requested.append(signum)
+
+    try:
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            previous[signum] = signal.signal(signum, request)
+        yield requested
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+        if requested:
+            raise SystemExit(128 + requested[0])
+
+
+def exited(child):
+    if os.name != "posix":
+        return child.poll() is not None
+    # Keep the group leader unreaped until the final group signal. Otherwise its
+    # PID/PGID could be recycled and cleanup could signal an unrelated process.
+    return os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+
+
+def cleanup(child):
+    if os.name == "posix":
+        # Only Popen(start_new_session=True)'s owned group, never the tmux server
+        # or a pane PID from metadata. No poll/wait may reap the leader beforehand.
+        try:
+            exited(child)  # Fail closed if somebody else reaped our leader.
+        except ChildProcessError:
+            raise Unavailable("child_ownership_lost") from None
+        try:
+            os.killpg(child.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        time.sleep(0.25)
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    elif child.poll() is None:
+        child.kill()
+    child.wait(timeout=2)
+
+
 def run(argv, *, env=None, timeout=5, limit=131072, payload=None):
     """No shell. Retain <=limit+1 bytes, kill on overflow/deadline, reap child.
 
     POSIX children get a process group so upstream's nested tmux is also bounded.
     Windows tests use ordinary direct children; real tmux is a Unix requirement.
     """
-    with tempfile.TemporaryFile() as source:
+    if os.name == "posix" and (
+        not all(hasattr(os, name) for name in ("waitid", "WNOWAIT"))
+        or signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL
+    ):
+        raise Unavailable("exclusive_child_wait_required")
+    with termination_request() as requested, tempfile.TemporaryFile() as source:
         source.write(payload or b"")
         source.seek(0)
-        try:
-            child = subprocess.Popen(
-                argv,
-                stdin=source,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                env=env,
-                start_new_session=os.name == "posix",
-            )
-        except OSError:
-            raise Unavailable("executable_unavailable") from None
+        child = None
+        reader = None
+        reason = None
         data = bytearray()
         finished = threading.Event()
         read_failed = threading.Event()
@@ -58,12 +109,21 @@ def run(argv, *, env=None, timeout=5, limit=131072, payload=None):
             finally:
                 finished.set()
 
-        reader = threading.Thread(target=drain, daemon=True)
-        reader.start()
-        deadline = time.monotonic() + timeout
-        reason = None
         try:
-            while not (finished.is_set() and child.poll() is not None):
+            if requested:
+                return  # termination_request raises after restoring handlers
+            child = subprocess.Popen(
+                argv,
+                stdin=source,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=env,
+                start_new_session=os.name == "posix",
+            )
+            reader = threading.Thread(target=drain, daemon=True)
+            reader.start()
+            deadline = time.monotonic() + timeout
+            while not requested and not (finished.is_set() and exited(child)):
                 if len(data) > limit:
                     reason = "output_limit"
                     break
@@ -71,21 +131,19 @@ def run(argv, *, env=None, timeout=5, limit=131072, payload=None):
                     reason = "timeout"
                     break
                 time.sleep(0.01)
+        except OSError:
+            raise Unavailable("executable_unavailable") from None
         finally:
-            if os.name == "posix":
+            if child is not None:
                 try:
-                    os.killpg(child.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            elif child.poll() is None:
-                child.kill()
-            try:
-                child.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                reason = "cleanup_timeout"
-            reader.join(timeout=2)
-            if not reader.is_alive():
-                child.stdout.close()
+                    cleanup(child)
+                except subprocess.TimeoutExpired:
+                    reason = "cleanup_timeout"
+                finally:
+                    if reader is not None and reader.ident is not None:
+                        reader.join(timeout=2)
+                    if reader is None or not reader.is_alive():
+                        child.stdout.close()
         if reason or len(data) > limit:
             raise Unavailable(reason or "output_limit")
         if reader.is_alive():

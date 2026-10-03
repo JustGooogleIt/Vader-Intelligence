@@ -3,6 +3,8 @@
 import copy
 import hashlib
 import json
+import os
+import signal
 import socket
 import sys
 from datetime import datetime, timedelta, timezone
@@ -159,6 +161,96 @@ def test_replacement_discards_capture(setup):
     result = o.inspect("synthetic-worker")
     assert result["reason"] == "identity_mismatch"
     assert result["terminal"] is None
+
+
+@pytest.mark.parametrize("change", ["outside", "subdirectory", "missing", "relative"])
+def test_directory_change_during_capture_discards_text_and_advice(config, tmp_path, change):
+    fake = Fake(config)
+    config["allow_external"] = True
+    outside = tmp_path.parent
+    subdirectory = tmp_path / "subdirectory"
+    subdirectory.mkdir()
+    paths = {
+        "outside": str(outside),
+        "subdirectory": str(subdirectory),
+        "missing": str(tmp_path / "missing"),
+        "relative": ".",
+    }
+    captured = False
+
+    def runner(argv, **kwargs):
+        nonlocal captured
+        value = fake(argv, **kwargs)
+        if "capture" in argv:
+            captured = True
+        if "info" in argv and captured:
+            info = json.loads(value)
+            info["pane_current_path"] = paths[change]
+            return json.dumps(info)
+        return value
+
+    observer = Observer(config, runner)
+    result = observer.inspect("synthetic-worker")
+    assert captured  # Original failure: same identity, different cwd after capture.
+    assert result["identity"] == "unknown"
+    assert result["terminal"] is None
+    assert fake.terminal not in json.dumps(result)
+    assert observer.assess(result, opt_in=True)["state"] == "unavailable"
+    assert not any("assessment" in argv for argv, _ in fake.calls)
+
+
+def test_post_capture_directory_uses_canonical_path(setup):
+    observer, fake = setup
+
+    def runner(argv, **kwargs):
+        value = fake(argv, **kwargs)
+        if "info" in argv:
+            info = json.loads(value)
+            info["pane_current_path"] += "/."
+            return json.dumps(info)
+        return value
+
+    observer.run = runner
+    assert observer.inspect("synthetic-worker")["terminal"] == fake.terminal
+
+
+@pytest.mark.skipif(os.name != "posix", reason="native POSIX symlink replacement")
+def test_checkout_symlink_change_during_capture(config, tmp_path):
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    link = tmp_path / "checkout"
+    link.symlink_to(allowed, target_is_directory=True)
+    config["workers"][0]["checkout"] = str(link)
+    fake = Fake(config)
+
+    def runner(argv, **kwargs):
+        value = fake(argv, **kwargs)
+        if "capture" in argv:
+            link.unlink()
+            link.symlink_to(tmp_path.parent, target_is_directory=True)
+        return value
+
+    result = Observer(config, runner).inspect("synthetic-worker")
+    assert result["reason"] == "directory_mismatch"
+    assert result["terminal"] is None
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_subprocess_restores_previous_signal_handlers(failure):
+    def prior_handler(_signum, _frame):
+        raise AssertionError("no signal sent by this portable test")
+
+    saved = {s: signal.signal(s, prior_handler) for s in (signal.SIGTERM, signal.SIGINT)}
+    try:
+        if failure:
+            with pytest.raises(Unavailable, match="executable_unavailable"):
+                run(["nonexistent-vader-observer-test-executable"])
+        else:
+            assert run([sys.executable, "-c", "print('ok')"]).strip() == "ok"
+        assert all(signal.getsignal(s) is prior_handler for s in saved)
+    finally:
+        for signum, handler in saved.items():
+            signal.signal(signum, handler)
 
 
 @pytest.mark.parametrize("index", range(9))

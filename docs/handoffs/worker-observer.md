@@ -1,5 +1,77 @@
 # Worker observer prototype handoff
 
+## PR #6 P2 follow-up (2026-10-03)
+
+Started from verified draft PR head
+`65d72a80a8ebd3b0d6ac2d44c559ecacecf98b59` in a separate `observer-fixes`
+worktree, with a new private environment. Changes are restricted to this observer,
+its focused tests and documentation. PR #7, forecasting and production are untouched.
+Pinned Cool Coder `implement`, `code-review` and `systems-programming` applied at
+`e46e79805be0ee5877fa9bc993492064bbb40aa5`; no shared skill changes.
+
+1. SIGTERM/SIGINT now set a deferred flag instead of bypassing `finally`. The flag
+   survives termination during Popen creation/handle registration. Main-thread-only
+   handling restores prior handlers after bounded cleanup, then exits 143/130.
+   Owned POSIX groups receive TERM, 250ms grace, KILL; the direct child is reaped
+   with a 2s deadline and pipe reader joined with a 2s deadline. WNOWAIT reserves the
+   leader PID until group signaling finishes; never signal pane/server metadata PIDs.
+   Default SIGCHLD and exclusive child-wait ownership are required. SIGKILL of the
+   observer cannot clean up; escaped groups and kernel-stalled creation/termination
+   are not covered by user-space bounds. See the runbook's explicit limitations.
+2. After capture, re-read metadata and verify canonical cwd against the same allowed
+   checkout/workspace, then recheck identity. Mismatches leave terminal null and
+   identity unknown, preventing preview/advice. Before/after checks are **not atomic**;
+   change-and-revert races and malicious same-user processes remain outside the model.
+
+Windows/Python 3.12.14 verification of this fix:
+
+```powershell
+.venv/Scripts/python.exe -m pytest --noconftest -q tests/worker_observer
+.venv/Scripts/ruff.exe check tools/worker_observer tests/worker_observer
+.venv/Scripts/ruff.exe format --check tools/worker_observer tests/worker_observer
+git diff --check
+```
+
+**68 passed, 7 explicitly skipped native POSIX cases** (six signal/process cases
+and one symlink case). Lint/format/diff checks passed. Four new directory-drift
+regressions were also run against the original inspect method loaded from the
+starting commit: all four failed as expected because it returned matched identity
+with captured text. Fixed code passes all four. Directory/capture fixtures are
+synthetic; no tmux/provider calls occur. Portable handler-restoration tests do not
+claim native signal delivery verification.
+
+Native tests use real kernel signals, child sessions and descendants, including a
+stubborn child/grandchild, repeated SIGTERM, exited leader, an unrelated sentinel,
+direct-child reaping and handler restoration. The creation regression instruments
+Popen registration timing but launches real processes and delivers a real SIGTERM
+before Popen returns its handle. These tests were **not run on Windows**.
+
+Prime reported a successful real-tmux smoke on the **old** head
+`65d72a80a8ebd3b0d6ac2d44c559ecacecf98b59`. That is separate reported evidence;
+it does not verify either fix and is not a test performed by this session.
+
+Required Mac verification, from a disposable checkout of the updated PR head:
+
+```sh
+# Create a new private environment; do not overwrite an existing one.
+python3 -m venv .venv-observer-p2
+.venv-observer-p2/bin/python -m pip install 'pytest==9.1.1' 'ruff==0.16.9' \
+  'httpx==0.28.1' \
+  'tmux-jev @ git+https://github.com/uberspaceguru/tmux-jev.git@167f94359728a6356fb8a76e62f5cfdc16a6d881'
+.venv-observer-p2/bin/python -m pytest --noconftest -q tests/worker_observer/test_boundary_posix.py
+.venv-observer-p2/bin/python -m pytest --noconftest -q tests/worker_observer
+.venv-observer-p2/bin/ruff check tools/worker_observer tests/worker_observer
+.venv-observer-p2/bin/ruff format --check tools/worker_observer tests/worker_observer
+git diff --check
+```
+
+Then repeat the disposable real-tmux smoke in `docs/worker-observer.md`, setting
+`OBSERVER_PY="$PWD/.venv-observer-p2/bin/python"`, against the updated head. Record
+the exact SHA, Python/tmux versions, commands and exits. Keep PR #6 draft pending
+that native verification and review; no merge or deployment is part of these fixes.
+
+## Original prototype record (old head)
+
 Base: merged integration `e4c2357daafb926fce9a52ed2d34aa5eed3f8523`.
 Branch: `feat/worker-observer`, separate worktree and private environment.
 Scope: `tools/worker_observer/`, `tests/worker_observer/`, this handoff and

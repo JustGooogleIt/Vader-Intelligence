@@ -92,7 +92,9 @@ workspace, and current pane cwd must equal checkout (subdirectory changes fail c
 
 Each invocation checks the local hostname, discovers IDs, selects only the registered
 pane, validates all identity fields, inspects metadata, optionally captures, and
-rechecks identity. Changes discard captured evidence. These separate reads are not
+rechecks the canonical allowed directory and all identity fields. Directory validation
+also rejects a changed checkout/workspace resolution. A mismatch discards captured
+text before returning it or offering external advice. These before/after reads are not
 an atomic tmux transaction; a same-user adversary or undetected change-and-revert
 is outside the trust model. Never use this output as authorization.
 
@@ -113,8 +115,24 @@ observation. No raw subprocess stderr or provider error bodies are returned.
 Bounds: 16 registrations, 512 discovered records, 128 KiB discovery/info stdout,
 16 KiB capture stdout (overflow fails closed), 60 requested scrollback lines,
 5 seconds per local child, 20 seconds per optional assessment, plus bounded cleanup.
-At most five local child commands per inspect, with no retries/polling loop. POSIX
-process groups include nested upstream children and are killed/reaped on exit.
+At most six local child commands per inspect, with no retries/ongoing observation loop.
+The subprocess boundary must run on the main thread. SIGTERM/SIGINT handlers only
+record a request, including during process creation; after Popen returns, cleanup
+runs and exits with 128 + signal number (143/130), restoring previous handlers.
+Repeated termination requests do not interrupt cleanup. POSIX children start in a
+new session/group. Cleanup signals only that owned group with SIGTERM, allows 250ms,
+then escalates to SIGKILL, waits up to 2s to reap the direct child, and joins the reader
+for up to 2s. Descendants remaining in the group are signaled even if the leader has
+exited. `waitid(WNOWAIT)` keeps the leader unreaped until the last group signal so
+its PID cannot be reused during cleanup. The boundary requires default SIGCHLD and
+exclusive ownership of child waits; callers must not concurrently reap its child.
+Unsupported waitid platforms and competing SIGCHLD handlers fail before spawning.
+
+This is not a sandbox: descendants deliberately escaping the group are outside this
+cleanup boundary. SIGKILL of the observer cannot run handlers/finally and may leave
+detached children; an OS-stalled spawn or uninterruptible child cannot be guaranteed
+to terminate within user-space deadlines. Direct-child wait timeout is explicit.
+Windows exercises direct-child cleanup only, not native POSIX signal/group behavior.
 Discovery temporarily reads all pane metadata because upstream lacks filtering;
 only registered metadata is returned and only the selected pane is captured.
 

@@ -184,6 +184,27 @@ class Observer:
         try:
             if self.config["host"] != socket.gethostname():
                 raise Unavailable("host_mismatch")
+            workspace = Path(self.config["workspace"]).resolve(strict=True)
+            checkout = Path(w["checkout"]).resolve(strict=True)
+            checkout.relative_to(workspace)
+
+            def metadata():
+                info = decode(self.upstream("info", "--pane", w["pane_id"]))
+                if not isinstance(info, dict):
+                    raise Unavailable("invalid_metadata")
+                info = {k: text(info.get(k), 1024) for k in META}
+                if info["pane_id"] != w["pane_id"]:
+                    raise Unavailable("identity_mismatch")
+                if (
+                    not Path(info["pane_current_path"]).is_absolute()
+                    or Path(info["pane_current_path"]).resolve(strict=True) != checkout
+                    or Path(w["checkout"]).resolve(strict=True) != checkout
+                    or Path(self.config["workspace"]).resolve(strict=True) != workspace
+                    or not checkout.is_dir()
+                ):
+                    raise Unavailable("directory_mismatch")
+                return info
+
             # Upstream can only discover all pane metadata. Filter immediately; never
             # capture or return other panes. Cap the entire discovery subprocess output.
             panes = decode(self.upstream("panes"))
@@ -197,20 +218,13 @@ class Observer:
             if len(found) != 1:
                 raise Unavailable("pane_missing_or_ambiguous")
             self.identity(w)
-            info = decode(self.upstream("info", "--pane", w["pane_id"]))
-            if not isinstance(info, dict):
-                raise Unavailable("invalid_metadata")
-            info = {k: text(info.get(k), 1024) for k in META}
-            if (
-                info["pane_id"] != w["pane_id"]
-                or Path(info["pane_current_path"]).resolve() != Path(w["checkout"]).resolve()
-            ):
-                raise Unavailable("identity_mismatch")
+            info = metadata()
             terminal = (
                 self.upstream("capture", "--pane", w["pane_id"], "--tail", "60")
                 if capture
                 else None
             )
+            metadata()
             self.identity(w)
             result.update(identity="matched", pane=info, terminal=terminal)
         except (Unavailable, OSError, ValueError) as error:
