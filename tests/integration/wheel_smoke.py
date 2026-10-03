@@ -49,14 +49,23 @@ def main():
         invoke(core + ["settlement", "inspect"])
         invoke(core + ["settlement", "replay"])
         assert invoke(core + ["health"], 1)["status"] == "unhealthy"
+        assert invoke(core + ["forecast", "migrate"])["schema_version"] == 3
+        assert invoke(core + ["forecast", "migrate"])["migrated"] is False
+        assert invoke(core + ["db-init"])["schema_version"] == 3
+        assert invoke(core + ["settlement", "migrate"])["schema_version"] == 3
+        assert (
+            invoke(core + ["replay"])["forecast_storage"]["replay"] == "preserved_not_reconstructed"
+        )
         ops = [str(repo / "ops/manage.py")]
         backup, restored = root / "backup.sqlite3", root / "restored.sqlite3"
         invoke(ops + ["backup", "--source", str(database), "--destination", str(backup)])
         invoke(ops + ["restore", "--source", str(backup), "--destination", str(restored)])
-        assert invoke(ops + ["inspect", "--database", str(restored)])["schema_version"] == 2
+        report = invoke(ops + ["inspect", "--database", str(restored)])
+        assert report["schema_version"] == 3
+        assert "forecast_publications" in report["counts"]
         future_core = ["-m", "vader_intelligence.cli", "--db", str(restored)]
         with sqlite3.connect(restored) as db:
-            db.execute("PRAGMA user_version=3")
+            db.execute("PRAGMA user_version=4")
         assert "unsupported" in invoke(future_core + ["db-init"], 1)["error"]
         assert "supported" in invoke(ops + ["inspect", "--database", str(restored)], 1)["error"]
     print(

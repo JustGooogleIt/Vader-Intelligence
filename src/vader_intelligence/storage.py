@@ -45,9 +45,17 @@ class Store:
             )
             self.db.row_factory = sqlite3.Row
             self.db.execute("PRAGMA query_only=ON")
-            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2):
+            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3):
                 self.db.close()
                 raise RuntimeError("unsupported database schema")
+            if self.db.execute("PRAGMA user_version").fetchone()[0] == 3:
+                from .forecast.schema import check_schema
+
+                try:
+                    check_schema(self.db)
+                except BaseException:
+                    self.db.close()
+                    raise
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.check_space()
@@ -73,8 +81,12 @@ class Store:
 
     def migrate(self):
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2):
+        if version not in (0, 1, 2, 3):
             raise RuntimeError(f"unsupported database schema version {version}")
+        if version == 3:
+            from .forecast.schema import check_schema
+
+            check_schema(self.db)
         if version == 0:
             script = files("vader_intelligence").joinpath("migrations/001_initial.sql").read_text()
             try:
@@ -236,6 +248,13 @@ class Store:
             failures.append("SQLite quick_check failed")
         if self.db.execute("PRAGMA foreign_key_check").fetchone():
             failures.append("foreign key check failed")
+        if self.db.execute("PRAGMA user_version").fetchone()[0] == 3:
+            from .forecast.journal import integrity
+
+            try:
+                integrity(self.db)
+            except (ValueError, KeyError, TypeError, sqlite3.Error) as exc:
+                failures.append("forecast storage integrity: " + str(exc)[:300])
         return failures
 
     def summary(self, run_id):
@@ -264,7 +283,7 @@ class Store:
 
     def health(self, stale_seconds=180):
         row = self.db.execute(
-            "SELECT * FROM runs WHERE kind NOT IN ('fixture','settlement-refresh') "
+            "SELECT * FROM runs WHERE kind IN ('collect','discover','live-check') "
             "ORDER BY rowid DESC LIMIT 1"
         ).fetchone()
         book = self.db.execute(
