@@ -79,6 +79,16 @@ def statements(script):
 def require_schema(db):
     if db.execute("PRAGMA user_version").fetchone()[0] != 3:
         raise ValueError("forecast storage requires explicit schema 3 migration")
+    layout = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='evaluation_items'"
+    ).fetchone()
+    # Schema 3 is still a draft. Reject its pre-fix rowid layout on reads AND
+    # writes; changing user_version or reopening must never silently rebuild it.
+    if not layout or not "".join(layout[0].split()).rstrip(";").upper().endswith("WITHOUTROWID"):
+        raise ValueError(
+            "unsupported schema-3 layout: evaluation_items requires WITHOUT ROWID; "
+            "preserve the pre-fix archive and create a separate database from schema 2"
+        )
 
 
 def check_schema(db):

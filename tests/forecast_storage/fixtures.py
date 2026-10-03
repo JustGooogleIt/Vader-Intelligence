@@ -90,7 +90,12 @@ def legacy(path, version=2):
 
 def snapshot(db):
     return {
-        r[0]: db.execute('SELECT * FROM "' + r[0] + '" ORDER BY rowid').fetchall()
+        r[0]: db.execute(
+            'SELECT * FROM "'
+            + r[0]
+            + '" ORDER BY '
+            + ("evaluation_id,opportunity_key" if r[0] == "evaluation_items" else "rowid")
+        ).fetchall()
         for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     }
 

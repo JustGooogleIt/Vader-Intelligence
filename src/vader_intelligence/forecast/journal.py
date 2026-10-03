@@ -25,6 +25,29 @@ def parent(db, table, row_id, mode):
     return row
 
 
+def correction_lineage(db, table, payload):
+    """Validate every supersedes edge, including ancestry in a malformed archive.
+
+    Checking only the immediate parent lets a previously mislabeled correction
+    launder synthetic history. No recursion or unbounded chain walk.
+    """
+    current = payload
+    visited = set()
+    while current["supersedes_id"] is not None:
+        identifier = current["supersedes_id"]
+        if identifier in visited:
+            raise ValueError("cyclic correction lineage")
+        if len(visited) >= 1000:
+            raise ValueError("correction lineage exceeds 1000 ancestors")
+        visited.add(identifier)
+        prior = json.loads(row_dict(db, table, {"id": identifier})["payload_json"])
+        if prior["mode"] == "synthetic" and current["mode"] != "synthetic":
+            raise ValueError("synthetic correction lineage cannot be promoted")
+        if table == "evaluation_runs" and prior["mode"] != current["mode"]:
+            raise ValueError("incompatible parent mode in correction lineage")
+        current = prior
+
+
 def validate_links(db, table, p):
     run = db.execute("SELECT kind,provenance_json FROM runs WHERE id=?", (p["run_id"],)).fetchone()
     if run is None or (run[0] == "fixture" and p["mode"] != "synthetic"):
@@ -38,6 +61,8 @@ def validate_links(db, table, p):
     ):
         raise ValueError("local forecasting storage cannot claim model calls")
     validate_references(db, p)
+    if table in ("forecast_decisions", "evaluation_runs"):
+        correction_lineage(db, table, p)
     if (
         "source_ceiling" in p
         and p["source_ceiling"]

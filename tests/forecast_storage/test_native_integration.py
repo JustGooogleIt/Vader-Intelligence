@@ -18,6 +18,7 @@ from vader_intelligence.settlement.schema import migrate as settlement_migrate  
 from vader_intelligence.storage import Store, writer_lock  # noqa: E402
 
 from .fixtures import populated, snapshot  # noqa: E402
+from .test_p2_regressions import old_layout  # noqa: E402
 
 
 def test_real_explicit_1_2_3_and_no_implicit_upgrade(tmp_path):
@@ -95,3 +96,22 @@ def test_real_cli_writer_exclusion(tmp_path):
     ro = Store(path, min_free_bytes=1, readonly=True)
     assert ro.db.execute("PRAGMA user_version").fetchone()[0] == 2
     ro.close()
+
+
+def test_store_and_cli_refuse_pre_fix_schema_three(tmp_path):
+    source, payloads = populated(tmp_path / "fixed.sqlite3")
+    source.close()
+    path = tmp_path / "pre-fix.sqlite3"
+    old = old_layout(path, payloads)
+    try:
+        before = snapshot(old)
+        ddl = old.execute("SELECT * FROM sqlite_master ORDER BY name").fetchall()
+        for readonly in (True, False):
+            with pytest.raises(ValueError, match="unsupported schema-3 layout"):
+                Store(path, min_free_bytes=1, readonly=readonly)
+        with pytest.raises(ValueError, match="unsupported schema-3 layout"):
+            execute(parser().parse_args(["--db", str(path), "forecast", "migrate"]))
+        assert snapshot(old) == before
+        assert old.execute("SELECT * FROM sqlite_master ORDER BY name").fetchall() == ddl
+    finally:
+        old.close()

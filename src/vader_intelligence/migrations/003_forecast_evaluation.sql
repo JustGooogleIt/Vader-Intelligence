@@ -157,7 +157,7 @@ CREATE TABLE evaluation_items (
     CHECK(kalshi_id IS json_extract(payload_json,'$.kalshi_id')),
     PRIMARY KEY(evaluation_id,opportunity_key),
     UNIQUE(evaluation_id,game_id,horizon)
-);
+) WITHOUT ROWID;
 
 CREATE TRIGGER evaluation_items_no_update BEFORE UPDATE ON evaluation_items BEGIN SELECT RAISE(ABORT, 'immutable forecast history'); END;
 

@@ -1,5 +1,95 @@
 # F3.2 forecasting storage foundation
 
+## PR #7 P2 corrections (2026-10-03)
+
+Started from Prime's reviewed head `8640a290d6bad00ff927cb7195e83919f5fb1042`
+on `feat/forecast-storage` in its existing isolated worktree. PR #6 work remains
+separate. Prime's local `pr7-review.md` was not available here and was not read;
+both findings were reproduced from the supplied descriptions before source edits.
+The two initial regression tests failed on the old implementation: an explicit
+rowid REPLACE succeeded, and a historical correction of a synthetic decision was
+accepted. A separate reproduction confirmed that old integrity inspection also
+reported that correction archive as `verified`.
+
+### Fixes and schema compatibility
+
+- `evaluation_items` now uses its existing composite primary key as its only row
+  identity (`WITHOUT ROWID`). Its hidden rowid previously offered a replacement
+  route outside the logical-key trigger. `rowid`, `_rowid_` and `oid` insertion
+  attempts now fail because no such columns exist. The other six tables use
+  `id INTEGER PRIMARY KEY`; their physical identity aliases are already covered
+  by the existing BEFORE INSERT guard. Tests exercise every table/alias with both
+  INSERT OR REPLACE and REPLACE, under recursive_triggers OFF and ON, preserve all
+  rows/references, and verify exact application retries. No connection setting is
+  relied upon to stop implicit replacement deletions.
+- Decision and evaluation-run supersedes chains are checked edge by edge in the
+  shared persistence/integrity validator. Synthetic ancestry cannot become a
+  non-synthetic correction, including through previously malformed intermediate
+  rows. Evaluation corrections retain the existing same-mode rule. Same-mode
+  chains/retries remain supported. Cycles fail closed; at most 1000 ancestors are
+  visited per record so inspection cannot enter an unbounded lineage walk.
+
+**This changes the draft schema-3 definition**, while keeping user_version=3.
+Schema 3 has not been released/deployed; production remains schema 1 and was not
+accessed. Existing schema-1/2 paths are unchanged. New explicit 2→3 migrations use
+the corrected layout; repeated migration on that layout remains a no-op.
+
+Pre-fix disposable schema-3 databases are **unsupported by this revision**. Version
+3 alone is insufficient: schema validation checks the required WITHOUT ROWID layout.
+Store initialization/read-only opens, journal writes, integrity, ops inspection,
+backup/restore validation and repeated forecast migration reject the old layout
+with `unsupported schema-3 layout`. Tests preserve the populated old database's
+rows, references, schema SQL and version after rejection; no implicit rebuild or
+schema repair occurs. The native Store/CLI rejection test still needs Mac execution.
+
+Keep any pre-fix archive untouched, including its associated SQLite files; do not
+drop/recreate its table, lower user_version, or overwrite it with a fresh archive.
+For further disposable tests, create a **new path** from a preserved schema-2 backup
+using SQLite backup/restore, then explicitly run forecast migrate, or create fresh
+synthetic fixtures. This does not recover/reconstruct old forecasting rows: those
+remain in the preserved old archive. No in-place upgrade or automatic transfer of
+pre-fix research history is provided. If that history must be carried forward,
+stop and design a separately reviewed explicit preservation/validation migration.
+Current ops tooling intentionally refuses to certify a pre-fix schema-3 backup;
+retaining the old archive is not a claim that its provenance was valid.
+
+### Verification of these fixes
+
+Windows / Python 3.12.14, private environments and existing pinned tooling:
+
+```powershell
+.venv/Scripts/python.exe -m pytest --noconftest -q tests/forecast_storage/test_p2_regressions.py
+.venv/Scripts/python.exe -m pytest --noconftest -q tests/forecast_storage tests/forecast tests/evaluation
+.venv/Scripts/python.exe -m unittest discover -s tests/ops -q
+.venv/Scripts/ruff.exe check src tests ops
+.venv/Scripts/ruff.exe format --check src tests ops
+../forecast-policies/.venv/Scripts/uv.exe build
+git diff --check
+```
+
+**54 new regression cases passed; 258 combined tests passed, 1 Unix module skipped.**
+Operations: **31 run, 1 skipped** (30 passed). Lint/format/diff checks passed; wheel
+and source distributions built. Installed the wheel with --no-deps in a new private
+`.venv-wheel-f32-p2` and used isolated Python (`-I`) to create an in-memory synthetic
+schema-2 database from the packaged SQL: 2→3 migration, WITHOUT ROWID verification,
+repeated-migration no-op and integrity all passed from site-packages. This portable
+package check does not exercise the Unix collector CLI or writer lock.
+
+A normal invocation of `tests/forecast_storage/test_native_integration.py` was
+attempted and blocked by the existing `fcntl` import in root conftest. No mocked
+POSIX locks/alarm shims were used. The exact Mac recheck commands below remain
+required at the new commit, including native Store/CLI rejection of the old layout,
+restore/replay, real lock exclusion and installed-wheel CLI checks. Keep PR #7 draft
+and unmerged pending Prime's re-review and those checks.
+
+Applied pinned Cool Coder `implement`, `code-review`, `data-systems-design` at
+`e46e79805be0ee5877fa9bc993492064bbb40aa5` (1.2.0); shared installations unchanged.
+Review focus: H-03/14 SQL identity and retries, H-09 explicit draft compatibility,
+H-38 preserved history, bounded lineage and rejection of synthetic promotion.
+No F3.3, forecasting generation, production access or deployment.
+
+## Original F3.2 implementation record
+
 F3.1 PR #5 was merged with a merge commit after verifying the cleared head
 `ae1769781b2c1efaac837c59e0d722cd375b9bf1`, clean mergeability and no required
 checks/protection rules. Merge/resulting main:
@@ -18,6 +108,8 @@ Repository visibility remains public.
 
 Seven additive tables: `discovery_passes`, `forecast_bindings`, `forecast_receipts`,
 `forecast_decisions`, `forecast_publications`, `evaluation_runs`, `evaluation_items`.
+The corrected schema-3 layout requires `evaluation_items` to be WITHOUT ROWID;
+the pre-fix layout compatibility restriction above applies throughout this handoff.
 Each keeps a canonical, version-1 complete `payload_json` and SHA-256. SQL projects
 only the indexed identity, uniqueness and FK fields; CHECK constraints bind those
 projections to JSON. This avoids duplicating the full research manifest across
@@ -120,7 +212,7 @@ A schema-2 binary is not a code-only rollback for schema 3. Preserve the expande
 archive, use compatible code/fix forward, or inspect a separately restored backup;
 never overwrite current evidence with an older copy or lower user_version/drop tables.
 
-## Verification actually performed
+## Initial verification at 8640a29 (before the P2 fixes)
 
 Windows, Python 3.12.14, private `.venv`, existing uv 0.12.19 with `uv sync --locked`.
 No lockfile changes, dependency upgrade, fake POSIX lock or alarm shim.
@@ -155,15 +247,17 @@ Run on a separate disposable checkout/environment, never the deployed collector:
 
 ```sh
 uv sync --locked  # use existing pinned uv 0.12.19
-.venv/bin/python -m pytest -q tests/forecast_storage
+.venv/bin/python -m pytest -q tests/forecast_storage/test_p2_regressions.py tests/forecast_storage/test_native_integration.py
+.venv/bin/python -m pytest -q tests/forecast_storage tests/forecast tests/evaluation
 .venv/bin/python -m pytest -q tests/test_archive.py tests/test_cli.py tests/test_integration.py tests/settlement
 .venv/bin/python -m unittest discover -s tests/ops -q
 .venv/bin/ruff check src tests ops
 .venv/bin/ruff format --check src tests ops
 uv build
-uv venv .venv-wheel-f32
-uv pip install --python .venv-wheel-f32/bin/python dist/vader_intelligence-0.1.0-py3-none-any.whl
-.venv/bin/python tests/integration/wheel_smoke.py --python "$PWD/.venv-wheel-f32/bin/python"
+# Use a new environment name if this one already exists; never overwrite it.
+uv venv .venv-wheel-f32-p2
+uv pip install --python .venv-wheel-f32-p2/bin/python dist/vader_intelligence-0.1.0-py3-none-any.whl
+.venv/bin/python tests/integration/wheel_smoke.py --python "$PWD/.venv-wheel-f32-p2/bin/python"
 ```
 
 Native tests cover populated real Store/fixture 1→2→3, no downgrade, health exclusion,
