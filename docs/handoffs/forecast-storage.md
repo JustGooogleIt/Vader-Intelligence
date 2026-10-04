@@ -1,5 +1,69 @@
 # F3.2 forecasting storage foundation
 
+## Writable Store initialization follow-up (2026-10-03)
+
+Started from `1ed4bf109c383ad04190efa7d1872cd4f3e7c740` on the isolated
+`feat/forecast-storage` worktree. Prime confirmed the two original P2 fixes and
+reported a later byte-preservation defect: writable Store enabled WAL before
+rejecting a pre-fix schema-3 archive. The earlier rejection tests checked rows and
+schema SQL while a fixture connection remained open; they did not prove preservation
+of closed DELETE-mode archive bytes. Prime's native reproduction is reported
+evidence, not a native test performed in this Windows session.
+
+The narrow fix extracts the existing compatibility check into
+`Store._validated_schema_version()` and calls it on **self.db**, before any setup
+PRAGMA or initialization write. Only accepted versions/layouts proceed to WAL and
+normal initialization. `migrate()` retains the same validation and explicit upgrade
+semantics. All setup now sits inside the existing exception/connection-close path.
+No separate path preflight/reopen is relied upon. Existing external writer-lock
+ownership is unchanged: CLI paths continue to hold it around Store construction,
+and the persistent `.lockfile` inode is intentionally retained on rejection.
+
+New `test_store_initialization.py` has 15 native cases covering:
+
+- Closed, quiescent populated pre-fix schema 3 and unknown future schema 4 in DELETE
+  mode; direct Store opens (writable/read-only) and actual CLI subprocess rejection.
+- Exact database bytes, DELETE journal mode, and absence of unexpected sidecars
+  after repeated rejection. CLI may leave only its expected `.lockfile`; tests also
+  verify that the lock was released.
+- Fresh initialization and supported schemas 1/2/3, repeated opens, explicit CLI
+  1→2→3 migration/no-ops, and validation of the actual connection if the open target
+  differs from the named path. No POSIX locking/alarm shim is used.
+
+Windows verification actually performed:
+
+```powershell
+.venv/Scripts/python.exe -m pytest --noconftest -q tests/forecast_storage tests/forecast tests/evaluation
+.venv/Scripts/python.exe -m unittest discover -s tests/ops -q
+.venv/Scripts/ruff.exe check src tests ops
+.venv/Scripts/ruff.exe format --check src tests ops
+../forecast-policies/.venv/Scripts/uv.exe build
+git diff --check
+```
+
+**258 passed, 2 native modules skipped**; operations **31 run, 1 skipped** (30
+passed). Lint/format/diff checks and wheel/source builds passed. The wheel's Store,
+schema-3 SQL and correction-lineage source exactly match the worktree; the packaged
+Store source compiles. This is packaging validation, **not native Store execution**.
+A normal invocation of the new test file was attempted but failed at the existing
+root conftest's `fcntl` import. The 15 new native cases have therefore **not run here**.
+
+Prime's focused Mac command, from a disposable checkout of the new head after
+`uv sync --locked` (existing pinned uv 0.12.19):
+
+```sh
+.venv/bin/python -m pytest -q tests/forecast_storage/test_store_initialization.py
+```
+
+Then run the complete native recheck/package commands in **Outstanding Mac
+verification** below. In particular the new closed-archive tests must pass before
+claiming native byte preservation. WITHOUT ROWID, synthetic lineage, supported
+migration paths and rejection of the old draft schema-3 layout are unchanged.
+No schema definition change in this follow-up. PR #6 is owned by Prime and was not
+accessed or changed; production, its schema-1 archive, merge and F3.3 are untouched.
+Applied pinned Cool Coder `implement`, `data-systems-design`, and `code-review` at
+`e46e79805be0ee5877fa9bc993492064bbb40aa5`; shared installations unchanged.
+
 ## PR #7 P2 corrections (2026-10-03)
 
 Started from Prime's reviewed head `8640a290d6bad00ff927cb7195e83919f5fb1042`
@@ -247,6 +311,7 @@ Run on a separate disposable checkout/environment, never the deployed collector:
 
 ```sh
 uv sync --locked  # use existing pinned uv 0.12.19
+.venv/bin/python -m pytest -q tests/forecast_storage/test_store_initialization.py
 .venv/bin/python -m pytest -q tests/forecast_storage/test_p2_regressions.py tests/forecast_storage/test_native_integration.py
 .venv/bin/python -m pytest -q tests/forecast_storage tests/forecast tests/evaluation
 .venv/bin/python -m pytest -q tests/test_archive.py tests/test_cli.py tests/test_integration.py tests/settlement
@@ -255,9 +320,9 @@ uv sync --locked  # use existing pinned uv 0.12.19
 .venv/bin/ruff format --check src tests ops
 uv build
 # Use a new environment name if this one already exists; never overwrite it.
-uv venv .venv-wheel-f32-p2
-uv pip install --python .venv-wheel-f32-p2/bin/python dist/vader_intelligence-0.1.0-py3-none-any.whl
-.venv/bin/python tests/integration/wheel_smoke.py --python "$PWD/.venv-wheel-f32-p2/bin/python"
+uv venv .venv-wheel-f32-init
+uv pip install --python .venv-wheel-f32-init/bin/python dist/vader_intelligence-0.1.0-py3-none-any.whl
+.venv/bin/python tests/integration/wheel_smoke.py --python "$PWD/.venv-wheel-f32-init/bin/python"
 ```
 
 Native tests cover populated real Store/fixture 1→2→3, no downgrade, health exclusion,

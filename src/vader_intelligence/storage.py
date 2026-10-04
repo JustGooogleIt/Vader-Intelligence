@@ -61,12 +61,15 @@ class Store:
         self.check_space()
         self.db = sqlite3.connect(self.path, timeout=5, isolation_level=None)
         self.db.row_factory = sqlite3.Row
-        self.db.execute("PRAGMA foreign_keys=ON")
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA synchronous=FULL")
-        self.db.execute("PRAGMA fullfsync=ON")
-        self.db.execute("PRAGMA busy_timeout=5000")
         try:
+            # Validate this connection before WAL changes the archive header or
+            # fresh initialization writes anything. Callers retain writer_lock.
+            self._validated_schema_version()
+            self.db.execute("PRAGMA foreign_keys=ON")
+            self.db.execute("PRAGMA journal_mode=WAL")
+            self.db.execute("PRAGMA synchronous=FULL")
+            self.db.execute("PRAGMA fullfsync=ON")
+            self.db.execute("PRAGMA busy_timeout=5000")
             self.migrate()
         except BaseException:
             self.db.close()
@@ -79,7 +82,7 @@ class Store:
         if shutil.disk_usage(self.path.parent).free < self.min_free_bytes:
             raise RuntimeError("insufficient disk space; collection stopped without deleting data")
 
-    def migrate(self):
+    def _validated_schema_version(self):
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
         if version not in (0, 1, 2, 3):
             raise RuntimeError(f"unsupported database schema version {version}")
@@ -87,6 +90,10 @@ class Store:
             from .forecast.schema import check_schema
 
             check_schema(self.db)
+        return version
+
+    def migrate(self):
+        version = self._validated_schema_version()
         if version == 0:
             script = files("vader_intelligence").joinpath("migrations/001_initial.sql").read_text()
             try:
