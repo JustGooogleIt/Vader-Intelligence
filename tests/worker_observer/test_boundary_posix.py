@@ -10,7 +10,9 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.skipif(os.name != "posix", reason="requires native POSIX signals/waitid")
+pytestmark = pytest.mark.skipif(
+    os.name != "posix", reason="requires native POSIX signals/process groups"
+)
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -33,8 +35,9 @@ def not_running(pid):
     return status.returncode == 1 or status.stdout.strip().startswith("Z")
 
 
+@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT])
 @pytest.mark.parametrize("mode", ["running", "stubborn", "creating", "leader_exits"])
-def test_sigterm_cleans_owned_group_and_reaps_direct_child(tmp_path, mode):
+def test_termination_cleans_owned_group_and_reaps_direct_child(tmp_path, mode, signum):
     ready = tmp_path / "ready.json"
     grand_ready = tmp_path / "grand.ready"
     report = tmp_path / "report.json"
@@ -70,7 +73,7 @@ class Launch(real_popen):
                 if time.monotonic() >= deadline: raise RuntimeError('child not ready')
                 time.sleep(.01)
             # A real kernel signal before run() receives the child handle.
-            os.kill(os.getpid(), signal.SIGTERM)
+            os.kill(os.getpid(), {int(signum)})
 subprocess.Popen = Launch
 code = 0
 try:
@@ -105,11 +108,13 @@ sys.exit(code)
         if mode != "creating":
             if mode == "leader_exits":
                 time.sleep(0.1)  # Leader exits; descendant still holds stdout.
-            wrapper.send_signal(signal.SIGTERM)
+            wrapper.send_signal(signum)
             time.sleep(0.05)
-            wrapper.send_signal(signal.SIGTERM)  # Must not interrupt escalation/reaping.
+            wrapper.send_signal(signum)  # Must not interrupt escalation/reaping.
+        cleanup_started = time.monotonic()
         out, err = wrapper.communicate(timeout=6)
-        assert wrapper.returncode == 143, (out, err)
+        assert time.monotonic() - cleanup_started < 5
+        assert wrapper.returncode == 128 + signum, (out, err)
         result = json.loads(report.read_text())
         assert result["restored"] and result["reaped"] == [True]
         if mode in ("stubborn", "creating"):
@@ -165,3 +170,142 @@ print(grand.pid)
     while not not_running(grand) and time.monotonic() < deadline:
         time.sleep(0.02)
     assert not_running(grand)
+
+
+def test_anchor_stays_alive_until_final_group_signal(monkeypatch):
+    from tools.worker_observer import boundary
+
+    real_popen, real_killpg = subprocess.Popen, os.killpg
+    children, signals = [], []
+
+    class Launch(real_popen):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            children.append(self)
+
+    def checked_signal(pgid, signum):
+        child = children[0]
+        assert pgid == child.pid
+        assert child.returncode is None
+        # The completed command is reaped by its supervisor; our group leader
+        # stays LIVE (not just zombie) through the final signal on Mac and Unix.
+        assert os.waitpid(child.pid, os.WNOHANG) == (0, 0)
+        signals.append(signum)
+        real_killpg(pgid, signum)
+
+    monkeypatch.setattr(subprocess, "Popen", Launch)
+    monkeypatch.setattr(os, "killpg", checked_signal)
+    assert boundary.run([sys.executable, "-c", "print('ok')"]) == "ok\n"
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+    assert children[0].returncode == -signal.SIGKILL
+    with pytest.raises(ChildProcessError):
+        os.waitpid(children[0].pid, os.WNOHANG)
+
+
+def test_stdout_eof_is_not_process_exit(tmp_path):
+    from tools.worker_observer.boundary import run
+
+    completed = tmp_path / "completed"
+    code = (
+        "import os,time,pathlib;os.close(1);time.sleep(.1);"
+        f"pathlib.Path({str(completed)!r}).touch()"
+    )
+    assert run([sys.executable, "-c", code], timeout=2) == ""
+    assert completed.exists()
+
+
+def test_reaped_child_refused_without_group_signal(monkeypatch):
+    from tools.worker_observer.boundary import Unavailable, cleanup
+
+    child = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
+    child.wait(timeout=2)
+
+    def forbidden(*_args):
+        pytest.fail("must not signal a reaped child's possibly reused group")
+
+    monkeypatch.setattr(os, "killpg", forbidden)
+    with pytest.raises(Unavailable, match="child_ownership_lost"):
+        cleanup(child)
+
+
+def test_signal_failure_is_reported_after_reaping(monkeypatch):
+    from tools.worker_observer.boundary import Unavailable, cleanup
+
+    child = subprocess.Popen(
+        [sys.executable, "-c", "import time;time.sleep(10)"], start_new_session=True
+    )
+    real_killpg = os.killpg
+
+    def denied_term(pgid, signum):
+        assert pgid == child.pid
+        if signum == signal.SIGTERM:
+            raise PermissionError("synthetic denied signal")
+        real_killpg(pgid, signum)
+
+    monkeypatch.setattr(os, "killpg", denied_term)
+    try:
+        with pytest.raises(Unavailable, match="cleanup_signal_failed"):
+            cleanup(child)
+        assert child.returncode == -signal.SIGKILL
+        with pytest.raises(ChildProcessError):
+            os.waitpid(child.pid, os.WNOHANG)
+    finally:
+        if child.returncode is None:
+            child.kill()
+            child.wait(timeout=2)
+
+
+def test_termination_before_supervisor_initialization():
+    code = """
+import os, signal, subprocess, sys
+from tools.worker_observer import boundary
+previous = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGINT)}
+real_popen = subprocess.Popen
+children = []
+class Launch(real_popen):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        children.append(self)
+        os.kill(self.pid, signal.SIGSTOP)
+        os.kill(os.getpid(), signal.SIGTERM)
+        os.kill(os.getpid(), signal.SIGTERM)
+subprocess.Popen = Launch
+try:
+    try: boundary.run([sys.executable, '-c', 'pass'])
+    except SystemExit as exc: assert exc.code == 143
+    else: raise AssertionError('termination was lost')
+    assert all(signal.getsignal(s) == handler for s, handler in previous.items())
+    # Before handlers initialize, TERM may terminate it; otherwise KILL does.
+    assert children[0].returncode in (-signal.SIGTERM, -signal.SIGKILL)
+    try: os.waitpid(children[0].pid, os.WNOHANG)
+    except ChildProcessError: pass
+    else: raise AssertionError('direct child not reaped')
+finally:
+    for child in children:
+        if child.returncode is None:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.wait(timeout=2)
+"""
+    result = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, timeout=6)
+    assert result.returncode == 0, result.stderr
+
+
+def test_supervisor_exit_without_result_is_failure_and_reaped(monkeypatch):
+    from tools.worker_observer import boundary
+
+    real_popen = subprocess.Popen
+    children = []
+
+    class BrokenSupervisor(real_popen):
+        def __init__(self, argv, **kwargs):
+            super().__init__([sys.executable, "-c", "pass"], **kwargs)
+            children.append(self)
+
+    monkeypatch.setattr(subprocess, "Popen", BrokenSupervisor)
+    # Mac may report EPERM for the now-zombie-only group. It must still reap
+    # and fail explicitly, never turn missing completion into an exit-0 result.
+    with pytest.raises(boundary.Unavailable, match="child_supervisor_failed|cleanup_signal_failed"):
+        boundary.run([sys.executable, "-c", "print('must not launch')"], timeout=2)
+    assert children[0].returncode == 0
+    with pytest.raises(ChildProcessError):
+        os.waitpid(children[0].pid, os.WNOHANG)

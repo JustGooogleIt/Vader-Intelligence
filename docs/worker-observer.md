@@ -115,21 +115,44 @@ observation. No raw subprocess stderr or provider error bodies are returned.
 Bounds: 16 registrations, 512 discovered records, 128 KiB discovery/info stdout,
 16 KiB capture stdout (overflow fails closed), 60 requested scrollback lines,
 5 seconds per local child, 20 seconds per optional assessment, plus bounded cleanup.
-At most six local child commands per inspect, with no retries/ongoing observation loop.
+At most six local command invocations per inspect, with no retries/ongoing observation
+loop. On POSIX, each invocation has one small supervisor (`owned_child.py`) and the
+requested command. This is a subprocess implementation detail, not a worker manager.
 The subprocess boundary must run on the main thread. SIGTERM/SIGINT handlers only
 record a request, including during process creation; after Popen returns, cleanup
 runs and exits with 128 + signal number (143/130), restoring previous handlers.
-Repeated termination requests do not interrupt cleanup. POSIX children start in a
-new session/group. Cleanup signals only that owned group with SIGTERM, allows 250ms,
-then escalates to SIGKILL, waits up to 2s to reap the direct child, and joins the reader
-for up to 2s. Descendants remaining in the group are signaled even if the leader has
-exited. `waitid(WNOWAIT)` keeps the leader unreaped until the last group signal so
-its PID cannot be reused during cleanup. The boundary requires default SIGCHLD and
-exclusive ownership of child waits; callers must not concurrently reap its child.
-Unsupported waitid platforms and competing SIGCHLD handlers fail before spawning.
+Repeated termination requests do not interrupt cleanup.
+
+The supervisor is the direct child and leader of a fresh session/group. It starts
+the command in that same group, reaps the command on completion, writes its exit
+code through a private bounded pipe, closes its stdout and remains alive. The
+parent requires both this completion message and captured-output EOF; closing
+stdout alone is not completion. The private pipe is not inherited by the command.
+The supervisor catches TERM/INT; those caught handlers reset on command exec, so
+the command still receives ordinary termination signals. No `os.waitid`, kqueue,
+Python upgrade, shell, or external process-monitoring dependency is required.
+
+Cleanup signals only the Popen-owned group with SIGTERM, allows 250ms, then
+escalates to SIGKILL, waits up to 2s to reap the supervisor, and joins the reader
+for up to 2s. The supervisor stays live through the last group signal even after
+the command exits; stubborn same-group descendants are still included. In
+particular, cleanup does not signal a zombie-only group during ordinary completion
+on Mac (which can return EPERM). A signaling error is reported, not swallowed, and
+direct-child reaping is still attempted. Unexpected supervisor exit or a missing/
+malformed completion message fails explicitly; it never becomes a successful command.
+
+The parent never polls or reaps its group leader before its final group signal.
+Default SIGCHLD and exclusive ownership of waits are required: callers must not
+reap that child themselves, install an auto-reaping disposition, or use another
+thread/library that waits for arbitrary children. With that precondition, even an
+unexpectedly exited supervisor remains unreaped and reserves its PID/PGID until
+cleanup ends. Known reaped handles are refused; no signal targets pane/server PIDs
+or a previously reaped command PID. The final parent wait occurs after all group
+signals, so PID reuse cannot redirect a later cleanup signal.
 
 This is not a sandbox: descendants deliberately escaping the group are outside this
-cleanup boundary. SIGKILL of the observer cannot run handlers/finally and may leave
+cleanup boundary, as are descendants changing credentials beyond our signaling
+permissions. SIGKILL of the observer cannot run handlers/finally and may leave
 detached children; an OS-stalled spawn or uninterruptible child cannot be guaranteed
 to terminate within user-space deadlines. Direct-child wait timeout is explicit.
 Windows exercises direct-child cleanup only, not native POSIX signal/group behavior.
@@ -179,8 +202,10 @@ observation with `provider_unavailable`. Advice always has `advisory_only: true`
 There is no action-dispatch path. The custom rubric/response parser is tested with
 mocks only; quality, latency, cost and real provider access remain unverified.
 
-## Disposable Mac smoke (not performed here)
+## Disposable Mac smoke
 
+Native implementation verification of the Mac compatibility follow-up is recorded
+in `docs/handoffs/worker-observer.md`; earlier Windows evidence remains separate.
 Use a disposable checkout/workspace and the isolated environment above. Nothing in
 these commands targets the collector service or its tmux server.
 
