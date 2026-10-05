@@ -32,7 +32,11 @@ def execute(args, config):
         try:
             if args.settlement_command == "migrate":
                 migrate(store)
-                return {"status": "complete", "schema_version": 2, "database": str(store.path)}
+                return {
+                    "status": "complete",
+                    "schema_version": store.db.execute("PRAGMA user_version").fetchone()[0],
+                    "database": str(store.path),
+                }
             require_schema(store)
             if args.settlement_command == "inspect":
                 # One consistent WAL read snapshot across the joined inspection queries.

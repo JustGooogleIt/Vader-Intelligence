@@ -45,7 +45,19 @@ def replay(store):
                 if len(errors) < 100:
                     errors.append({"fetch_id": row["id"], "error": str(exc)[:300]})
             processed += 1
-    return {"processed": processed, "errors": errors, "status": "partial" if errors else "complete"}
+    result = {
+        "processed": processed,
+        "errors": errors,
+        "status": "partial" if errors else "complete",
+    }
+    if store.db.execute("PRAGMA user_version").fetchone()[0] == 3:
+        from .forecast.journal import integrity
+
+        # Preserve existing research ledger exactly; raw replay cannot recreate
+        # publication times, receipts, selected decisions or evaluation materialization.
+        result["forecast_storage"] = integrity(store.db)
+        result["forecast_storage"]["replay"] = "preserved_not_reconstructed"
+    return result
 
 
 def import_fixture(store, path, config):

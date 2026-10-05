@@ -45,20 +45,31 @@ class Store:
             )
             self.db.row_factory = sqlite3.Row
             self.db.execute("PRAGMA query_only=ON")
-            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2):
+            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3):
                 self.db.close()
                 raise RuntimeError("unsupported database schema")
+            if self.db.execute("PRAGMA user_version").fetchone()[0] == 3:
+                from .forecast.schema import check_schema
+
+                try:
+                    check_schema(self.db)
+                except BaseException:
+                    self.db.close()
+                    raise
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.check_space()
         self.db = sqlite3.connect(self.path, timeout=5, isolation_level=None)
         self.db.row_factory = sqlite3.Row
-        self.db.execute("PRAGMA foreign_keys=ON")
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA synchronous=FULL")
-        self.db.execute("PRAGMA fullfsync=ON")
-        self.db.execute("PRAGMA busy_timeout=5000")
         try:
+            # Validate this connection before WAL changes the archive header or
+            # fresh initialization writes anything. Callers retain writer_lock.
+            self._validated_schema_version()
+            self.db.execute("PRAGMA foreign_keys=ON")
+            self.db.execute("PRAGMA journal_mode=WAL")
+            self.db.execute("PRAGMA synchronous=FULL")
+            self.db.execute("PRAGMA fullfsync=ON")
+            self.db.execute("PRAGMA busy_timeout=5000")
             self.migrate()
         except BaseException:
             self.db.close()
@@ -71,10 +82,18 @@ class Store:
         if shutil.disk_usage(self.path.parent).free < self.min_free_bytes:
             raise RuntimeError("insufficient disk space; collection stopped without deleting data")
 
-    def migrate(self):
+    def _validated_schema_version(self):
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2):
+        if version not in (0, 1, 2, 3):
             raise RuntimeError(f"unsupported database schema version {version}")
+        if version == 3:
+            from .forecast.schema import check_schema
+
+            check_schema(self.db)
+        return version
+
+    def migrate(self):
+        version = self._validated_schema_version()
         if version == 0:
             script = files("vader_intelligence").joinpath("migrations/001_initial.sql").read_text()
             try:
@@ -236,6 +255,13 @@ class Store:
             failures.append("SQLite quick_check failed")
         if self.db.execute("PRAGMA foreign_key_check").fetchone():
             failures.append("foreign key check failed")
+        if self.db.execute("PRAGMA user_version").fetchone()[0] == 3:
+            from .forecast.journal import integrity
+
+            try:
+                integrity(self.db)
+            except (ValueError, KeyError, TypeError, sqlite3.Error) as exc:
+                failures.append("forecast storage integrity: " + str(exc)[:300])
         return failures
 
     def summary(self, run_id):
@@ -264,7 +290,7 @@ class Store:
 
     def health(self, stale_seconds=180):
         row = self.db.execute(
-            "SELECT * FROM runs WHERE kind NOT IN ('fixture','settlement-refresh') "
+            "SELECT * FROM runs WHERE kind IN ('collect','discover','live-check') "
             "ORDER BY rowid DESC LIMIT 1"
         ).fetchone()
         book = self.db.execute(
