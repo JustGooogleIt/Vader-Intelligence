@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "worker_id": "synthetic-worker",
+  "task_id": "synthetic-task",
+  "run_id": "synthetic-run",
+  "updated_at": "2026-09-30T12:00:00+00:00",
+  "input_delivery": "reported_delivered",
+  "acknowledged": true,
+  "reported_completion": true,
+  "commit": "0000000000000000000000000000000000000000",
+  "command": {
+    "argv": [
+      "echo",
+      "tests passed"
+    ],
+    "exit_code": 0
+  },
+  "artifacts": [
+    {
+      "path": "tools/worker_observer/examples/synthetic-acceptance.txt",
+      "sha256": "03e532e79b7cee26a053dddd8dc05123fad365854a16796dc35fdf78ee1ec9f1"
+    }
+  ]
+}
