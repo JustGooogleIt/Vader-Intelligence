@@ -164,7 +164,7 @@ def test_migration_reopen_and_future_schema_guard(store, run, config):
     other = Store(config.database, min_free_bytes=1)
     assert other.db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
     assert other.db.execute("SELECT COUNT(*) FROM entities").fetchone()[0] == 1
-    other.db.execute("PRAGMA user_version=3")
+    other.db.execute("PRAGMA user_version=4")
     other.close()
     with pytest.raises(RuntimeError, match="unsupported"):
         Store(config.database, min_free_bytes=1)

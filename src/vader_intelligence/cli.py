@@ -33,11 +33,42 @@ def parser():
     from .settlement.cli import register
 
     register(commands)
+    forecast = commands.add_parser("forecast", help="explicit forecasting storage migration only")
+    forecast.add_subparsers(dest="forecast_command", required=True).add_parser("migrate")
     return p
 
 
 def execute(args):
     config = Config.load(args.config, args.db)
+    if args.command == "forecast":
+        from pathlib import Path
+
+        from .forecast.schema import migrate
+
+        if not Path(config.database).is_file():
+            raise ValueError("forecast migrate requires an existing schema-2 archive")
+        with writer_lock(config.database):
+            # Preflight read-only so an empty/schema-0 path is never initialized
+            # as an accidental side effect of a rejected forecast migration.
+            probe = sqlite3.connect(Path(config.database).resolve().as_uri() + "?mode=ro", uri=True)
+            try:
+                if probe.execute("PRAGMA user_version").fetchone()[0] not in (2, 3):
+                    raise ValueError(
+                        "forecast migrate requires schema 2; run settlement migrate first"
+                    )
+            finally:
+                probe.close()
+            store = Store(config.database, min_free_bytes=config.min_free_bytes)
+            try:
+                changed = migrate(store.db)
+                return {
+                    "status": "complete",
+                    "schema_version": 3,
+                    "migrated": changed,
+                    "database": str(store.path),
+                }
+            finally:
+                store.close()
     if args.command == "settlement":
         from .settlement.cli import execute as settlement_execute
 
