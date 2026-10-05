@@ -7,12 +7,16 @@ schema, service, archive or other pull request.
 Revision 2 (2026-10-04) turns the three interface gaps found in revision 1 into
 concrete contracts (§9), adds the mode relationship table, states the discovery
 failure policy with its governing wording, narrows the witness and clock claims, and
-checks that an incomplete discovery can be recorded honestly (§3.5). `main` and the
-PR #7 head were rechecked and are unchanged from the SHAs below.
+checks that an incomplete discovery can be recorded honestly (§3.5).
+
+Revision 3 (2026-10-05) records that PR #7 and PR #6 have merged, corrects the
+compatibility policy with an explicit record-contract version (§9.6), applies the
+operator's decisions on the three open questions (§10.1), reconciles rollback (§5.5),
+and adds one cohort rule to the governing specification (§5 and §6 there).
 
 Governing documents: [forecast/evaluation specification](forecast-evaluation-v1.md)
 (§2, §3, §6, §7, §8), [F3.1 handoff](../handoffs/forecast-policies.md), and the F3.2
-storage handoff `docs/handoffs/forecast-storage.md` as it exists on the PR #7 head.
+storage handoff `docs/handoffs/forecast-storage.md`, on `main` since PR #7 merged.
 Where this plan and the specification disagree, the specification wins and the
 disagreement is a defect in this plan.
 
@@ -20,10 +24,11 @@ disagreement is a defect in this plan.
 
 | Item | Value | How established |
 |---|---|---|
-| `main` | `804873b841d45d9e4e3478dca9feba86fa36a6ea` | Observed on GitHub and in a fresh clone, 2026-10-04 |
-| PR #7 head (F3.2 storage) | `acc4c2458626f757152904868d42263447133c35` | Observed: open, draft, unmerged, mergeable, no GitHub review recorded |
-| PR #6 head (worker observer) | `a3625086b18de838a3130fb559336a1f00deed71` | Observed: open, draft. Not read, not a dependency of this plan |
-| Merged before `main` | PR #1, #3, #4, #5 (F3.1 pure policies) | Observed on GitHub |
+| `main` now | `ebb58df9b89922db4828fda7d23891dd917a4b90` | Observed on GitHub and fetched, 2026-10-05 |
+| PR #7 (F3.2 storage) | **Merged** 2026-10-05T01:16:49Z as merge commit `d8b7b05`; merged head `acc4c2458626f757152904868d42263447133c35`, the same head revisions 1 and 2 were written against | Observed on GitHub; the head is an ancestor of `main`, and `src/` on `main` is identical to that head |
+| PR #6 (worker observer) | **Merged** 2026-10-05T01:20:41Z; head `a3625086b18de838a3130fb559336a1f00deed71`. Adds `tools/worker_observer/` only | Observed on GitHub. Not a dependency of this plan |
+| `main` when revisions 1 and 2 were written | `804873b841d45d9e4e3478dca9feba86fa36a6ea` | Observed 2026-10-04 |
+| This branch | Current `main` merged in with an ordinary merge commit, so the PR diff stays documentation only | Local |
 | Engineering skills | Cool Coder 1.2.0 at `e46e79805be0ee5877fa9bc993492064bbb40aa5` | Isolated read-only clone; shared installations untouched |
 
 Skills consulted from that isolated clone: `planner`, `detail-planning` (document
@@ -35,13 +40,15 @@ service configuration, any Mac-native test result for PR #7, and the outcome of
 Prime's and Secondary's reviews. Handoff statements about those are reports, not
 observations made here.
 
-**Unmerged interface dependency.** Everything in this plan that names
-`forecast/journal.py`, `forecast/contracts.py`, `forecast/references.py`,
-`forecast/schema.py`, migration `003_forecast_evaluation.sql`, or the schema-3 `Store`
-guards refers to code that exists **only on PR #7 at `acc4c24`**. None of it is on
-`main`, and none of it is copied into this branch. Each such dependency is marked
-**[PR #7]**. If PR #7 changes before merge, §9 must be rechecked against the merged
-commit before implementation starts.
+**Interface dependency, now merged.** `forecast/journal.py`, `forecast/contracts.py`,
+`forecast/references.py`, `forecast/schema.py`, migration `003_forecast_evaluation.sql`
+and the schema-3 `Store` guards were introduced by PR #7 and are on `main` unchanged
+from `acc4c24`. The marker **[PR #7]** below now means "introduced by PR #7, on
+`main`". Neither PR branch was modified by this work.
+
+Also not verified: whether any retained archive is at schema 3, or what
+research rows any archive contains. The compatibility policy in §9.6 assumes nothing
+about that.
 
 ## 1. Where this work sits in the existing milestones
 
@@ -254,15 +261,18 @@ Rules for writers and readers:
   never usable as a complete universe.
 
 One gap in the existing contract: it requires reasons when a pass is incomplete but
-does not forbid reasons when a pass is complete. The follow-up patch adds that check
-(§9.6, P4).
+does not forbid reasons when a pass is complete. The discovery-pass contract is left
+unchanged (§9.6), so this is enforced where it matters: the builder never writes such
+a row, and the projection treats one as unusable.
 
 ## 4. Evidence availability (F3.3b, evidence half)
 
 ### 4.1 What a receipt proves
 
-A receipt proves one thing: at `observed_at`, a process other than the writer read the
-subject as a committed row. `observed_at` is therefore an upper bound on when the
+A receipt written by the witness (contract 2, §9.6) proves one thing: at
+`observed_at`, a process other than the writer read the subject as a committed row.
+A receipt supplied through the journal API by any other caller is a stored assertion
+and is not accepted as availability proof. `observed_at` is therefore an upper bound on when the
 evidence became available. It proves nothing earlier.
 
 | Value | Why it is not availability proof | Permitted use |
@@ -275,6 +285,7 @@ evidence became available. It proves nothing earlier.
 | `discovery_passes.completed_at`, `created_at` | Sampled by the writer before its commit | Freshness age only |
 | `runs.finished_at`, `runs.summary_json` | Mutable, sampled before commit | Operations only |
 | Provider timestamps | Not local knowledge | Retained as source data |
+| HTTP `Date` response header | The provider's clock when it produced the response. It says nothing about when this system stored or observed the row, and it is not independent proof of observation time | Archived in `headers_json` for diagnostics only. Not an eligibility input and not a clock-trust input in this increment |
 | A receipt created today | Proves availability today | Cutoffs after today's `observed_at` |
 
 ### 4.2 Witness procedure
@@ -284,7 +295,8 @@ New module `forecast/witness.py`. One finite invocation:
 1. The caller holds the existing `storage.writer_lock`. If it is busy, the command
    fails with `writer_busy`; nothing retries. While the lock is held no cooperating
    writer has an open transaction, so every row the witness can see is committed.
-2. Start a run of kind `forecast-witness`. PR #7's health allowlist **[PR #7]** already
+2. Require schema 4 (§9.6); on schema 3 the witness refuses with an instruction to run
+   the explicit migration. Start a run of kind `forecast-witness`. PR #7's health allowlist **[PR #7]** already
    keeps this kind from satisfying collection health, and operations still classifies
    only `kind='collect'`.
 3. Sample the session baseline: UTC and monotonic.
@@ -319,10 +331,10 @@ Subjects in this increment: `discovery_pass` and `fetch`. Binding and publicatio
 subjects belong to later steps.
 
 - Discovery passes are selected first, newest first, at most 100 per invocation, where
-  no receipt exists for the pass in this observer namespace and mode.
+  no contract-2 receipt exists for the pass in this observer namespace and mode.
 - Fetches are every **completed** attempt (state `ok`, `parse_error` or `error`, with
   a `retrieved_at`; §9.1) among the newest `witness_scan_rows` (default 5000) by `seq` that has
-  no receipt in this namespace and mode. At most `witness_max_subjects` (default 500)
+  no contract-2 receipt in this namespace and mode. At most `witness_max_subjects` (default 500)
   per invocation, newest first, inserted in ascending `seq`.
 - There is no stored cursor. A fetch that was pending and completes later is picked up
   as long as it is inside the scan window. Anything unwitnessed outside the window is
@@ -334,8 +346,9 @@ Receipt envelope against the PR #7 contract **[PR #7]**:
 
 | Field | Value |
 |---|---|
+| `contract_version` | `2` (§9.6) |
 | `subject_kind` and its one typed id | `fetch` with `fetch_id`, or `discovery_pass` with `discovery_id` |
-| `subject_digest` | For a fetch: the `digest` of its typed reference, which covers the whole row (§9.1; needs patch P1). For a discovery pass: the pass row's `digest`, as PR #7 requires today |
+| `subject_digest` | For a fetch: the `digest` of its typed reference, which covers the whole row (§9.1). For a discovery pass: the pass row's `digest`, as PR #7 requires today |
 | `references` | Exactly one typed reference to the subject row. For a fetch this fingerprints the full row, including UUID, `seq`, state, raw hash and `retrieved_at`. This is what binds the receipt to exact evidence rather than to bytes alone |
 | `observed_at` | Step 5 sample |
 | `session_id` | The witness invocation UUID |
@@ -345,8 +358,10 @@ Receipt envelope against the PR #7 contract **[PR #7]**:
 | `mode` | `synthetic` if the subject's lineage is a fixture run or the clock is injected; otherwise `forward_shadow` |
 | `run_id`, `code_hash`, `config_hash` | The witness run, `source_hash()`, and the digest of that run's recorded configuration (limits and namespace; §9.2) |
 
-PR #7 keys a receipt by subject, digest, namespace and mode, so each subject has **one**
-receipt per namespace, and the first is permanent. Witnessing the same subject again
+A contract-2 receipt is keyed by subject, digest, namespace, mode and contract
+version, so each subject has **one** witness receipt per namespace, and the first is
+permanent. A pre-existing contract-1 receipt for the same subject has a different key
+and neither blocks nor substitutes for it. Witnessing the same subject again
 appends nothing and keeps the original `observed_at`. The witness skips subjects that
 already have a receipt; an `IdempotencyConflict` would mean two different observations
 for one subject and is reported as an integrity failure, not retried.
@@ -393,9 +408,25 @@ attestation exists in v1.
 
 | Situation | What happens | How it ends |
 |---|---|---|
-| Divergence within a session | That session's remaining receipts are untrusted | The next session starts a fresh baseline |
+| Divergence within a session | That session's remaining receipts are untrusted | It does not end by restarting. See below |
 | Wall clock stepped backward | Receipts are untrusted while the clock is below the high-water mark | When the clock is corrected, or when real time passes the mark |
 | Wall clock stepped forward, a trusted receipt was written, then the clock was corrected | Receipts are untrusted until real time reaches the future-dated mark | Only by waiting. The outage lasts as long as the size of the jump |
+
+**What a restart does and does not do.** Starting a new witness session resets one
+thing: the monotonic baseline used by the divergence check, because a monotonic clock
+has no meaning across processes. It does not:
+
+- remove, replace or reinterpret any untrusted receipt already written; those rows are
+  immutable and stay in every integrity pass, backup and report;
+- reset the regression mark, which is read from persisted trusted receipts;
+- show that the wall clock has recovered. A later `trusted` status means only that
+  none of the three checks fired in that session. After a divergence the wall clock
+  may have stepped, and a forward step is exactly the case local clocks cannot see.
+
+Each witness run's summary reports the most recent untrusted receipt it found (id and
+`observed_at`), so an earlier anomaly stays visible next to later trusted receipts.
+
+The archived HTTP `Date` header is not consulted by any of these checks (§4.1).
 
 There is no flag, command or configuration value that marks a clock trusted, resets
 the high-water mark, or rewrites a receipt. A very large forward jump would stop
@@ -414,7 +445,11 @@ receipts and no discovery pass. Nothing in this plan creates either retroactivel
 - A witness run today can produce receipts for old fetches inside its scan window.
   Their `observed_at` is today, so they cannot qualify for any earlier cutoff.
 
-For a cutoff before the first receipts exist, the projection returns
+Records already written through the journal API are a second kind of legacy.
+Contract-1 receipts and decisions stay valid under contract 1 and stay inspectable,
+and they are never used by the projection or by any new forecast (§9.6).
+
+For a cutoff before the first witness receipts exist, the projection returns
 `availability_unproven` for inputs and `universe_incomplete` for discovery. Such
 evidence may appear in a separately labelled diagnostic reconstruction and never in the
 strict cohort. The specification's "documented conservative witness" needs an existing
@@ -430,6 +465,9 @@ into the arguments that the merged F3.1 `forecast.policy` functions already acce
   with the `observed_at` of its trusted receipt, or no observation time.
 - `discovery_as_of(db, cutoff, namespace)` returns the applicable pass, its
   `EvidenceTimes(completed_at, observed_at)`, `universe_complete` and reasons.
+
+Only contract-2 receipts are read; a contract-1 receipt contributes nothing, whatever
+time it claims.
 
 Applicable-pass rule, using only records whose trusted receipt has `observed_at ≤ C`:
 
@@ -483,7 +521,7 @@ between its own transactions, so the summary uses the existing connection.
 | Operation | Key | Repeat behavior |
 |---|---|---|
 | Discovery summary | `(run_id, session_id)` | One attempt per invocation. The same envelope returns the same id; different content is a conflict and is never a replacement |
-| Receipt | Subject, digest, namespace, mode | Skipped when present; original time kept |
+| Receipt | Subject, digest, namespace, mode, contract version | Skipped when present; original time kept |
 | Eligibility and fetch rows | Existing | Unchanged |
 
 ### 5.3 Failure and recovery
@@ -506,20 +544,32 @@ referenced by them, and untrusted receipts. Failure evidence that is only diagno
 
 ### 5.4 Schema compatibility and migration
 
-| Path | Schema 1 | Schema 2 | Schema 3 | Other |
-|---|---|---|---|---|
-| Collection | Legacy loop, unchanged | Legacy loop, unchanged | Two-phase with summary | Rejected |
-| Witness and projection | Refused | Refused | Supported | Rejected |
-| Migration | Explicit `settlement migrate` | Explicit `forecast migrate` **[PR #7]** | No-op | Rejected |
+| Path | Schema 1 | Schema 2 | Schema 3 | Schema 4 (after the §9.7 patch) | Other |
+|---|---|---|---|---|---|
+| Collection | Legacy loop, unchanged | Legacy loop, unchanged | Two-phase with summary (F3.3a) | Two-phase with summary | Rejected |
+| Witness and projection | Refused | Refused | Refused | Supported | Rejected |
+| Journal writes | Refused | Refused | Contract 1 only, as today | Contract 2; contract 1 closed for new receipts and decisions | Rejected |
+| Migration | Explicit `settlement migrate` | Explicit `forecast migrate` **[PR #7]** | Explicit `forecast migrate --record-contract 2` | No-op | Rejected |
 
-This plan adds **no migration and no DDL**. Nothing migrates on collection, witness,
-health, inspection or replay; `db-init` still creates schema 1. The production
-collector is pinned to older code on a schema-1 archive and is not affected by merging
-any of this; deployment is a separate decision.
+F3.3a adds **no migration and no DDL** and works on schema 3 and schema 4. The
+follow-up patch adds migration 004, which changes no table and touches no row (§9.6).
+Nothing migrates on collection, witness, health, inspection or replay; `db-init` still
+creates schema 1. The production collector is reported to be pinned to older code on a
+schema-1 archive; merging any of this does not deploy it.
 
-Rollback: stop invoking the witness; run the previous schema-3-capable code. Summaries
-and receipts already written stay in place. Nothing is dropped and `user_version` is
-never lowered.
+### 5.5 Rollback
+
+Rollback is only "code-only" when the older binary can read everything the newer one
+wrote. That differs by increment.
+
+| After | Rollback to | Possible as code-only? | Notes |
+|---|---|---|---|
+| F3.3a, archive at schema 3 | `main` at `ebb58df` | Yes | Every row F3.3a writes is a contract-1 discovery pass on schema 3, which that binary validates. Collection reverts to the interleaved loop and writes no further summaries. Existing summaries stay valid and inspectable. A run started two-phase cannot be resumed by the older code (code hash differs) and must be restarted |
+| Migration to schema 4, before or after any contract-2 row | Any binary without the §9.7 patch | **No** | Those binaries reject schema 4 at open and leave the archive untouched. Continue with schema-4-capable code and fix forward |
+| Migration to schema 4 | A pre-migration backup | Only as a separate copy | Restore the backup to a **new path**. It lacks everything written since. Never overwrite the current archive, lower `user_version`, or delete contract-2 rows to make older code run |
+| Witness in use | Witness not called | Yes | Stop calling it. Receipts already written stay |
+
+Nothing in any rollback path drops a table, deletes a row or rewrites a record.
 
 ## 6. Timing and cohort rules
 
@@ -596,16 +646,30 @@ All cases use isolated databases and synthetic evidence. "Summary" means the
 | I1 | Book attempt times out with no body, then is witnessed | A receipt exists whose digest is the fetch row fingerprint; the attempt is visible as the latest completed attempt |
 | I2 | Attempt left `pending` by a killed process; witness runs | No receipt; counted as `pending_seen` |
 | I3 | That run is resumed, the attempt becomes `interrupted`; witness runs | Still no receipt; counted as `interrupted_seen` |
-| I4 | A fetch receipt whose digest is the raw body hash (pre-patch rule) | Rejected on insert; an archive that already holds one fails `journal.integrity` and is not rewritten |
+| I4 | A contract-2 fetch receipt whose digest is the raw body hash | Rejected on insert |
 | I5 | Two attempts with byte-identical bodies | Two receipts with different subject digests |
-| J1 | Pass whose `config_hash` differs from its run's recorded configuration digest | Rejected |
-| J2 | Decision citing a pass without the exact pin, or with a wrong pass digest or collector hash | Rejected |
+| J1 | Pass whose `config_hash` differs from its run's recorded configuration digest | Stored under the unchanged pass contract; never usable in the projection. A contract-2 receipt with such a mismatch is rejected |
+| J2 | Contract-2 decision citing a pass without the exact pin, or with a wrong pass digest or collector hash | Rejected |
+| J4 | Evaluation population whose decisions pin two different collector configuration hashes | Not accepted as one cohort; two separately reported cohorts (rule for the F3.5 plan to enforce) |
 | J3 | Decision citing a binding with a different research `config_hash`; publication with a different hash from its decision | Rejected, as today |
 | K1 | Every allowed and forbidden cell of the §9.3 table | Allowed inserts succeed; forbidden inserts are rejected |
 | K2 | Reconstruction decision citing a live pass and live binding | Accepted; cannot be given a publication; cannot enter a `forward-shadow` evaluation |
-| K3 | Discovery pass or receipt with mode `historical_reconstruction` | Rejected |
+| K3 | Contract-2 receipt with mode `historical_reconstruction`; discovery pass with that mode | Receipt rejected; pass never written by the builder and unusable in the projection |
 | L1 | Each failure point of the §3.5 table | Summary accepted by the contract with the tabulated values; projection reports `universe_incomplete` |
-| L2 | Pass marked complete that carries reasons, or whose manifest flags disagree | Rejected by the patched contract, or unusable in the projection |
+| L2 | Pass marked complete that carries reasons, or whose manifest flags disagree | Unusable in the projection |
+| N1 | Schema-3 archive holding an API-created contract-1 fetch receipt whose digest is the body hash; then migrated to schema 4 | Row unchanged; integrity verifies it under contract 1 and counts it; projection ignores it and reports `availability_unproven` |
+| N2 | API-created contract-1 receipt for a discovery pass, claiming an early `observed_at`; witness then runs | Witness writes its own contract-2 receipt at its real time; both rows exist; projection uses only the contract-2 one |
+| N3 | API-created contract-1 decision that cites a pass by `config_hash` equality | Still valid under contract 1 and inspectable; cannot be cited or superseded by a contract-2 decision; a contract-2 decision for the same scoring unit is an idempotency conflict, never a replacement |
+| N4 | Archive with contract-1 and contract-2 receipts and decisions | Integrity validates each row under its own contract and reports counts per table and contract; no row converted |
+| N5 | `contract_version` of 3, of `"2"`, of explicit 1, or of 2 on a table with no contract 2 | Rejected on insert. If such a row is already in an archive, integrity fails naming the table and row; dependent commands fail closed; archive bytes unchanged |
+| N6 | Contract-2 write on schema 3; new contract-1 receipt or decision on schema 4 | Both rejected |
+| N7 | Exact retry of a pre-existing contract-1 envelope, on schema 3 and after migration | Original id returned both times; no new row |
+| N8 | Backup and restore of a mixed schema-4 archive | Every research row byte-identical (payload, digest, key); `user_version` 4 and ledger 1–4 preserved; integrity result and per-contract counts equal before and after |
+| N9 | Binary at `ebb58df` opening a schema-4 archive, read-only and writable | Refuses at open; archive bytes and journal mode unchanged |
+| N10 | Replay on a mixed schema-4 archive | No research row created, changed or re-witnessed; result reports `preserved_not_reconstructed` and the same counts |
+| N11 | `forecast migrate` with no flag at schema 3 and at schema 4; with `--record-contract 2` at schema 3, then again | No-op; no-op with no downgrade; migrates to 4 touching no existing row; no-op |
+| N12 | Contract-2 row present in an archive whose `user_version` is 3 | Integrity failure; not migrated automatically |
+| N13 | Witness session with a divergence, then a new session | Earlier untrusted receipts unchanged; new run summary reports the prior anomaly; regression mark unchanged by the restart |
 
 ## 8. Implementation handoff
 
@@ -619,7 +683,7 @@ All cases use isolated databases and synthetic evidence. "Summary" means the
 | `src/vader_intelligence/storage.py` | Modify | Schema-version accessor; thin `append_forecast` wrapper that applies the existing free-space check before `journal.append` |
 | `src/vader_intelligence/forecast/witness.py` | Create | §4.2–§4.4 |
 | `src/vader_intelligence/forecast/evidence.py` | Create | §4.6 |
-| `forecast/journal.py`, `forecast/contracts.py` **[PR #7]** | Modify in the separate follow-up patch (§9.6), not in F3.3a | Contracts §9.1–§9.3 |
+| `forecast/journal.py`, `forecast/contracts.py`, `forecast/schema.py`, migration 004, and the schema-version guards | Modify in the separate follow-up patch (§9.7), not in F3.3a | Contracts §9.1–§9.3, versioning §9.6 |
 | `tests/test_collector.py`, `tests/test_integration.py` | Extend | A, B, D, E3, E4, H1 |
 | `tests/forecast_storage/test_discovery_pass.py`, `test_witness.py`, `test_evidence.py` | Create | C, E1, E2, F, H2–H4 |
 | `tests/forecast/test_timing_sweep.py` | Create | G |
@@ -647,18 +711,19 @@ def discovery_as_of(db, cutoff, namespace="local-witness-v1") -> DiscoveryEviden
 
 ### 8.2 Increments and prerequisites
 
+PR #7 has merged, so the first prerequisite of every row is met.
+
 | Order | Increment | Prerequisites | Done when |
 |---|---|---|---|
-| 1 | **F3.3a**: two-phase collector and summary | PR #7 cleared and merged; this document's summary contract (§3.2, §3.5, §9.2, §9.3) accepted. **Does not need the follow-up patch** | A, B, D, E3, E4, H1, L1 pass; existing collector, integration and operations suites pass unmodified on schemas 1 and 2 |
-| P | Follow-up journal-validation patch (§9.6) | PR #7 merged. Independent of increment 1 | I4, I5, J, K, L2 pass; PR #7's own storage tests pass with updated fixtures |
-| 2 | Witness (library only) | Patch item P1; increment 1 for discovery-pass subjects | C4, E1, E2, F1, F2, H3, H4, I1–I3 pass |
-| 3 | Availability projection and timing sweep | 1 and 2 | C1–C3, D1 projection, F3, F4, G, H2 pass |
-| Later | Bindings, selection, decisions (rest of F3.3b) | Patch items P2 and P3; its own plan | Not in this plan |
+| 1 | **F3.3a**: two-phase collector and summary | This document's summary contract (§3.2, §3.5) accepted. **Does not need the follow-up patch, schema 4 or contract 2** | A, B, D, E3, E4, H1, L1 pass; existing collector, integration and operations suites pass unmodified on schemas 1 and 2 |
+| P | Follow-up record-contract patch (§9.7) | Independent of increment 1 | I4, I5, J2, J3, K, N1–N12 pass; the merged storage tests still pass, with one expected edit: tests that use schema 4 as their example of an unknown version move to 5 |
+| 2 | Witness (library only) | Patch P; increment 1 for discovery-pass subjects | C4, E1, E2, F1, F2, H3, H4, I1–I3, N13 pass |
+| 3 | Availability projection and timing sweep | 1 and 2 | C1–C3, D1 projection, F3, F4, G, H2, J1, L2, N1, N2 pass |
+| Later | Bindings, selection, decisions (rest of F3.3b); evaluation | Patch P; their own plans | Not in this plan |
 
-Increment 1 is the smallest coherent unit. It writes only discovery passes, and the
-values it writes already satisfy every rule the patch adds, so no row written by
-increment 1 becomes invalid when the patch lands. Increment 1 and the patch can
-proceed in parallel.
+Increment 1 is the smallest coherent unit and is kept separate from the patch. It
+writes only discovery passes under the unchanged contract, so nothing it writes is
+affected when the patch lands, and the two can proceed in parallel.
 
 ### 8.3 Ordered test plan
 
@@ -679,7 +744,9 @@ Tests assert observable behavior: rows present, requests sent, values returned.
 10. Timing sweep on a virtual serial timeline (G1–G3).
 11. Legacy and synthetic lineage (H2, H3), health separation (H4), and the
     configuration and mode link tables (J, K) once the patch exists.
-12. Lint, format, full suite, operations suite, wheel build and installed-wheel smoke,
+12. Record-contract compatibility (N1–N12): pre-existing API-created rows, mixed
+    archives, unknown versions, retries, backup and restore, older-binary refusal.
+13. Lint, format, full suite, operations suite, wheel build and installed-wheel smoke,
     on the Mac, in a disposable checkout and database.
 
 ### 8.4 Completion criteria
@@ -694,12 +761,13 @@ Tests assert observable behavior: rows present, requests sent, values returned.
 - Handoff document records actual results and separates offline from live evidence.
 - No production archive touched, no migration run on it, nothing deployed.
 
-## 9. Interface contracts resolved against PR #7 at `acc4c24`
+## 9. Interface contracts against the merged F3.2 storage layer
 
 Revision 1 listed three blockers. This section replaces them with contracts. Nothing
-here is implemented, and nothing here modifies PR #7. None of it needs DDL, but each
-item is still a compatibility change for any schema-3 archive that already holds the
-affected rows; §9.6 states that boundary.
+here is implemented, and neither PR branch was modified. §9.1–§9.3 change what a valid
+receipt and a valid decision mean, so they are introduced as a new, explicitly
+versioned record contract (§9.6). Records written under the current rules keep their
+current meaning.
 
 ### 9.1 Fetch receipts: canonical subject identity
 
@@ -718,7 +786,7 @@ This is the same precondition `references.reference` already enforces, and it ma
 the specification's "latest attempted completed book retrieval" (§4). Replay does not
 modify `fetches` rows.
 
-Contract for a receipt with `subject_kind="fetch"`:
+Contract 2 for a receipt with `subject_kind="fetch"`:
 
 1. Let `R = reference(db, "fetches", {"id": fetch_id})`, the existing typed reference
    **[PR #7]**, unchanged. `R` carries the fetch UUID, a digest over the **entire**
@@ -761,21 +829,12 @@ the SQLite backup mechanism does.
   that never ran, and the 300-second limit bounds how long the earlier pass can apply.
   A crashed pass with at least one completed discovery attempt is an orphan (§4.6).
 
-**Effect of changing the digest semantics.**
-
-| Area | Effect |
-|---|---|
-| Validation | `validate_links` changes for fetch subjects: rule 2 replaces the body-hash comparison, and rule 3 is new. `contracts.validate` is unchanged; the digest is still 64 hex characters |
-| Existing receipts | PR #7's shipped fixture creates one receipt, for a publication, which is unaffected. Any **fetch** receipt written under the body-hash rule fails the new validation |
-| Integrity | `journal.integrity` raises on such a row. That fails `Store.verify_integrity`, schema-3 `replay`, and operations inspect, backup and restore validation for that archive |
-| Repair | None in place. Receipts are immutable by trigger. The archive must be preserved as it is and a new one built from a schema-2 backup, the remedy PR #7 already documents for its pre-fix layout |
-| Detection | Not structural. `require_schema` cannot see it; only the integrity pass does |
-| Idempotency | The key formula is unchanged, but it includes the digest. The same fetch therefore has a different key under each rule, and an old and a new receipt could coexist; the old one remains invalid. One receipt per subject then rests on digest stability, which holds because subjects are completed rows |
-| Dual acceptance | Rejected. Accepting either digest would keep receipts that bind bytes only |
-
-Landing condition: no retained schema-3 archive may hold fetch receipts when the patch
-lands. Nothing in the repository can produce one today, since no witness exists.
-Production is reported to be schema 1; that was not verified here.
+**Effect of changing the digest semantics.** The change applies to contract-2
+receipts only. A contract-1 fetch receipt, whose digest is the raw body hash, keeps
+being validated by the contract-1 rule and stays valid. It is not rejected, rewritten
+or upgraded, and it is never accepted as availability proof. There is no dual
+acceptance inside a contract: each contract has exactly one digest rule. Validation,
+idempotency, integrity and mixed archives are specified in §9.6.
 
 ### 9.2 Configuration provenance
 
@@ -790,14 +849,14 @@ recorded `provenance_json.configuration`, so it can be recomputed from the archi
 
 Compatibility rule for every parent-child link:
 
-| Child → parent | Rule | Against PR #7 |
+| Child → parent | Rule | Where enforced |
 |---|---|---|
-| Discovery pass → its run | `config_hash` equals the digest of the run's recorded configuration; run kind is `collect`, `discover`, `live-check` or `fixture` | New, additive |
-| Receipt → its run | `config_hash` equals the digest of the run's recorded configuration | New, additive |
+| Discovery pass → its run | `config_hash` equals the digest of the run's recorded configuration; run kind is `collect`, `discover`, `live-check` or `fixture` | Builder and projection (§3.5). The pass contract itself is unchanged |
+| Receipt → its run | `config_hash` equals the digest of the run's recorded configuration | Contract 2 |
 | Receipt → subject | No configuration relation. A receipt records an observation and is valid under any protocol | Unchanged |
 | Binding → previous binding | Same `config_hash`, `policy_version`, `candidate_key` | Retained |
 | Decision → binding | Same research `config_hash`; identity fields equal | Retained |
-| Decision → discovery pass | **Exact pin instead of equality.** `manifest.discovery` must equal `{"id": discovery_id, "digest": <pass row digest>, "collector_config_hash": <pass config_hash>}`. The existing rule that an eligible decision needs a complete pass is retained | Changed |
+| Decision → discovery pass | **Exact pin instead of equality.** `manifest.discovery` must equal `{"id": discovery_id, "digest": <pass row digest>, "collector_config_hash": <pass config_hash>}`. The existing rule that an eligible decision needs a complete pass is retained | Contract 2. Contract-1 decisions keep the equality rule they were written under |
 | Publication → decision | Same research `config_hash`; decision digest equal | Retained |
 | Evaluation item → evaluation run | Same `config_hash` and run | Retained |
 | Evaluation item → decision | Same dataset, protocol and `config_hash` | Retained |
@@ -809,6 +868,17 @@ does not know the research protocol and must not depend on it, and a protocol ch
 would otherwise strand all earlier discovery. The pin keeps exact provenance: each
 decision names the precise pass and the precise collector configuration its universe
 came from. Every same-protocol check between research records stays.
+
+**Cohort rule (operator decision, also recorded in the specification, §5 and §6).**
+The collector configuration hash and the research protocol configuration hash remain
+distinct and are never substituted for one another. Each initial evaluation cohort
+uses exactly one collector configuration hash. A change of collector configuration
+does not reject, invalidate or rewrite anything; it creates a separate cohort that is
+reported separately, and results are never pooled across collector hashes. The pin
+above is what makes this checkable: every contract-2 decision that cites a pass
+carries that pass's collector hash. How the evaluation contract stores the cohort's
+collector hash, and how opportunities with no applicable pass (and so no collector
+hash) are counted, belongs to the F3.5 plan.
 
 A matching rule for research records against their own run (binding, decision,
 publication and evaluation `config_hash` equal to the run's configuration digest)
@@ -827,7 +897,9 @@ process using system clocks". It is not a claim of publication. Neither may be
 past observation.
 
 Abbreviations: S synthetic, F `forward_shadow`, H `historical_reconstruction`. Pairs
-are child → parent.
+are child → parent. "Retained" rules hold in both contracts. "New" rules hold for
+contract-2 receipts and decisions; for discovery passes, whose contract is unchanged,
+M3 is enforced by the builder and the projection.
 
 | # | Relationship | Allowed | Forbidden | Against PR #7 |
 |---|---|---|---|---|
@@ -898,7 +970,7 @@ regardless, and a later complete pass brings its own fresher books. The cost fal
 the archive and on operations: a gap in raw book history, a stale `last_book_at` in
 health, and a failed collection cycle, all from one missing event response.
 
-**Separate proposal, not adopted here.** Allow books for individually eligible
+**Separate proposal, deferred by operator decision Q3 and not adopted here.** Allow books for individually eligible
 contracts after an *incomplete* summary has been committed.
 
 - Requires amending specification §3 item 3 and the §8 matrix row above, with review.
@@ -919,68 +991,159 @@ Stated in full in §4.2 and §4.4. In summary: the witness is a library function
 caller in this increment; no operational receipt exists until F3.4 supplies one; clock
 checks detect in-session divergence, a backward step below the last trusted receipt
 and negative ages; they cannot detect a forward step between sessions, a small
-backward step or a shared offset; recovery is by a new session or by waiting; there is
-no trust override.
+backward step or a shared offset; a new session resets only the monotonic baseline and
+proves nothing about the wall clock; persisted anomaly evidence is never erased; the
+HTTP `Date` header is archived for diagnostics and is not an input; there is no trust
+override.
 
-### 9.6 Smallest follow-up interface patch
+### 9.6 Record contract versions and compatibility
 
-To be written **after** PR #7 is cleared and merged, as its own reviewed change. It is
-not implemented here and PR #7 is not to be modified for it.
+**Why a discriminator is needed.** `journal.append` on `main` already stores any
+caller-supplied envelope that passes the current contract. Receipts and decisions
+written under today's rules may therefore exist in any schema-3 archive, whether or
+not a witness or a generator has ever been built. The shipped test fixtures show what
+the tests create; they are not an inventory of retained archives. This design assumes
+such records exist and that they must keep meaning what they meant when written.
 
-Files: `forecast/journal.py`, `forecast/contracts.py`, and
-`tests/forecast_storage/` (fixtures and cases). No SQL, no migration, no
-`user_version` change.
+**Mechanisms that already exist on `main`.**
 
-| Item | Change | Needed before |
+| Mechanism | Enforced by | Why it is not enough alone |
 |---|---|---|
-| P1 | Fetch receipt subject: rules 2 and 3 of §9.1 in `validate_links` | The witness (increment 2) |
-| P2 | Decision → discovery pass: exact pin replaces `config_hash` equality (§9.2) | Any decision is written |
-| P3 | A mode-compatibility function replaces strict equality for decision → binding and decision → discovery pass (M9, M10); `contracts.validate` rejects H for discovery passes and receipts (M3, M4) | Any reconstruction decision is written |
-| P4 | Additive checks: pass → run and receipt → run configuration digest; run kind for a pass; a complete pass carries no reasons | The witness, so that live rows are checked from the first one |
+| Record `schema_version`, fixed at 1 | `contracts.validate`, and a `CHECK(… IS 1)` in the DDL of all seven tables | Raising it requires changing that `CHECK`, which SQLite can only do by rebuilding each table. Rebuilding immutable history tables is rejected |
+| Archive `user_version` with the `schema_migrations` ledger | `Store`, `forecast/schema.py`, `settlement/schema.py`, `replay.py`, the CLI preflight and `ops/archive.py`, all of which reject versions they do not know | It is one value for the whole archive and cannot say which contract a given row was written under |
 
-The smallest patch that unblocks this plan is **P1 alone**. All four are recommended
-as one change, for one reason: each alters what a valid schema-3 row is, and one
-compatibility boundary is easier to reason about and to document than several.
+**Chosen mechanism: both levels, each using what already exists.**
 
-Compatibility boundary of the patch, stated explicitly:
+1. **Per record: a `contract_version` field in the payload.**
+   - Absent means **contract 1**: exactly the rules on `main` at `ebb58df`, frozen and
+     kept as the contract-1 validator.
+   - Integer `2` means **contract 2**, defined for `forecast_receipts` and
+     `forecast_decisions` only.
+   - Anything else is **unknown** and rejected: an explicit `1`, any other number, a
+     non-integer, or `2` on a table that has no contract 2. Each contract therefore has
+     exactly one encoding.
+   - The field is inside the payload, so it is covered by the row's content digest and
+     cannot drift from the content. The existing DDL constrains only `schema_version`
+     and the projected key columns, so no table changes. `schema_version` stays 1 and
+     keeps meaning the envelope format.
+2. **Per archive: an explicit migration to `user_version` 4.**
+   - Contract-2 records may be written only on schema 4.
+   - Migration 004 changes no table and touches no row. It appends the ledger row and
+     sets the version, in one transaction, like the existing migrations.
+   - It runs only on an explicit `forecast migrate --record-contract 2`. Plain
+     `forecast migrate` keeps today's meaning: 2 → 3, and a no-op at 3 and at 4.
+   - Its purpose is detection: every existing unknown-version guard makes a binary
+     that predates contract 2 refuse the archive at open.
 
-- Schema 3 is still a draft. Production is reported to be schema 1.
-- After the patch, an archive written by pre-patch code is valid only if it holds no
-  fetch receipts (P1), no decision that cites a discovery pass (P2), and no pass or
-  receipt whose `config_hash` differs from its run's configuration digest (P4).
-  PR #7's own test fixture fails P2 and P4 as written and must be updated in the patch.
-- A non-conforming archive is rejected by the integrity pass, never rewritten, and is
-  handled as PR #7 already prescribes for its pre-fix layout: preserve it, and build a
-  new archive from a schema-2 backup.
-- Rows written by increment 1 conform by construction, before or after the patch.
+Neither level is sufficient alone. With only the payload field, an older binary would
+open the archive, keep collecting, keep writing contract-1 records beside contract-2
+ones, and fail only later in the integrity pass with an error that looks like
+corruption. With only the archive version, rows in a mixed archive could not be told
+apart. This does mean a migration; avoiding one would leave detection ambiguous.
+
+**What each contract covers.**
+
+| Table | Contract 1 | Contract 2 |
+|---|---|---|
+| `forecast_receipts` | As on `main` | Fetch subject identity (§9.1); `config_hash` equals the run's configuration digest (§9.2); mode F or S only (M4); key includes the contract version |
+| `forecast_decisions` | As on `main` | Discovery pin (§9.2); mode compatibility M9 and M10; may not reference a contract-1 receipt or supersede a contract-1 decision; key unchanged |
+| `discovery_passes`, `forecast_bindings`, `forecast_publications`, `evaluation_runs`, `evaluation_items` | As on `main` | None defined. These tables have one contract |
+
+**Valid is not the same as eligible.** Legacy compatibility keeps old records readable.
+It does not admit them as evidence.
+
+| Record | Storage validity | Use by evidence selection and new forecasts |
+|---|---|---|
+| Contract-1 receipt, any subject | Valid under contract 1, permanently. Inspectable and counted | **Never.** Its `observed_at` is a caller's assertion. The projection and contract-2 decisions accept contract-2 receipts only |
+| Contract-1 decision | Valid under contract 1, permanently | **Never** a parent, correction target or input of a contract-2 record. Excluding it from new evaluation cohorts is a requirement on the F3.5 plan |
+| Discovery pass | Valid under its one contract | Only if the projection's own verification passes (§3.5): known manifest, consistent flags, `config_hash` equal to its run's configuration digest, mode not H, written by a two-phase collection run; and only with a contract-2 receipt |
+| Contract-2 receipt or decision | Valid under contract 2 | Eligible, subject to every policy check |
+
+**Idempotency and exact retries.**
+
+| Case | Behavior |
+|---|---|
+| Contract-2 receipt key | Existing tuple plus the contract version. A contract-1 receipt for the same subject is a different key, so an API-supplied row cannot block or stand in for the witness's observation |
+| Contract-2 decision key | Unchanged: the scoring unit. One decision per scoring unit holds across contracts. If a contract-1 decision already holds the key, the contract-2 insert is an `IdempotencyConflict`; the caller uses a new dataset namespace. Nothing is replaced |
+| Exact retry of an original contract-1 envelope | Returns the original id, on schema 3 and on schema 4 |
+| New contract-1 receipt or decision (key not present) on schema 4 | Rejected: contract 1 is closed to new rows for those two tables once the archive is at schema 4 |
+| New contract-1 record on schema 3 | Accepted, as today |
+| Contract-2 record on schema 3 | Rejected with an instruction to run the explicit migration |
+| Exact retry of a contract-2 envelope | Returns the original id. Any difference, including clocks, is a conflict |
+
+**Mixed archives, unknown versions and maintenance commands.**
+
+| Situation | Behavior |
+|---|---|
+| Mixed contract-1 and contract-2 rows (schema 4) | Integrity validates each row under the contract its payload declares and reports counts per table and contract. No row is converted |
+| Row with an unknown `contract_version` | Rejected on insert. If found in an archive, integrity fails and names the table and row. Commands that depend on integrity fail closed: `Store.verify_integrity`, the research section of `replay`, and operations inspect, backup and restore validation. The archive is not modified |
+| Contract-2 row in an archive at `user_version` 3 | Integrity failure. Not migrated automatically |
+| Unknown `user_version` (5 or higher) | Rejected at open by every guard, as today |
+| Binary without the patch, archive at schema 4 | Refuses at open; archive bytes unchanged |
+| Replay | Unchanged in substance: re-normalizes raw responses and never creates, converts or re-witnesses research rows. Still reports `preserved_not_reconstructed`, plus the per-contract counts |
+| Backup and restore | The SQLite backup copies every row, the version and the ledger. Validation on reopen runs per contract. Requires schema-4-capable operations code |
+| Reinterpretation | None. A row's contract is read only from its own payload. A row that fails its declared contract is a failure; the validator never tries the other contract |
+| Deletion, rebuild, upgrade | None, automatic or otherwise. There is no path that turns a contract-1 record into a contract-2 record. The witness writes its own new receipt at its own real time |
+
+### 9.7 Follow-up record-contract patch
+
+A separate reviewed change, **not part of F3.3a** and not implemented here.
+
+| Item | Content | Files |
+|---|---|---|
+| P1 | Versioning mechanism of §9.6: `contract_version` dispatch, unknown-version rejection, migration 004, the explicit migrate flag, schema-4 acceptance in every version guard, per-contract integrity counts | `forecast/contracts.py`, `forecast/journal.py`, `forecast/schema.py`, `migrations/004_record_contract_2.sql`, `storage.py`, `replay.py`, `cli.py`, `settlement/schema.py`, `ops/archive.py` |
+| P2 | Contract 2 for receipts (§9.1, §9.2, M4) | `forecast/contracts.py`, `forecast/journal.py` |
+| P3 | Contract 2 for decisions (§9.2 pin, M9, M10, no contract-1 parents) | `forecast/contracts.py`, `forecast/journal.py` |
+| Tests | Cases I4, I5, J2, J3, K, N1–N12 | `tests/forecast_storage/`, `tests/ops/`, `tests/integration/wheel_smoke.py` |
+
+- The witness needs P1 and P2. Decisions need P3.
+- The smallest patch that unblocks the witness is P1 with P2. P3 is recommended in the
+  same change: schema 4 marks the start of contract 2, and a binary that knows schema 4
+  but not contract-2 decisions would have to reject them as unknown, which reintroduces
+  the detection ambiguity. If P3 is deferred, it needs its own archive version step.
+- Contract 1 is unchanged, so the merged storage tests keep passing. The one expected
+  edit is that tests using schema 4 as their example of an unknown future version
+  must use 5 instead.
+- F3.3a needs none of this and is unaffected by it.
 
 ## 10. Decisions
 
-### 10.1 Resolved in revision 2
+### 10.1 Operator decisions applied in revision 3
+
+| # | Question | Decision | Where recorded |
+|---|---|---|---|
+| Q1 | Is a collector configuration change inside a protocol cohort drift? | Collector and research hashes stay distinct. Each initial evaluation cohort uses one collector configuration hash. A change creates a separately reported cohort. No pooling across hashes | §9.2 here; specification §5 and §6 |
+| Q2 | Is the HTTP `Date` header a clock or eligibility input? | No, not in this increment. It stays archived for diagnostics and is not described as proof of observation time | §4.1, §4.4 |
+| Q3 | Are books collected after incomplete discovery? | No. The approved rule is retained and the alternative is deferred | §9.4 |
+
+### 10.2 Contracts resolved in revisions 2 and 3
 
 | # | Question | Resolution |
 |---|---|---|
-| 1 | How is a failed fetch without a body witnessed? | The receipt binds the typed fetch reference, whose digest covers the whole completed row (§9.1) |
+| 1 | How is a failed fetch without a body witnessed? | A contract-2 receipt binds the typed fetch reference, whose digest covers the whole completed row (§9.1) |
 | 2 | Are pending and interrupted attempts witnessed? | No. Reported, never subjects (§9.1) |
-| 3 | What happens to receipts written under the body-hash rule? | Invalid after the patch; no dual acceptance; archive preserved and rebuilt (§9.1, §9.6) |
-| 4 | Which configuration does each record carry? | Collector for passes, observer for receipts, research protocol for the rest (§9.2) |
-| 5 | Is configuration validation removed anywhere? | No. One equality is replaced by an exact pin; two run-link checks are added (§9.2) |
-| 6 | May a reconstruction cite live evidence? | Yes, through M9, M10 and M2, and it can never be published or scored as forward (§9.3) |
-| 7 | Are books collected after incomplete discovery? | No, per specification §3 item 3. The alternative is a separate proposal (§9.4) |
+| 3 | What happens to records written under today's rules? | They stay valid under contract 1, inspectable, and ineligible as evidence. Nothing is rejected, rewritten or rebuilt (§9.6) |
+| 4 | How is a changed contract detected? | `contract_version` in the payload, plus an explicit migration to schema 4 (§9.6) |
+| 5 | Which configuration does each record carry? | Collector for passes, observer for receipts, research protocol for the rest (§9.2) |
+| 6 | Is configuration validation removed anywhere? | No. Under contract 2 one equality becomes an exact pin and a run-link check is added (§9.2) |
+| 7 | May a reconstruction cite live evidence? | Yes, through M9, M10 and M2, and it can never be published or scored as forward (§9.3) |
 | 8 | Does this increment produce operational receipts? | No. Library only (§4.2) |
-| 9 | Is there a clock trust override? | No (§4.4) |
-| 10 | Can the PR #7 contract record an incomplete discovery, including failure before eligibility? | Yes, with the conventions of §3.5; one missing check is added by P4 |
-| 11 | What does F3.3a need? | Merged PR #7 and this contract. Not the patch (§8.2) |
+| 9 | Is there a clock trust override, or does a restart restore trust? | No to both (§4.4) |
+| 10 | Can the merged contract record an incomplete discovery, including failure before eligibility? | Yes, with the conventions of §3.5 |
+| 11 | What does F3.3a need? | Nothing beyond `main` and this contract. Not the patch (§8.2) |
+| 12 | Is rollback code-only? | For F3.3a on schema 3, yes. After migration to schema 4, no (§5.5) |
 
-### 10.2 Unresolved policy questions
+### 10.3 Unresolved policy questions
 
-These are not decided here because each would add or change a research rule.
+None remain open for this increment. Three items are deferred to later plans and are
+not decided here:
 
-| # | Question | What this plan assumes until decided |
-|---|---|---|
-| Q1 | Is a change of **collector** configuration inside one protocol cohort "configuration drift within the cohort", which specification §2 says to reject? PR #7's equality check implied yes. The pin in §9.2 records the collector configuration on every decision but does not reject a change | Not drift. Each decision pins its collector configuration, and evaluation reports must list the distinct collector hashes in a cohort |
-| Q2 | Should the HTTP `Date` header already archived with every fetch be used as an external sanity bound on the local clock, marking receipts untrusted when they disagree? It would catch offsets that local clocks cannot (§4.4), but it adds an eligibility-affecting rule based on a provider value | Not used. Local checks only |
-| Q3 | Should books be collected for individually eligible contracts after an incomplete discovery (§9.4)? | No. Approved policy retained |
+- The evaluation contract must store its cohort's collector configuration hash, decide
+  how opportunities with no applicable pass are counted, and exclude contract-1
+  decisions and receipts from new cohorts (F3.5 plan).
+- Whether contract-1 bindings and publications need the same valid-but-ineligible
+  treatment when the selection and publication services are planned (rest of F3.3b, F3.4).
+- The alternative book-collection rule of §9.4, deferred by decision Q3.
 
 Routine choices made from the code and specification, listed so a reviewer can
 disagree: `phase_sequence` as the per-run summary ordinal; `counts` as eligible
@@ -988,7 +1151,9 @@ decisions recorded; eligibility rows recorded by id and digest instead of typed
 references; non-two-market events stay fail-closed; one observation sample per read
 batch; newest-first bounded witness scan with no stored cursor; untrusted receipts are
 written and are permanent; the regression mark is kept per namespace and mode;
-resuming a legacy-protocol run on schema 3 is refused.
+resuming a legacy-protocol run on schema 3 is refused; the contract version is in the
+receipt key and not in the decision key; discovery passes keep a single contract with
+the added checks enforced by the reader.
 
 ## 11. Failure modes, hazards and risks
 
@@ -1000,7 +1165,8 @@ Hazard identifiers are from the pinned data-systems catalog.
 | H-03 uniqueness | One summary per invocation, one receipt per subject | Database unique keys and replace triggers **[PR #7]** |
 | H-06 side effect in transaction | Summary and receipt inserts | No network inside any transaction |
 | H-07, H-08, H-42 unbounded work | Witness scan, manifest | Row window, subject cap, time budget, 1 MiB manifest limit |
-| H-09 breaking schema change | Collector path switch | Additive; gated on schema 3; legacy path untouched |
+| H-09 breaking schema change | Collector path switch; record contract 2 | Additive and gated on schema 3 with the legacy path untouched; contract 2 gated on an explicit schema-4 migration with contract 1 frozen |
+| H-13 reused or unreserved version value | `contract_version` | One encoding per contract; unknown values rejected, never guessed |
 | H-14 non-idempotent retry | Summary, receipts | Deterministic keys; conflict instead of replacement; no in-process retry |
 | H-18 ambiguous outcome | Crash around the summary commit | Row presence is the only truth; resume writes a new pass |
 | H-20, H-21, H-36 clocks | Receipts, freshness | UTC for cutoffs, monotonic for elapsed, explicit clock status, sequence for order only |
@@ -1015,8 +1181,9 @@ Hazard identifiers are from the pinned data-systems catalog.
 | R2 | Per-receipt durable commits make the witness too slow to clear a pass inside the tick budget | Medium | Partial witnessing, unproven evidence | Measure; cap and report; batch insert is a possible later journal change |
 | R3 | `journal.integrity` re-validates every reference of every pass, so its time grows with history (about 720 passes a day at the current cadence) and it runs inside replay, inspection and backup | Medium | Operations commands slow down over weeks | Typed references limited to distinct fetches; measure at 720 passes; revisit before long-running use |
 | R4 | A single flaky event endpoint blanks books for a pass (§9.4) | Medium | Lower midpoint coverage | Accepted by specification; reported, not softened |
-| R5 | Clock checks miss a skew they cannot see (§4.4) | Low | Evidence admitted or aged wrongly by up to the size of the skew | Stated residual risk; no cryptographic or external time claim; Q2 |
-| R6 | The follow-up patch lands after some schema-3 archive already holds affected rows | Low | That archive fails integrity and must be rebuilt | Land the patch before the witness exists; §9.6 boundary |
+| R5 | Clock checks miss a skew they cannot see (§4.4) | Low | Evidence admitted or aged wrongly by up to the size of the skew | Stated residual risk; no cryptographic or external time claim |
+| R6 | A schema-3 archive already holds receipts or decisions written through the journal API | Unknown | None to validity: they stay contract 1. A contract-1 decision can occupy a scoring-unit key | §9.6; a new dataset namespace for the affected cohort |
+| R7 | Migration to schema 4 removes code-only rollback | Certain once migrated | Older binaries refuse the archive | §5.5; migrate only on an explicit command, after backup to a new path |
 
 ## 12. Review record for this document
 
@@ -1038,10 +1205,17 @@ receipt branches of `contracts.validate` and `contracts.key`; and which receipts
 PR #7's test fixtures create. The quoted specification wording in §9.4 was copied from
 §3 and §8 of the specification on `main`.
 
+Revision 3 rechecked: GitHub state of PR #6, #7 and #8 and `main`; that the PR #7 head
+is an ancestor of `main` and `src/` is unchanged from it; every schema-version guard
+in `src/` and `ops/` (all compare against explicit known versions, so schema 4 is
+refused by current code); the `CHECK` on `schema_version` in migration 003; the exact
+field-set and key rules in `contracts.py` that a `contract_version` field must fit
+around; and the specification passages amended in this revision.
+
 The §6 table was computed by hand and then reproduced by a throwaway script that
 models only the stated assumptions (pass completion at `t_k + 11`, first observation
 by the next tick that runs). That script is not part of the repository and is not a
 test of any implementation.
 
 Not done: no application test was run and no database was created. The contracts in
-§9 were derived by reading code; none was exercised against PR #7.
+§9 were derived by reading code; none was exercised against the merged code.

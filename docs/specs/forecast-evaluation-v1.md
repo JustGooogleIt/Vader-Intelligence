@@ -22,6 +22,10 @@ Only the user-authorized F3.1 pure predicates/arithmetic/qualified-candidate sel
 are implemented here; the rest of this milestone remains proposed. Exact callable
 contracts and deferred evidence guarantees: [F3.1 handoff](../handoffs/forecast-policies.md).
 
+Amendment (2026-10-05, PR #8): one rule added by operator decision, collector
+configuration cohorting, in §5 and §6. No other rule in this document changed.
+Detail and rationale: [F3.3 implementation plan](f33-implementation-plan.md) §9.2.
+
 ## 1. Scope and measured starting point
 
 Produce reproducible T−60 forecasts for MLB `KXMLBGAME` full-game $1 team-winner
@@ -475,6 +479,16 @@ dropping incompatible rows. A reconstruction for a failed forward opportunity is
 separate, labeled record/evaluation; the failed forward record remains failed. Synthetic
 evaluations name the simulated view and always show `source_mode=synthetic`.
 
+**Collector configuration cohorting.** The collector configuration hash (the
+collection process's own limits and timeouts) and the research protocol configuration
+hash are distinct values and are never substituted for one another. Each initial
+evaluation cohort uses exactly one collector configuration hash: every decision in it
+takes its discovery evidence from passes written under that hash. A change of
+collector configuration does not reject or rewrite any record; it creates a separate
+cohort that is reported separately. Never pool results across collector configuration
+hashes, in either view. The §2 rule against configuration drift within a cohort
+continues to govern the research protocol configuration.
+
 Within **each** view, paired metrics use the same games for constant and midpoint:
 both meet that view's forecast requirements and have a scorable binary outcome.
 Report mean per-game `midpoint_score − constant_score` (negative favors midpoint), N
@@ -574,6 +588,7 @@ snapshot ID, schedule revision or selected ticker**, which would permit retries 
 create another forecast. A historical reconstruction campaign has an explicit fixed
 dataset namespace and source ceiling, set before selection. Config changes require
 a new protocol cohort, visibly separate; default reports never combine them.
+A collector configuration change likewise creates a separately reported cohort (§5).
 
 Discovery summaries, decisions, publication records, receipts, bindings and evaluations
 are append-only (reject
