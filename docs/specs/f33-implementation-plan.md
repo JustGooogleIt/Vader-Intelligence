@@ -4,6 +4,12 @@ Status: **plan only, not implemented**. Written 2026-10-04 by the third engineer
 session (Claude) in its own checkout. This document changes no application code,
 schema, service, archive or other pull request.
 
+Revision 2 (2026-10-04) turns the three interface gaps found in revision 1 into
+concrete contracts (§9), adds the mode relationship table, states the discovery
+failure policy with its governing wording, narrows the witness and clock claims, and
+checks that an incomplete discovery can be recorded honestly (§3.5). `main` and the
+PR #7 head were rechecked and are unchanged from the SHAs below.
+
 Governing documents: [forecast/evaluation specification](forecast-evaluation-v1.md)
 (§2, §3, §6, §7, §8), [F3.1 handoff](../handoffs/forecast-policies.md), and the F3.2
 storage handoff `docs/handoffs/forecast-storage.md` as it exists on the PR #7 head.
@@ -117,22 +123,27 @@ values, against the PR #7 version-1 contract:
 | Field | Value |
 |---|---|
 | `run_id`, `session_id` | Collector run and the per-invocation UUID the collector already generates. Unique per invocation; a resume gets a new `session_id` |
-| `phase_sequence` | Ordinal of this invocation within its run: 1 for the first, 2 for the first resume. Cross-run order is the row `id` |
+| `phase_sequence` | One more than the number of summaries already committed for this run: 1 for the first, 2 for a resume after a committed summary. Cross-run order is the row `id` |
 | `completed_at` | UTC sampled when the phase ended (last decision recorded, or the failure) |
 | `created_at` | UTC sampled immediately before the insert; never earlier than `completed_at` |
 | `code_hash` | `source_hash()`, identical to the run's provenance |
-| `config_hash` | SHA-256 of the canonical collector configuration. See blocker B2 |
-| `mode` | `forward_shadow` for a live reader; `synthetic` whenever the transport, clock, sleep or jitter is injected, or the run kind is `fixture`. See blocker B3 |
+| `config_hash` | The **collector** configuration hash: the digest of this run's recorded `provenance_json.configuration` (§9.2) |
+| `mode` | Lineage only (§9.3): `forward_shadow` for a live reader; `synthetic` whenever the transport, clock, sleep or jitter is injected, or the run kind is `fixture`. Never `historical_reconstruction` |
 | `complete`, `reasons` | §3.1. Reasons use the fixed order of the table above |
-| `counts` | `{"contracts": n, "games": m}`: unique **eligible** contracts and games inside the eligibility bounds, the same quantity as the existing run summary. Candidate counts live in the manifest |
+| `counts` | `{"contracts": n, "games": m}`: unique **eligible** contracts and games among the decisions recorded inside the eligibility bounds, the same quantity as the existing run summary. A count of recorded rows, not a claim about the universe (§3.5). Candidate counts live in the manifest |
 | `eligibility_after_id`, `eligibility_through_id` | Exclusive and inclusive bounds read at phase start and phase end |
 | `references` | One typed `reference(db, "fetches", …)` per distinct **completed** fetch used or attempted in the phase, including completed failures |
 | `manifest` | Below |
 
 Manifest (version 1), all lists sorted and bounded by the existing caps:
 
-- `kind`, `resumed`, `started_at`, `fetch_seq_after` (exclusive), `fetch_seq_through`
-  (inclusive): the `fetches.seq` range of this invocation's discovery phase.
+- `manifest_version` (1), `kind`, `resumed`, `started_at`, `fetch_seq_after`
+  (exclusive), `fetch_seq_through` (inclusive): the `fetches.seq` range of this
+  invocation's discovery phase.
+- `phase_reached`: the last stage that finished, one of `none`, `status`, `series`,
+  `documents`, `pages`, `schedule`, `events`, `eligibility`, `done`.
+- `candidates_known` (the pagination chain reached its terminal page) and
+  `eligibility_started` (at least one decision was attempted).
 - `limits`: the configured page, market, schedule-age, pregame-buffer and lookahead values.
 - `request`: series ticker, market status filter, schedule window start and end.
 - `policy`: parser version, `mapping_version`, and that the predicate is `scope.eligible`
@@ -205,7 +216,46 @@ fails. Constant-baseline eligibility reads only the summary and its receipt (§4
 One consequence of the specification's rule is worth stating plainly: a single missing
 event response makes the pass incomplete, and an incomplete pass requests **no** books.
 Today the collector would still collect books for the other events. The specification
-(§3, item 3) chose the stricter rule and this plan follows it. See decision D1.
+(§3, item 3) chose the stricter rule and this plan follows it. The governing wording,
+the distinction from research eligibility, and the alternative are in §9.4.
+
+### 3.5 Recording an incomplete discovery honestly
+
+Checked against `contracts.validate` and `journal.validate_links` at `acc4c24`
+**[PR #7]**: every case below is accepted by the existing contract. The contract
+requires integers for the bounds and counts, so "unknown" cannot be stored as null.
+The record stays honest through `complete=false`, a non-empty `reasons` list (which
+the contract already requires), and the manifest flags.
+
+| Failure point | `phase_reached` | Bounds | `counts` | Candidates | `references` |
+|---|---|---|---|---|---|
+| Rate-limit budget exhausted or request row failed before any attempt completed | `none` | after = through | 0, 0 | Empty, `candidates_known=false` | Empty list (allowed) |
+| Status, series or document request failed | `none`, `status` or `series` | after = through | 0, 0 | Empty, not known | The failed attempt and earlier ones |
+| Pagination failed, looped or hit a cap | `documents` | after = through | 0, 0 | Those observed so far, not known complete | Pages fetched, including the failed one |
+| Schedule unavailable | `pages` | after = through | 0, 0 | Complete list, no decisions | As above plus the failed schedule attempt |
+| An event failed or was inconsistent | `schedule` | through > after | Eligible decisions recorded so far | Complete list; some without a decision | As above plus event attempts |
+| Deadline or interrupt mid-eligibility | `schedule` or `events` | through ≥ after | As recorded | Complete list; some without a decision | As above |
+
+Rules for writers and readers:
+
+- `counts` and the bounds describe rows that exist. Zero means "no eligible decision
+  was recorded", which is true. It never means "the universe has no eligible games".
+  Readers must not use `counts` from a pass that is not complete.
+- The complete-and-empty case is distinguished by `complete=true`, `phase_reached=done`
+  and `candidates_known=true` with an empty candidate list.
+- `completed_at` is when the phase ended, whether it succeeded or failed.
+- A completed failed attempt (HTTP error, timeout without a body, truncation) is a
+  valid typed reference. A pending or recovered-interrupted attempt is not, and goes
+  in `incomplete_attempts`.
+- The projection (§4.6) accepts a pass as complete only when `complete` is true **and**
+  `manifest_version` is known **and** `phase_reached`, `candidates_known` and
+  `eligibility_complete` agree with it. Anything else is `universe_incomplete`. A pass
+  written with an unrecognized manifest, such as PR #7's test fixture, is therefore
+  never usable as a complete universe.
+
+One gap in the existing contract: it requires reasons when a pass is incomplete but
+does not forbid reasons when a pass is complete. The follow-up patch adds that check
+(§9.6, P4).
 
 ## 4. Evidence availability (F3.3b, evidence half)
 
@@ -252,6 +302,12 @@ step 6 loses the proof, not the evidence: the next invocation observes at its ow
 later, real time. No path accepts a caller-supplied wall time. Tests inject a clock,
 and any injected clock forces `mode="synthetic"`.
 
+**This increment is library-only.** It adds no command, no operations hook and no
+scheduled caller. Until a caller is implemented (the F3.4 `forecast tick`), no
+operational receipt is produced by anything in the repository, and the projection
+reports every live input as `availability_unproven`. Tests call the function with an
+injected clock, which forces synthetic receipts.
+
 The collector never calls the witness, and the collector module must not import it.
 The witness refuses to run under a run of kind `collect`, `discover` or `live-check`.
 That keeps the specification's single ordering: the next tick witnesses the previous
@@ -264,8 +320,8 @@ subjects belong to later steps.
 
 - Discovery passes are selected first, newest first, at most 100 per invocation, where
   no receipt exists for the pass in this observer namespace and mode.
-- Fetches are every **completed** attempt (any state except `pending`, with a
-  `retrieved_at`) among the newest `witness_scan_rows` (default 5000) by `seq` that has
+- Fetches are every **completed** attempt (state `ok`, `parse_error` or `error`, with
+  a `retrieved_at`; §9.1) among the newest `witness_scan_rows` (default 5000) by `seq` that has
   no receipt in this namespace and mode. At most `witness_max_subjects` (default 500)
   per invocation, newest first, inserted in ascending `seq`.
 - There is no stored cursor. A fetch that was pending and completes later is picked up
@@ -279,7 +335,7 @@ Receipt envelope against the PR #7 contract **[PR #7]**:
 | Field | Value |
 |---|---|
 | `subject_kind` and its one typed id | `fetch` with `fetch_id`, or `discovery_pass` with `discovery_id` |
-| `subject_digest` | As PR #7 requires today: the pass row digest, or the fetch's raw body hash. See blocker B1 |
+| `subject_digest` | For a fetch: the `digest` of its typed reference, which covers the whole row (§9.1; needs patch P1). For a discovery pass: the pass row's `digest`, as PR #7 requires today |
 | `references` | Exactly one typed reference to the subject row. For a fetch this fingerprints the full row, including UUID, `seq`, state, raw hash and `retrieved_at`. This is what binds the receipt to exact evidence rather than to bytes alone |
 | `observed_at` | Step 5 sample |
 | `session_id` | The witness invocation UUID |
@@ -287,7 +343,7 @@ Receipt envelope against the PR #7 contract **[PR #7]**:
 | `monotonic_offset` | Seconds since the session baseline, as a decimal string |
 | `clock_status` | `trusted` or `untrusted` (§4.4) |
 | `mode` | `synthetic` if the subject's lineage is a fixture run or the clock is injected; otherwise `forward_shadow` |
-| `run_id`, `code_hash`, `config_hash` | The witness run, `source_hash()`, and the hash of the witness limits and namespace |
+| `run_id`, `code_hash`, `config_hash` | The witness run, `source_hash()`, and the digest of that run's recorded configuration (limits and namespace; §9.2) |
 
 PR #7 keys a receipt by subject, digest, namespace and mode, so each subject has **one**
 receipt per namespace, and the first is permanent. Witnessing the same subject again
@@ -295,23 +351,57 @@ appends nothing and keeps the original `observed_at`. The witness skips subjects
 already have a receipt; an `IdempotencyConflict` would mean two different observations
 for one subject and is reported as an integrity failure, not retried.
 
-### 4.4 Clock rules
+### 4.4 Clock rules, detection limits and recovery
+
+Checks made at every observation:
 
 | Check | Trigger | Result |
 |---|---|---|
-| Divergence | UTC elapsed and monotonic elapsed since the session baseline differ by more than 2 seconds (includes host sleep) | `untrusted` |
-| Regression | `observed_at` is earlier than the `observed_at` of the most recent trusted receipt in this namespace | `untrusted` |
+| Divergence | UTC elapsed and monotonic elapsed since the session baseline differ by more than 2 seconds (a step in either direction, or host sleep, during the session) | `untrusted` |
+| Regression | `observed_at` is earlier than the high-water mark: the `observed_at` of the most recent **trusted** receipt with the same observer namespace and mode | `untrusted` |
 | Negative age | `observed_at` is earlier than the subject's `retrieved_at`, or the pass's `created_at` | `untrusted` |
 
-An untrusted observation is still written, as immutable failure evidence, with
-`clock_status="untrusted"`. Because the first receipt is permanent, that subject stays
-unproven in this namespace. The cost is small: the affected evidence could only have
-served cutoffs in the following 300 seconds. Readers treat an untrusted receipt as no
-proof of availability and report `clock_untrusted`.
+The high-water mark is looked up among the newest 10,000 receipts. If receipts exist
+for that namespace and mode but none of them is trusted, the result is `untrusted`.
+Synthetic receipts never contribute to the mark used for `forward_shadow` receipts.
 
-These checks do not detect every skew, and the Mac's synchronized clock remains a
-stated residual risk, as in the specification. Recovery after a forward clock jump is
-decision D3.
+An untrusted observation is still written, as immutable failure evidence. Because the
+first receipt for a subject is permanent, that subject stays unproven in this
+namespace. Readers treat an untrusted receipt as no proof of availability and report
+`clock_untrusted`. The cost is bounded: the evidence could only have served cutoffs in
+the following 300 seconds.
+
+**What local clocks cannot establish.** These checks compare the wall clock with
+itself and with a monotonic clock that does not survive a restart. They cannot detect:
+
+- A forward step that happens between sessions. It is indistinguishable from elapsed time.
+- A backward step between sessions that is smaller than the time since the last trusted
+  receipt.
+- A constant offset shared by the collector and the witness, or drift below 2 seconds
+  per session.
+
+The error is not always conservative. A clock that runs behind true UTC stamps
+`observed_at` early, so evidence can appear available before a cutoff it actually
+missed. A clock that runs ahead stamps `retrieved_at` late, so evidence can appear
+fresher than it is. In both cases the size of the error is bounded by the size of the
+undetected skew. A receipt therefore proves ordering and bounds **on the local clock's
+timeline**. That this timeline matches true UTC is an assumption about the Mac's time
+synchronization, not something this design proves. No external or cryptographic time
+attestation exists in v1.
+
+**Recovery, with no operator override.**
+
+| Situation | What happens | How it ends |
+|---|---|---|
+| Divergence within a session | That session's remaining receipts are untrusted | The next session starts a fresh baseline |
+| Wall clock stepped backward | Receipts are untrusted while the clock is below the high-water mark | When the clock is corrected, or when real time passes the mark |
+| Wall clock stepped forward, a trusted receipt was written, then the clock was corrected | Receipts are untrusted until real time reaches the future-dated mark | Only by waiting. The outage lasts as long as the size of the jump |
+
+There is no flag, command or configuration value that marks a clock trusted, resets
+the high-water mark, or rewrites a receipt. A very large forward jump would stop
+trusted witnessing in this namespace for a correspondingly long time. Changing the
+observer namespace would start a new mark; that is a reviewed code and protocol change
+with its own review, not a recovery procedure, and it is not provided here.
 
 ### 4.5 Legacy evidence
 
@@ -346,7 +436,10 @@ Applicable-pass rule, using only records whose trusted receipt has `observed_at 
 1. Candidates are (a) witnessed discovery passes, and (b) **orphans**: a witnessed
    discovery-stage fetch of a two-phase run whose `seq` is beyond the
    `fetch_seq_through` of every witnessed pass of that run. An orphan means a pass
-   started and no summary was committed for it.
+   started and no summary was committed for it. A crashed pass whose only attempts
+   are pending or recovered-interrupted leaves nothing witnessable and is not an
+   orphan; it is equivalent to a cycle that never ran, and the earlier pass applies
+   only while it is still within 300 seconds (§9.1).
 2. The applicable record is the one furthest along in ingestion order (pass `id`, with
    orphans placed by `seq`). Sequence numbers only order records that are already
    witnessed; they never establish availability.
@@ -481,12 +574,13 @@ All cases use isolated databases and synthetic evidence. "Summary" means the
 | C2 | Response received before C, its commit lands after C | `retrieved_at ≤ C`, receipt necessarily after C; not qualifying |
 | C3 | Summary completed before C, first witnessed after C | Not the applicable pass at C; the earlier witnessed pass applies if any |
 | C4 | Replay run after C creates normalized rows for a pre-C fetch | No receipt is created; availability unchanged |
-| D1 | Process killed before the summary commits | No summary; fetch rows and checkpoints kept; after witnessing, projection reports `discovery_summary_missing` and does not fall back |
+| D1 | Process killed before the summary commits, after at least one discovery attempt completed | No summary; fetch rows and checkpoints kept; after witnessing, projection reports `discovery_summary_missing` and does not fall back |
+| D1b | Process killed during the first request, leaving only a pending attempt | No summary and nothing witnessable; the earlier pass applies only while within 300 s |
 | D2 | Process killed after the summary commits, before books | Summary present and unchanged; projection can use it once witnessed |
 | D3 | Process killed during books | As D2 |
 | E1 | Witness run twice with nothing new | Second run appends nothing; original `observed_at` kept |
 | E2 | Witness killed mid-batch, then rerun | Earlier receipts unchanged; remaining subjects get the later real time |
-| E3 | Collection resumed after D1 or D2 | New summary with a new id and `session_id`; earlier summary and receipts unchanged; `phase_sequence` 2 |
+| E3 | Collection resumed after D1 or D2 | New summary with a new id and `session_id`; earlier summary and receipts unchanged; `phase_sequence` is 1 after D1 and 2 after D2 |
 | E4 | Resume of a legacy-protocol run on schema 3 | Refused with instruction to start a new run |
 | F1 | Wall clock steps backward between witness runs | Receipts `untrusted`; projection treats subjects as unproven |
 | F2 | Host sleep or UTC/monotonic divergence over 2 s within a run | Receipts `untrusted` |
@@ -499,6 +593,19 @@ All cases use isolated databases and synthetic evidence. "Summary" means the
 | H2 | Schema-3 archive with fetches from before this work; witness run today | Receipts carry today's time; any earlier cutoff gives `availability_unproven` and `universe_incomplete` |
 | H3 | Fixture import of responses with old timestamps | Lineage synthetic; never counted as `forward_shadow`; no summary or receipt imported |
 | H4 | Successful witness run after a failed collection | Collection health still unhealthy; operations classification unchanged |
+| I1 | Book attempt times out with no body, then is witnessed | A receipt exists whose digest is the fetch row fingerprint; the attempt is visible as the latest completed attempt |
+| I2 | Attempt left `pending` by a killed process; witness runs | No receipt; counted as `pending_seen` |
+| I3 | That run is resumed, the attempt becomes `interrupted`; witness runs | Still no receipt; counted as `interrupted_seen` |
+| I4 | A fetch receipt whose digest is the raw body hash (pre-patch rule) | Rejected on insert; an archive that already holds one fails `journal.integrity` and is not rewritten |
+| I5 | Two attempts with byte-identical bodies | Two receipts with different subject digests |
+| J1 | Pass whose `config_hash` differs from its run's recorded configuration digest | Rejected |
+| J2 | Decision citing a pass without the exact pin, or with a wrong pass digest or collector hash | Rejected |
+| J3 | Decision citing a binding with a different research `config_hash`; publication with a different hash from its decision | Rejected, as today |
+| K1 | Every allowed and forbidden cell of the §9.3 table | Allowed inserts succeed; forbidden inserts are rejected |
+| K2 | Reconstruction decision citing a live pass and live binding | Accepted; cannot be given a publication; cannot enter a `forward-shadow` evaluation |
+| K3 | Discovery pass or receipt with mode `historical_reconstruction` | Rejected |
+| L1 | Each failure point of the §3.5 table | Summary accepted by the contract with the tabulated values; projection reports `universe_incomplete` |
+| L2 | Pass marked complete that carries reasons, or whose manifest flags disagree | Rejected by the patched contract, or unusable in the projection |
 
 ## 8. Implementation handoff
 
@@ -512,7 +619,7 @@ All cases use isolated databases and synthetic evidence. "Summary" means the
 | `src/vader_intelligence/storage.py` | Modify | Schema-version accessor; thin `append_forecast` wrapper that applies the existing free-space check before `journal.append` |
 | `src/vader_intelligence/forecast/witness.py` | Create | §4.2–§4.4 |
 | `src/vader_intelligence/forecast/evidence.py` | Create | §4.6 |
-| `forecast/journal.py`, `forecast/contracts.py` **[PR #7]** | Modify only as §9 is decided | Blockers B1–B3 |
+| `forecast/journal.py`, `forecast/contracts.py` **[PR #7]** | Modify in the separate follow-up patch (§9.6), not in F3.3a | Contracts §9.1–§9.3 |
 | `tests/test_collector.py`, `tests/test_integration.py` | Extend | A, B, D, E3, E4, H1 |
 | `tests/forecast_storage/test_discovery_pass.py`, `test_witness.py`, `test_evidence.py` | Create | C, E1, E2, F, H2–H4 |
 | `tests/forecast/test_timing_sweep.py` | Create | G |
@@ -538,17 +645,20 @@ def fetch_availability(db, fetch_id, namespace="local-witness-v1") -> Availabili
 def discovery_as_of(db, cutoff, namespace="local-witness-v1") -> DiscoveryEvidence: ...
 ```
 
-### 8.2 Increments
+### 8.2 Increments and prerequisites
 
-| Order | Increment | Depends on | Done when |
+| Order | Increment | Prerequisites | Done when |
 |---|---|---|---|
-| 0 | Reconcile B1–B3 against merged PR #7 | PR #7 merged | Each blocker has a recorded decision; any journal or contract change is merged with its own tests |
-| 1 | **F3.3a**: two-phase collector and summary | 0 (B2, B3) | A, B, D, E3, E4, H1 pass; existing collector, integration and operations suites pass unmodified on schemas 1 and 2 |
-| 2 | Witness | 0 (B1), 1 for pass subjects | C4, E1, E2, F1, F2, H3, H4 pass |
-| 3 | Availability projection and timing sweep | 1, 2 | C1–C3, D1 projection, F3, F4, G, H2 pass |
+| 1 | **F3.3a**: two-phase collector and summary | PR #7 cleared and merged; this document's summary contract (§3.2, §3.5, §9.2, §9.3) accepted. **Does not need the follow-up patch** | A, B, D, E3, E4, H1, L1 pass; existing collector, integration and operations suites pass unmodified on schemas 1 and 2 |
+| P | Follow-up journal-validation patch (§9.6) | PR #7 merged. Independent of increment 1 | I4, I5, J, K, L2 pass; PR #7's own storage tests pass with updated fixtures |
+| 2 | Witness (library only) | Patch item P1; increment 1 for discovery-pass subjects | C4, E1, E2, F1, F2, H3, H4, I1–I3 pass |
+| 3 | Availability projection and timing sweep | 1 and 2 | C1–C3, D1 projection, F3, F4, G, H2 pass |
+| Later | Bindings, selection, decisions (rest of F3.3b) | Patch items P2 and P3; its own plan | Not in this plan |
 
-Increment 1 is the smallest coherent unit: it delivers the independent discovery fact
-on its own and is reviewable without the witness.
+Increment 1 is the smallest coherent unit. It writes only discovery passes, and the
+values it writes already satisfy every rule the patch adds, so no row written by
+increment 1 becomes invalid when the patch lands. Increment 1 and the patch can
+proceed in parallel.
 
 ### 8.3 Ordered test plan
 
@@ -564,10 +674,11 @@ Tests assert observable behavior: rows present, requests sent, values returned.
 6. Witness basics: one receipt per subject, repeat is a no-op, interrupted batch (E1, E2).
 7. Observation ordering: the recorded `observed_at` is never earlier than the end of
    the read and never later than the receipt's `created_at`.
-8. Clock anomalies (F1, F2).
+8. Clock anomalies (F1, F2), attempt states (I1–I5).
 9. Cutoff boundaries through the projection (C1–C3, F3, F4).
 10. Timing sweep on a virtual serial timeline (G1–G3).
-11. Legacy and synthetic lineage (H2, H3), health separation (H4).
+11. Legacy and synthetic lineage (H2, H3), health separation (H4), and the
+    configuration and mode link tables (J, K) once the patch exists.
 12. Lint, format, full suite, operations suite, wheel build and installed-wheel smoke,
     on the Mac, in a disposable checkout and database.
 
@@ -583,68 +694,301 @@ Tests assert observable behavior: rows present, requests sent, values returned.
 - Handoff document records actual results and separates offline from live evidence.
 - No production archive touched, no migration run on it, nothing deployed.
 
-## 9. Interface blockers against PR #7 at `acc4c24`
+## 9. Interface contracts resolved against PR #7 at `acc4c24`
 
-None requires a schema or DDL change. All three concern validation in
-`forecast/journal.py`. Each should be decided before the first non-synthetic row is
-written, because those rows are immutable.
+Revision 1 listed three blockers. This section replaces them with contracts. Nothing
+here is implemented, and nothing here modifies PR #7. None of it needs DDL, but each
+item is still a compatibility change for any schema-3 archive that already holds the
+affected rows; §9.6 states that boundary.
 
-**B1. A fetch with no body cannot be witnessed.** `validate_links` requires a fetch
-receipt's `subject_digest` to equal `fetches.body_sha256`, and the contract requires a
-64-character hash. A timed-out or connection-failed attempt has no body and a NULL
-hash, so no receipt can be written for it. The specification (§4) requires the book
-selector to inspect the latest completed attempt, including failed ones, and to abstain
-rather than search backward. If failed attempts are invisible to the witness, a
-timed-out latest attempt is not in the witnessed set and an older valid book would be
-selected, which the specification forbids.
-Recommended: define the fetch `subject_digest` as the digest of the typed fetch
-reference (the row fingerprint) for every fetch, with or without a body. This also
-binds the receipt to the exact row instead of to bytes.
-Fallback without changing PR #7: witness only fetches with a body, count the rest as
-`unwitnessable`, and require the later selector to abstain when any completed attempt
-with `retrieved_at ≤ C` is newer than its chosen book and has no receipt.
-This blocks the F3.3b selector. It does not block increment 1.
+### 9.1 Fetch receipts: canonical subject identity
 
-**B2. Decisions must share `config_hash` with their discovery pass.** `validate_links`
-rejects a decision whose `config_hash` differs from its discovery pass's. The pass is
-written by the collector, whose configuration is the collector configuration. The
-decision's hash is the research protocol configuration, which the collector does not
-know and should not depend on.
-Recommended: the pass stores the collector configuration hash, and the decision check
-for `discovery_id` is removed or replaced by a check the decision can satisfy.
-This blocks increment 1 only in the sense that the stored value is permanent.
+Attempt states, from `storage.py` and `transport.py` on `main`:
 
-**B3. Parents must share `mode` with their children.** A live pass and live receipts
-can only be `forward_shadow`. `parent(...)` then rejects a `historical_reconstruction`
-decision that references them, so a reconstruction could never cite live discovery
-evidence or live receipts.
-Recommended: store `forward_shadow` now, and before F3.4 `reconstruct` is built decide
-whether live evidence may be a parent of both non-synthetic modes while synthetic
-lineage stays unpromotable.
-This does not block increments 1–3.
+| State | How reached | `retrieved_at` | Body | Can still change | Receipt subject |
+|---|---|---|---|---|---|
+| `pending` | Row inserted before the request is sent | NULL | None | Yes | No |
+| `interrupted` | `Store.recover` on resume of a crashed run | NULL | None | No | No |
+| `error` | Completed: HTTP non-200, transport failure, deadline, byte-limit truncation, unsupported encoding, in-process interrupt | Set | Present or absent | No | **Yes** |
+| `parse_error` | Completed: HTTP 200 body that failed normalization | Set | Present | No | **Yes** |
+| `ok` | Completed and normalized | Set | Present | No | **Yes** |
 
-Minor, not blocking: `journal.append` does not expose the transaction budget, so the
-summary insert cannot be bounded by the remaining pass deadline; and there is no batch
-insert, so each receipt pays one durable commit.
+A **completed attempt** has a `retrieved_at` and state `ok`, `parse_error` or `error`.
+This is the same precondition `references.reference` already enforces, and it matches
+the specification's "latest attempted completed book retrieval" (§4). Replay does not
+modify `fetches` rows.
 
-## 10. Decisions for the operator
+Contract for a receipt with `subject_kind="fetch"`:
 
-Policy rules were not changed to resolve any of these. Defaults are what the plan
-assumes if no one decides otherwise.
+1. Let `R = reference(db, "fetches", {"id": fetch_id})`, the existing typed reference
+   **[PR #7]**, unchanged. `R` carries the fetch UUID, a digest over the **entire**
+   row (sequence, request, attempt number, start and retrieval times, HTTP status,
+   headers, body hash or NULL, state, error text, truncation flag, envelope and source
+   API versions), the request stage, and the source lineage. When a body exists it
+   also verifies the stored bytes against the hash.
+2. `subject_digest` must equal `R["digest"]`.
+3. `references` must equal `[R]`, exactly one element.
+4. A trusted receipt's `observed_at` must not precede `retrieved_at` (retained).
 
-| # | Decision | Default in this plan |
+For the other three subject kinds nothing changes: `subject_digest` is the subject
+row's `digest` column.
+
+The typed reference is reused rather than a second canonical form, so there is one
+fingerprint definition, it is already re-validated on every integrity pass, and it
+works with or without a body. The row digest includes `elapsed_seconds`, a floating
+point column; every typed fetch reference in PR #7 already depends on it, so this adds
+no new exposure, but it does mean a restore path must preserve that value exactly, as
+the SQLite backup mechanism does.
+
+**Pending, interrupted and later-completed attempts.**
+
+- Neither is ever a receipt subject. A receipt is written only against a completed
+  row, and a completed row never changes, so no legitimate write can make a receipt's
+  digest stale.
+- The witness holds the writer lock. A `pending` row it can see therefore belongs to a
+  process that no longer holds the lock: a crashed or killed attempt. That row can
+  change only through `Store.recover` on a resume, which makes it `interrupted`. It
+  cannot later become a completed retrieval.
+- The general rule holds anyway: nothing is recorded for a row while it is pending. If
+  a row is later found completed inside the scan window, it is witnessed then, with
+  that run's real time. Nothing is backdated.
+- Both states are reported: the witness run counts `pending_seen` and
+  `interrupted_seen`, and a discovery summary lists them under `incomplete_attempts`.
+  For readers they are, in the specification's words, reported but not a completed
+  snapshot.
+- Consequence: a crashed pass with no completed attempt leaves nothing to witness and
+  cannot mark discovery incomplete. That is the same state of knowledge as a cycle
+  that never ran, and the 300-second limit bounds how long the earlier pass can apply.
+  A crashed pass with at least one completed discovery attempt is an orphan (§4.6).
+
+**Effect of changing the digest semantics.**
+
+| Area | Effect |
+|---|---|
+| Validation | `validate_links` changes for fetch subjects: rule 2 replaces the body-hash comparison, and rule 3 is new. `contracts.validate` is unchanged; the digest is still 64 hex characters |
+| Existing receipts | PR #7's shipped fixture creates one receipt, for a publication, which is unaffected. Any **fetch** receipt written under the body-hash rule fails the new validation |
+| Integrity | `journal.integrity` raises on such a row. That fails `Store.verify_integrity`, schema-3 `replay`, and operations inspect, backup and restore validation for that archive |
+| Repair | None in place. Receipts are immutable by trigger. The archive must be preserved as it is and a new one built from a schema-2 backup, the remedy PR #7 already documents for its pre-fix layout |
+| Detection | Not structural. `require_schema` cannot see it; only the integrity pass does |
+| Idempotency | The key formula is unchanged, but it includes the digest. The same fetch therefore has a different key under each rule, and an old and a new receipt could coexist; the old one remains invalid. One receipt per subject then rests on digest stability, which holds because subjects are completed rows |
+| Dual acceptance | Rejected. Accepting either digest would keep receipts that bind bytes only |
+
+Landing condition: no retained schema-3 archive may hold fetch receipts when the patch
+lands. Nothing in the repository can produce one today, since no witness exists.
+Production is reported to be schema 1; that was not verified here.
+
+### 9.2 Configuration provenance
+
+Three different configurations exist. Each hash is the digest of the writing run's
+recorded `provenance_json.configuration`, so it can be recomputed from the archive.
+
+| Configuration | Written by | Carried by |
 |---|---|---|
-| D1 | On schema 3, one missing event response suppresses every book in that pass and fails the operations cycle, because the specification gates books on complete discovery. Is that operational cost accepted? | Yes, follow the specification |
-| D2 | The witness has no command until F3.4, so no live receipts exist until `forecast tick` is built. Acceptable, or is a minimal command wanted earlier? | Library only; no early command |
-| D3 | After a forward clock jump produces a trusted receipt in the future, later receipts are untrusted until real time passes it. Should an operator override exist? | No override; fail closed |
-| D4 | B1, B2, B3 above | The recommendations in §9 |
+| **Collector** (`Config`: limits, timeouts, schedule age, pregame buffer, database path) | `collect`, `discover`, `live-check` | `discovery_passes.config_hash` |
+| **Observer** (witness limits and namespace) | The witness run | `forecast_receipts.config_hash` |
+| **Research protocol** (specification §2 defaults; parser arrives in F3.4) | Tick, reconstruct, evaluate | `config_hash` of `forecast_bindings`, `forecast_decisions`, `forecast_publications`, `evaluation_runs`, `evaluation_items` |
 
-Routine choices already made from the code and specification, listed so a reviewer can
-disagree: `phase_sequence` as the per-run invocation ordinal; `counts` as eligible
-counts; eligibility rows recorded by id and digest instead of typed references;
-non-two-market events stay fail-closed; one observation sample per read batch;
-newest-first bounded witness scan with no stored cursor; untrusted receipts are
-written and are permanent; resuming a legacy-protocol run on schema 3 is refused.
+Compatibility rule for every parent-child link:
+
+| Child → parent | Rule | Against PR #7 |
+|---|---|---|
+| Discovery pass → its run | `config_hash` equals the digest of the run's recorded configuration; run kind is `collect`, `discover`, `live-check` or `fixture` | New, additive |
+| Receipt → its run | `config_hash` equals the digest of the run's recorded configuration | New, additive |
+| Receipt → subject | No configuration relation. A receipt records an observation and is valid under any protocol | Unchanged |
+| Binding → previous binding | Same `config_hash`, `policy_version`, `candidate_key` | Retained |
+| Decision → binding | Same research `config_hash`; identity fields equal | Retained |
+| Decision → discovery pass | **Exact pin instead of equality.** `manifest.discovery` must equal `{"id": discovery_id, "digest": <pass row digest>, "collector_config_hash": <pass config_hash>}`. The existing rule that an eligible decision needs a complete pass is retained | Changed |
+| Publication → decision | Same research `config_hash`; decision digest equal | Retained |
+| Evaluation item → evaluation run | Same `config_hash` and run | Retained |
+| Evaluation item → decision | Same dataset, protocol and `config_hash` | Retained |
+| Evaluation correction → previous | Same dataset, protocol, `config_hash`, view and population | Retained |
+
+Only one check changes, and it is replaced, not removed. Equality between a decision
+and its pass cannot be satisfied honestly: the pass is written by the collector, which
+does not know the research protocol and must not depend on it, and a protocol change
+would otherwise strand all earlier discovery. The pin keeps exact provenance: each
+decision names the precise pass and the precise collector configuration its universe
+came from. Every same-protocol check between research records stays.
+
+A matching rule for research records against their own run (binding, decision,
+publication and evaluation `config_hash` equal to the run's configuration digest)
+belongs with the F3.4 research configuration parser and is not part of this patch.
+
+### 9.3 Mode relationships
+
+`mode` currently mixes two properties. **Lineage** is synthetic or real. **Cohort** is
+forward (`forward_shadow`) or reconstruction (`historical_reconstruction`). Evidence
+records have lineage only; research records have both.
+
+Evidence records are fetches (lineage from the run kind), discovery passes and
+receipts. For a discovery pass or receipt, `forward_shadow` means "produced by a live
+process using system clocks". It is not a claim of publication. Neither may be
+`historical_reconstruction`, because a reconstruction cannot create a past pass or a
+past observation.
+
+Abbreviations: S synthetic, F `forward_shadow`, H `historical_reconstruction`. Pairs
+are child → parent.
+
+| # | Relationship | Allowed | Forbidden | Against PR #7 |
+|---|---|---|---|---|
+| M1 | Any record → its writing run | Any mode on a non-fixture run; S on a fixture run | F or H record on a fixture run | Retained |
+| M2 | Any record → typed reference, at any depth | F or H record → real source of either cohort; S record → any source | F or H record → synthetic source | Retained |
+| M3 | Discovery pass, own mode | F, S | H | New |
+| M4 | Receipt, own mode | F, S | H | New |
+| M5 | Receipt → fetch | S → synthetic fetch; F → real fetch; S → real fetch (injected clock, separate key, never proof) | F → synthetic fetch | Retained |
+| M6 | Receipt → discovery pass, receipt → publication | S → S, F → F | Everything else | Retained |
+| M7 | Receipt → binding | S → S, F → F | Any receipt on an H binding | Retained in effect |
+| M8 | Binding → previous binding | Same mode | Everything else | Retained |
+| M9 | Decision → binding | S → S, F → F, **H → F**, H → H | F → H; F or H → S; S → F or H | H → F is new |
+| M10 | Decision → discovery pass | S → S, F → F, **H → F** | F or H → S; S → F | H → F is new |
+| M11 | Decision → superseded decision | Existing rules: the correction is not F, uses a distinct dataset, same opportunity | Synthetic ancestry under a real correction, at any depth | Retained |
+| M12 | Publication → decision | S → S, F → F | Any H publication; any publication for an H decision | Retained |
+| M13 | Evaluation run, view against mode | `cutoff-reconstruction` with H; `forward-shadow` with F; either view with S | Any other pairing | Retained |
+| M14 | Evaluation run → superseded run | Same mode and cohort | Everything else | Retained |
+| M15 | Evaluation item → its evaluation run, decision, publication, publication receipt | Same mode | Any cross-mode link | Retained |
+
+What the table guarantees:
+
+- **Reconstruction may cite live evidence.** An H decision can reference a live pass
+  and a live binding through M9 and M10, and live receipts as typed references through
+  M2. It still cannot qualify as forward publication: M12 forbids a publication for it,
+  and M13 with M15 keep it out of every `forward-shadow` evaluation.
+- **Synthetic ancestry never becomes real evidence.** M1, M2, M5 and M11 block it at
+  the run, the reference, the receipt and the correction chain, and every foreign-key
+  link forbids a real child of a synthetic parent.
+- **Scoring populations stay separate.** The decision idempotency key includes the
+  mode, so a forward decision and a reconstructed decision for the same game are two
+  rows. M15 stops either from being scored in the other's evaluation, and M13 fixes
+  which view each evaluation may use.
+- **A forward decision cannot cite a reconstruction binding** (M9), because such a
+  binding may have been prepared after the fact.
+
+Only M9 and M10 relax anything, and only for a reconstruction child of live evidence.
+M3 and M4 are new restrictions.
+
+### 9.4 Discovery failure policy
+
+Governing wording, from the specification:
+
+- §3, item 3: "Only a complete committed phase enables its eligible candidates' book
+  stage."
+- §3, item 1: "Phase failure or cap exhaustion is explicitly incomplete."
+- §3, item 2: "Membership ambiguity/missing sources fail the affected discovery scope
+  closed."
+- §8 test matrix: "Partial pages, ambiguous membership, missing eligibility decisions,
+  phase interrupted before commit | No eligible complete-discovery assertion; no books
+  before phase commit; constant and midpoint fail closed for affected scope".
+
+**Retained for this increment:** on schema 3, an incomplete discovery pass requests no
+books. v1 has one discovery scope per pass, so the affected scope is the whole pass.
+
+Two different things are involved, and the policy above settles only how they are
+coupled in this increment:
+
+| | Research-cohort eligibility | Collecting a book |
+|---|---|---|
+| Question | May a game at cutoff C enter the strict cohort? | Is it safe to request and archive this contract's book now? |
+| Depends on | The applicable pass being complete, witnessed by C and fresh | That contract's own pregame proof: its eligibility decision, schedule freshness and the T−120 guard |
+| If discovery is incomplete | Both baselines abstain for cutoffs where that pass applies | The book's own proof may still be valid |
+
+So an incomplete pass can contain contracts whose books would be individually safe to
+collect, and the approved rule declines to collect them. The research cost of that is
+close to nil: where the incomplete pass is the applicable one, the midpoint abstains
+regardless, and a later complete pass brings its own fresher books. The cost falls on
+the archive and on operations: a gap in raw book history, a stale `last_book_at` in
+health, and a failed collection cycle, all from one missing event response.
+
+**Separate proposal, not adopted here.** Allow books for individually eligible
+contracts after an *incomplete* summary has been committed.
+
+- Requires amending specification §3 item 3 and the §8 matrix row above, with review.
+- Would not change cutoff eligibility: an incomplete pass still fails the common gate.
+- Such a book could later be the latest completed attempt for a cutoff governed by a
+  later complete pass. The specification's book requirements (§4) rest on the book's
+  own eligibility evidence, so this is defensible, but it must be decided explicitly.
+- Would restore archive continuity and avoid failed cycles for a single bad event.
+- Would make "no books after incomplete discovery" stop being an invariant that tests
+  and operators can rely on.
+
+Until that proposal is separately reviewed and the specification is amended, the
+retained rule stands and the implementation must enforce it (cases B1, B2).
+
+### 9.5 Witness and clock scope
+
+Stated in full in §4.2 and §4.4. In summary: the witness is a library function with no
+caller in this increment; no operational receipt exists until F3.4 supplies one; clock
+checks detect in-session divergence, a backward step below the last trusted receipt
+and negative ages; they cannot detect a forward step between sessions, a small
+backward step or a shared offset; recovery is by a new session or by waiting; there is
+no trust override.
+
+### 9.6 Smallest follow-up interface patch
+
+To be written **after** PR #7 is cleared and merged, as its own reviewed change. It is
+not implemented here and PR #7 is not to be modified for it.
+
+Files: `forecast/journal.py`, `forecast/contracts.py`, and
+`tests/forecast_storage/` (fixtures and cases). No SQL, no migration, no
+`user_version` change.
+
+| Item | Change | Needed before |
+|---|---|---|
+| P1 | Fetch receipt subject: rules 2 and 3 of §9.1 in `validate_links` | The witness (increment 2) |
+| P2 | Decision → discovery pass: exact pin replaces `config_hash` equality (§9.2) | Any decision is written |
+| P3 | A mode-compatibility function replaces strict equality for decision → binding and decision → discovery pass (M9, M10); `contracts.validate` rejects H for discovery passes and receipts (M3, M4) | Any reconstruction decision is written |
+| P4 | Additive checks: pass → run and receipt → run configuration digest; run kind for a pass; a complete pass carries no reasons | The witness, so that live rows are checked from the first one |
+
+The smallest patch that unblocks this plan is **P1 alone**. All four are recommended
+as one change, for one reason: each alters what a valid schema-3 row is, and one
+compatibility boundary is easier to reason about and to document than several.
+
+Compatibility boundary of the patch, stated explicitly:
+
+- Schema 3 is still a draft. Production is reported to be schema 1.
+- After the patch, an archive written by pre-patch code is valid only if it holds no
+  fetch receipts (P1), no decision that cites a discovery pass (P2), and no pass or
+  receipt whose `config_hash` differs from its run's configuration digest (P4).
+  PR #7's own test fixture fails P2 and P4 as written and must be updated in the patch.
+- A non-conforming archive is rejected by the integrity pass, never rewritten, and is
+  handled as PR #7 already prescribes for its pre-fix layout: preserve it, and build a
+  new archive from a schema-2 backup.
+- Rows written by increment 1 conform by construction, before or after the patch.
+
+## 10. Decisions
+
+### 10.1 Resolved in revision 2
+
+| # | Question | Resolution |
+|---|---|---|
+| 1 | How is a failed fetch without a body witnessed? | The receipt binds the typed fetch reference, whose digest covers the whole completed row (§9.1) |
+| 2 | Are pending and interrupted attempts witnessed? | No. Reported, never subjects (§9.1) |
+| 3 | What happens to receipts written under the body-hash rule? | Invalid after the patch; no dual acceptance; archive preserved and rebuilt (§9.1, §9.6) |
+| 4 | Which configuration does each record carry? | Collector for passes, observer for receipts, research protocol for the rest (§9.2) |
+| 5 | Is configuration validation removed anywhere? | No. One equality is replaced by an exact pin; two run-link checks are added (§9.2) |
+| 6 | May a reconstruction cite live evidence? | Yes, through M9, M10 and M2, and it can never be published or scored as forward (§9.3) |
+| 7 | Are books collected after incomplete discovery? | No, per specification §3 item 3. The alternative is a separate proposal (§9.4) |
+| 8 | Does this increment produce operational receipts? | No. Library only (§4.2) |
+| 9 | Is there a clock trust override? | No (§4.4) |
+| 10 | Can the PR #7 contract record an incomplete discovery, including failure before eligibility? | Yes, with the conventions of §3.5; one missing check is added by P4 |
+| 11 | What does F3.3a need? | Merged PR #7 and this contract. Not the patch (§8.2) |
+
+### 10.2 Unresolved policy questions
+
+These are not decided here because each would add or change a research rule.
+
+| # | Question | What this plan assumes until decided |
+|---|---|---|
+| Q1 | Is a change of **collector** configuration inside one protocol cohort "configuration drift within the cohort", which specification §2 says to reject? PR #7's equality check implied yes. The pin in §9.2 records the collector configuration on every decision but does not reject a change | Not drift. Each decision pins its collector configuration, and evaluation reports must list the distinct collector hashes in a cohort |
+| Q2 | Should the HTTP `Date` header already archived with every fetch be used as an external sanity bound on the local clock, marking receipts untrusted when they disagree? It would catch offsets that local clocks cannot (§4.4), but it adds an eligibility-affecting rule based on a provider value | Not used. Local checks only |
+| Q3 | Should books be collected for individually eligible contracts after an incomplete discovery (§9.4)? | No. Approved policy retained |
+
+Routine choices made from the code and specification, listed so a reviewer can
+disagree: `phase_sequence` as the per-run summary ordinal; `counts` as eligible
+decisions recorded; eligibility rows recorded by id and digest instead of typed
+references; non-two-market events stay fail-closed; one observation sample per read
+batch; newest-first bounded witness scan with no stored cursor; untrusted receipts are
+written and are permanent; the regression mark is kept per namespace and mode;
+resuming a legacy-protocol run on schema 3 is refused.
 
 ## 11. Failure modes, hazards and risks
 
@@ -670,24 +1014,34 @@ Hazard identifiers are from the pinned data-systems catalog.
 | R1 | Two-phase ordering lengthens a pass or adds schedule refreshes, eating into the 90-second wrapper deadline | Medium | Missed books, stale evidence | Measure in increment 1; do not change the deadline or cadence here |
 | R2 | Per-receipt durable commits make the witness too slow to clear a pass inside the tick budget | Medium | Partial witnessing, unproven evidence | Measure; cap and report; batch insert is a possible later journal change |
 | R3 | `journal.integrity` re-validates every reference of every pass, so its time grows with history (about 720 passes a day at the current cadence) and it runs inside replay, inspection and backup | Medium | Operations commands slow down over weeks | Typed references limited to distinct fetches; measure at 720 passes; revisit before long-running use |
-| R4 | A single flaky event endpoint blanks books for a pass (D1) | Medium | Lower midpoint coverage | Accepted by specification; reported, not softened |
-| R5 | Clock checks miss a skew smaller than their thresholds or one consistent across both clocks | Low | Wrong availability bound | Stated residual risk; no cryptographic or external time claim |
+| R4 | A single flaky event endpoint blanks books for a pass (§9.4) | Medium | Lower midpoint coverage | Accepted by specification; reported, not softened |
+| R5 | Clock checks miss a skew they cannot see (§4.4) | Low | Evidence admitted or aged wrongly by up to the size of the skew | Stated residual risk; no cryptographic or external time claim; Q2 |
+| R6 | The follow-up patch lands after some schema-3 archive already holds affected rows | Low | That archive fails integrity and must be rebuilt | Land the patch before the witness exists; §9.6 boundary |
 
 ## 12. Review record for this document
 
-Checked against the specification: §2 visibility receipts and clock check, §3 collector
-phase boundary and population rules, §6 table definitions and transactions, §7
-scheduling boundary, §8 step table and test matrix, §9 examples, §10 open decisions.
-Checked against `main` source: `collector.py`, `storage.py`, `transport.py`,
+Revision 1 checked against the specification: §2 visibility receipts and clock check,
+§3 collector phase boundary and population rules, §6 table definitions and
+transactions, §7 scheduling boundary, §8 step table and test matrix, §9 examples, §10
+open decisions. Against `main` source: `collector.py`, `storage.py`, `transport.py`,
 `normalize.py` (book eligibility proof), `scope.py`, `replay.py`, `config.py`,
 `cli.py`, `forecast/policy.py`, `ops/archive.py` (result classification), migration 001.
-Checked against PR #7 at `acc4c24`, read-only: `forecast/journal.py`,
+Against PR #7 at `acc4c24`, read-only: `forecast/journal.py`,
 `forecast/contracts.py`, `forecast/references.py`, `forecast/schema.py`, migration 003,
 the `storage.py`, `cli.py`, `replay.py` and `ops/archive.py` diffs, and the storage handoff.
+
+Revision 2 rechecked, for the contracts in §3.5 and §9: fetch state transitions in
+`Store.begin_fetch`, `complete_fetch` and `recover` and the interrupt path in
+`Reader.get`; the preconditions of `references.reference`; every `parent(...)` call
+and every `config_hash` comparison in `journal.validate_links`; the discovery-pass and
+receipt branches of `contracts.validate` and `contracts.key`; and which receipts
+PR #7's test fixtures create. The quoted specification wording in §9.4 was copied from
+§3 and §8 of the specification on `main`.
 
 The §6 table was computed by hand and then reproduced by a throwaway script that
 models only the stated assumptions (pass completion at `t_k + 11`, first observation
 by the next tick that runs). That script is not part of the repository and is not a
 test of any implementation.
 
-Not done: no application test was run and no database was created.
+Not done: no application test was run and no database was created. The contracts in
+§9 were derived by reading code; none was exercised against PR #7.
