@@ -65,7 +65,7 @@ def main():
         assert "forecast_publications" in report["counts"]
         future_core = ["-m", "vader_intelligence.cli", "--db", str(restored)]
         with sqlite3.connect(restored) as db:
-            db.execute("PRAGMA user_version=4")
+            db.execute("PRAGMA user_version=5")  # 4 is record contract 2, not unknown
         assert "unsupported" in invoke(future_core + ["db-init"], 1)["error"]
         assert "supported" in invoke(ops + ["inspect", "--database", str(restored)], 1)["error"]
     print(

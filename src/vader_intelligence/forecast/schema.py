@@ -58,10 +58,19 @@ COLUMNS = {
 }
 
 
-def migration_sql():
-    return (
-        files("vader_intelligence").joinpath("migrations/003_forecast_evaluation.sql").read_text()
-    )
+SUPPORTED = (3, 4)
+LEDGERS = {3: [1, 2, 3], 4: [1, 2, 3, 4]}
+
+
+def migration_sql(name="003_forecast_evaluation.sql"):
+    return files("vader_intelligence").joinpath("migrations/" + name).read_text()
+
+
+def executable(script):
+    """The SQL text with comments removed; migration 004 must have none."""
+    return "\n".join(
+        line for line in script.splitlines() if line.strip() and not line.lstrip().startswith("--")
+    ).strip()
 
 
 def statements(script):
@@ -77,7 +86,7 @@ def statements(script):
 
 
 def require_schema(db):
-    if db.execute("PRAGMA user_version").fetchone()[0] != 3:
+    if db.execute("PRAGMA user_version").fetchone()[0] not in SUPPORTED:
         raise ValueError("forecast storage requires explicit schema 3 migration")
     layout = db.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='evaluation_items'"
@@ -93,11 +102,9 @@ def require_schema(db):
 
 def check_schema(db):
     require_schema(db)
-    if [r[0] for r in db.execute("SELECT version FROM schema_migrations ORDER BY version")] != [
-        1,
-        2,
-        3,
-    ]:
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    ledger = [r[0] for r in db.execute("SELECT version FROM schema_migrations ORDER BY version")]
+    if ledger != LEDGERS[version]:
         raise ValueError("forecast migration ledger mismatch")
     for table, columns in COLUMNS.items():
         if not columns <= {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
@@ -142,17 +149,42 @@ def transaction(db, budget=30):
         db.execute(f"PRAGMA busy_timeout={busy_timeout}")
 
 
-def migrate(db):
-    """Idempotent 2→3 only. Schema 1 requires explicit settlement migration first."""
+def migrate(db, *, record_contract=None):
+    """Idempotent explicit expansion. Plain: 2→3, no-op at 3 and 4. Schema 1 requires
+    explicit settlement migration first.
+
+    record_contract=2 performs migration 004 on a schema-3 archive: ledger row and
+    user_version 4 in one transaction, no DDL, no row touched (plan §9.6). It is a
+    no-op at 4 and refused below 3; nothing ever downgrades.
+    """
+    if record_contract not in (None, 2):
+        raise ValueError("unsupported record contract; only --record-contract 2 exists")
     with transaction(db):
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version == 3:
+        if version == 4:
             check_schema(db)
             return False
+        if version == 3:
+            check_schema(db)
+            if record_contract != 2:
+                return False
+            if executable(migration_sql("004_record_contract_2.sql")):
+                raise ValueError("migration 004 must not contain executable SQL")
+            if db.execute("PRAGMA foreign_key_check").fetchone():
+                raise ValueError("legacy foreign key failure")
+            db.execute(
+                "INSERT INTO schema_migrations VALUES (4,?)",
+                (datetime.now(timezone.utc).isoformat(),),
+            )
+            db.execute("PRAGMA user_version=4")
+            check_schema(db)
+            return True
         if version != 2:
             raise ValueError(
                 "forecast migrate requires schema 2; on schema 1 run settlement migrate first"
             )
+        if record_contract == 2:
+            raise ValueError("record contract 2 requires schema 3; run forecast migrate first")
         expected = {
             "runs",
             "requests",

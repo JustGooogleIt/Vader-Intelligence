@@ -420,7 +420,7 @@ class ArchiveTests(Fixture):
                 archive.backup(self.db, path)
         self.assertEqual(digest(self.db), before)
         with closing(sqlite3.connect(self.db)) as db, db:
-            db.execute("PRAGMA user_version=4")
+            db.execute("PRAGMA user_version=5")  # 4 is record contract 2, not unknown
         with self.assertRaises(ValueError):
             archive.backup(self.db, self.root / "future.sqlite3")
         self.assertFalse((self.root / "future.sqlite3").exists())

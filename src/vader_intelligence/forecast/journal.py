@@ -18,11 +18,62 @@ class IdempotencyConflict(ValueError):
     pass
 
 
-def parent(db, table, row_id, mode):
+# Mode relationships for contract-2 decisions (plan §9.3). Child → parent pairs.
+M9_DECISION_BINDING = {
+    ("synthetic", "synthetic"),
+    ("forward_shadow", "forward_shadow"),
+    ("historical_reconstruction", "forward_shadow"),
+    ("historical_reconstruction", "historical_reconstruction"),
+}
+M10_DECISION_DISCOVERY = {
+    ("synthetic", "synthetic"),
+    ("forward_shadow", "forward_shadow"),
+    ("historical_reconstruction", "forward_shadow"),
+}
+
+
+def parent(db, table, row_id, mode, allowed=None):
+    """Load a parent row and check the child→parent mode relationship.
+
+    Contract 1 requires equal modes. Contract-2 callers pass the allowed pair set.
+    """
     row = row_dict(db, table, {"id": row_id})
-    if table in COLUMNS and json.loads(row["payload_json"])["mode"] != mode:
-        raise ValueError("incompatible parent mode")
+    if table in COLUMNS:
+        parent_mode = json.loads(row["payload_json"])["mode"]
+        if allowed is None:
+            if parent_mode != mode:
+                raise ValueError("incompatible parent mode")
+        elif (mode, parent_mode) not in allowed:
+            raise ValueError("forbidden mode relationship " + f"{mode}→{parent_mode}")
     return row
+
+
+def run_configuration_digest(db, run_id):
+    row = db.execute("SELECT provenance_json FROM runs WHERE id=?", (run_id,)).fetchone()
+    if row is None:
+        raise ValueError("missing run")
+    return digest(json.loads(row[0])["configuration"])
+
+
+def record_contract(db, table, row_id):
+    """Contract declared by a stored row's own payload; never guessed from the archive."""
+    row = row_dict(db, table, {"id": row_id})
+    return contracts.version(table, json.loads(row["payload_json"]))
+
+
+def cited_receipts(value, found=None):
+    """Every typed reference to a forecast_receipts row anywhere in a payload."""
+    found = [] if found is None else found
+    if isinstance(value, dict):
+        if value.get("table") == "forecast_receipts" and isinstance(value.get("key"), dict):
+            found.append(value["key"].get("id"))
+        else:
+            for item in value.values():
+                cited_receipts(item, found)
+    elif isinstance(value, list):
+        for item in value:
+            cited_receipts(item, found)
+    return found
 
 
 def correction_lineage(db, table, payload):
@@ -86,21 +137,40 @@ def validate_links(db, table, p):
         ):
             raise ValueError("T/C do not match v1 horizon")
     if table == "forecast_decisions":
-        for field, target in (
-            ("binding_id", "forecast_bindings"),
-            ("discovery_id", "discovery_passes"),
-        ):
-            if p[field] is not None:
-                prior = json.loads(parent(db, target, p[field], p["mode"])["payload_json"])
+        contract = contracts.version(table, p)
+        if p["binding_id"] is not None:
+            allowed = M9_DECISION_BINDING if contract == 2 else None
+            prior = json.loads(
+                parent(db, "forecast_bindings", p["binding_id"], p["mode"], allowed)["payload_json"]
+            )
+            if prior["config_hash"] != p["config_hash"]:
+                raise ValueError("decision parent configuration mismatch")
+            if any(
+                prior[k] != p[k]
+                for k in ("game_id", "ticker", "yes_team_id", "scheduled_start", "cutoff")
+            ):
+                raise ValueError("decision differs from selected binding")
+        if p["discovery_id"] is not None:
+            allowed = M10_DECISION_DISCOVERY if contract == 2 else None
+            row = parent(db, "discovery_passes", p["discovery_id"], p["mode"], allowed)
+            prior = json.loads(row["payload_json"])
+            if contract == 1:
                 if prior["config_hash"] != p["config_hash"]:
                     raise ValueError("decision parent configuration mismatch")
-                if field == "binding_id" and any(
-                    prior[k] != p[k]
-                    for k in ("game_id", "ticker", "yes_team_id", "scheduled_start", "cutoff")
-                ):
-                    raise ValueError("decision differs from selected binding")
-                if field == "discovery_id" and p["cutoff_eligible"] and not prior["complete"]:
-                    raise ValueError("eligible decision needs complete discovery")
+            else:
+                # Exact pin instead of equality: the collector hash is never the
+                # research hash, and the pin makes cohorting checkable (plan §9.2).
+                pin = p["manifest"]["discovery"]
+                if pin["digest"] != row["digest"]:
+                    raise ValueError("discovery pin digest mismatch")
+                if pin["collector_config_hash"] != prior["config_hash"]:
+                    raise ValueError("discovery pin collector configuration mismatch")
+            if p["cutoff_eligible"] and not prior["complete"]:
+                raise ValueError("eligible decision needs complete discovery")
+        if contract == 2:
+            for receipt_id in cited_receipts(p):
+                if receipt_id is None or record_contract(db, "forecast_receipts", receipt_id) != 2:
+                    raise ValueError("contract-2 decision cannot cite a contract-1 receipt")
         if p["supersedes_id"] is not None:
             prior = json.loads(row_dict(db, table, {"id": p["supersedes_id"]})["payload_json"])
             if prior["dataset"] == p["dataset"] or any(
@@ -109,6 +179,8 @@ def validate_links(db, table, p):
                 raise ValueError(
                     "diagnostic correction needs distinct namespace and same opportunity"
                 )
+            if contract == 2 and contracts.version(table, prior) != 2:
+                raise ValueError("contract-2 decision cannot supersede a contract-1 decision")
     if table == "forecast_publications":
         decision = parent(db, "forecast_decisions", p["decision_id"], p["mode"])
         if decision["digest"] != p["decision_digest"]:
@@ -116,6 +188,7 @@ def validate_links(db, table, p):
         if json.loads(decision["payload_json"])["config_hash"] != p["config_hash"]:
             raise ValueError("publication configuration mismatch")
     if table == "forecast_receipts":
+        contract = contracts.version(table, p)
         target = {
             "fetch": ("fetches", "fetch_id"),
             "binding": ("forecast_bindings", "binding_id"),
@@ -133,9 +206,22 @@ def validate_links(db, table, p):
         ):
             raise ValueError("receipt needs exactly one typed subject")
         subject = parent(db, target[0], p[target[1]], p["mode"])
-        expected = subject.get("body_sha256") if target[0] == "fetches" else subject["digest"]
-        if expected != p["subject_digest"]:
-            raise ValueError("receipt subject digest mismatch")
+        if contract == 1:
+            # Frozen contract-1 rule: a fetch receipt's digest is the raw body hash.
+            expected = subject.get("body_sha256") if target[0] == "fetches" else subject["digest"]
+            if expected != p["subject_digest"]:
+                raise ValueError("receipt subject digest mismatch")
+        else:
+            # Contract 2 (plan §9.1): the subject is the typed reference of the row,
+            # which for a fetch fingerprints the entire completed attempt, body or not.
+            subject_reference = reference(db, target[0], {"id": p[target[1]]})
+            expected = subject_reference["digest"] if target[0] == "fetches" else subject["digest"]
+            if expected != p["subject_digest"]:
+                raise ValueError("contract-2 receipt subject digest mismatch")
+            if p["references"] != [subject_reference]:
+                raise ValueError("contract-2 receipt needs exactly its subject reference")
+            if p["config_hash"] != run_configuration_digest(db, p["run_id"]):
+                raise ValueError("receipt configuration differs from its run")
         earliest = (
             subject.get("retrieved_at")
             if target[0] == "fetches"
@@ -230,11 +316,26 @@ def validate_links(db, table, p):
                 raise ValueError("forward score needs publication evidence")
 
 
+def require_contract_schema(db, table, p):
+    """Contract 2 needs schema 4; contract 1 is closed for new receipts/decisions there."""
+    contract = contracts.version(table, p)
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    if contract == 2 and version < 4:
+        raise ValueError(
+            "contract-2 records require explicit migration: "
+            "vader forecast migrate --record-contract 2"
+        )
+    if contract == 1 and version >= 4 and table in contracts.CONTRACT_2_TABLES:
+        raise ValueError("contract 1 is closed for new receipts and decisions on schema 4")
+
+
 def _insert(db, table, p):
     encoded = contracts.validate(table, p)
     validate_links(db, table, p)
     key = contracts.key(table, p)
     content_digest = hashlib.sha256(encoded.encode()).hexdigest()
+    # An exact retry of an existing envelope returns its original id under either
+    # contract and on either schema; only a new row is subject to the contract gate.
     if table == "evaluation_items":
         old = db.execute(
             "SELECT digest FROM evaluation_items WHERE evaluation_id=? AND opportunity_key=?",
@@ -252,6 +353,7 @@ def _insert(db, table, p):
             if old[1] != content_digest:
                 raise IdempotencyConflict("idempotency key reused with different content")
             return old[0]
+    require_contract_schema(db, table, p)
     if table == "forecast_bindings":
         last = db.execute(
             "SELECT id,payload_json FROM forecast_bindings WHERE candidate_key=? AND policy_version=? AND config_hash=? AND mode=? ORDER BY revision DESC LIMIT 1",
@@ -312,7 +414,40 @@ def append_evaluation(db, payload, items):
             if time.monotonic() >= deadline:
                 raise TimeoutError("evaluation persistence deadline")
             _insert(db, "evaluation_items", item | {"evaluation_id": identifier})
+        check_cohort(db, items)
         return identifier
+
+
+def check_cohort(db, items):
+    """One collector configuration hash per evaluation cohort (specification §5).
+
+    Contract-2 decisions pin the collector hash of their discovery pass; every pinned
+    hash in one evaluation must be identical, and an evaluation never mixes
+    contract-1 and contract-2 decisions. Unpinned contract-2 decisions (no applicable
+    pass) carry no collector hash and are counted but do not define the cohort.
+    """
+    contracts_seen = set()
+    collector_hashes = set()
+    for item in items:
+        if item.get("decision_id") is None:
+            continue
+        row = row_dict(db, "forecast_decisions", {"id": item["decision_id"]})
+        decision = json.loads(row["payload_json"])
+        contract = contracts.version("forecast_decisions", decision)
+        contracts_seen.add(contract)
+        if contract == 2 and decision["discovery_id"] is not None:
+            collector_hashes.add(decision["manifest"]["discovery"]["collector_config_hash"])
+    if len(contracts_seen) > 1:
+        raise ValueError("evaluation mixes contract-1 and contract-2 decisions")
+    if len(collector_hashes) > 1:
+        raise ValueError(
+            "evaluation cohort spans multiple collector configuration hashes; "
+            "report each collector configuration as a separate cohort"
+        )
+    return {
+        "record_contract": contracts_seen.pop() if contracts_seen else None,
+        "collector_config_hash": collector_hashes.pop() if collector_hashes else None,
+    }
 
 
 def integrity(db):
@@ -322,12 +457,25 @@ def integrity(db):
     checks storage, not temporal selection, actual publication, or scoring accuracy.
     """
     check_schema(db)
+    schema_version = db.execute("PRAGMA user_version").fetchone()[0]
+    counts = {table: {"1": 0, "2": 0} for table in COLUMNS}
     for table in COLUMNS:
         cursor = db.execute(f"SELECT * FROM {table}")
         names = [d[0] for d in cursor.description]
         for values in cursor:
             row = dict(zip(names, values))
             p = json.loads(row["payload_json"])
+            identity = row.get("id", row.get("opportunity_key"))
+            try:
+                contract = contracts.version(table, p)
+            except ValueError as exc:
+                raise ValueError(f"{table} row {identity}: {exc}") from exc
+            if contract == 2 and schema_version < 4:
+                raise ValueError(
+                    f"{table} row {identity}: contract-2 record in a schema-{schema_version} "
+                    "archive; not migrated automatically"
+                )
+            counts[table][str(contract)] += 1
             if contracts.validate(table, p) != row["payload_json"] or digest(p) != row["digest"]:
                 raise ValueError("forecast payload hash/canonical mismatch")
             validate_links(db, table, p)
@@ -356,8 +504,20 @@ def integrity(db):
                     ordered.append({k: v for k, v in item.items() if k != "evaluation_id"})
                 if by_key or digest(ordered) != p["report"]["items_digest"]:
                     raise ValueError("evaluation item manifest mismatch")
+                check_cohort(db, items)
+    latest = db.execute(
+        "SELECT id, payload_json FROM discovery_passes ORDER BY id DESC LIMIT 1"
+    ).fetchone()
     return {
         "integrity": "verified",
         "materialization": "not_implemented",
         "publication_verified": False,
+        "record_contracts": counts,
+        "latest_discovery": None
+        if latest is None
+        else {
+            "id": latest[0],
+            "complete": json.loads(latest[1])["complete"],
+            "reasons": json.loads(latest[1])["reasons"],
+        },
     }

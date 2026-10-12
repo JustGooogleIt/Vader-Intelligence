@@ -19,6 +19,12 @@ FIELDS = {
 }
 FIELDS = {k: COMMON | set(v.split()) for k, v in FIELDS.items()}
 MODES = {"synthetic", "forward_shadow", "historical_reconstruction"}
+# Record contracts (F3.3 plan §9.6). Contract 1 is the payload shape without a
+# contract_version field: the rules at main ebb58df, frozen. Contract 2 exists for
+# receipts and decisions only and is declared by the integer 2. Every other value,
+# including an explicit 1 or a 2 on another table, is unknown and rejected.
+CONTRACT_2_TABLES = {"forecast_receipts", "forecast_decisions"}
+PIN_FIELDS = {"id", "digest", "collector_config_hash"}
 
 
 def identifier(value):
@@ -54,9 +60,23 @@ def reasons(value):
         identifier(reason)
 
 
+def version(table, p):
+    """Return the record contract a payload declares, or reject an unknown one."""
+    if not isinstance(p, dict) or "contract_version" not in p:
+        return 1
+    value = p["contract_version"]
+    if table in CONTRACT_2_TABLES and type(value) is int and value == 2:
+        return 2
+    raise ValueError(f"unknown record contract version {value!r} for {table}")
+
+
 def validate(table, p):
-    if table not in FIELDS or not isinstance(p, dict) or set(p) != FIELDS[table]:
+    if table not in FIELDS or not isinstance(p, dict):
         raise ValueError("incomplete or unknown storage fields")
+    expected = FIELDS[table] | ({"contract_version"} if "contract_version" in p else set())
+    if set(p) != expected:
+        raise ValueError("incomplete or unknown storage fields")
+    contract = version(table, p)
     if type(p["schema_version"]) is not int or p["schema_version"] != 1 or p["mode"] not in MODES:
         raise ValueError("unsupported record schema/mode")
     encoded = json_text(p)
@@ -165,6 +185,8 @@ def validate(table, p):
             raise ValueError("invalid monotonic offset")
         if date(p["observed_at"]) > date(p["created_at"]):
             raise ValueError("observation after receipt insertion")
+        if contract == 2 and p["mode"] == "historical_reconstruction":
+            raise ValueError("a receipt cannot be a reconstruction (M4)")
     elif table == "forecast_decisions":
         if type(p["cutoff_eligible"]) is not bool or bool(p["reasons"]) == p["cutoff_eligible"]:
             raise ValueError("inconsistent cutoff reasons")
@@ -218,6 +240,18 @@ def validate(table, p):
             raise ValueError("eligible decision missing identity/evidence")
         if p["supersedes_id"] is not None and p["mode"] == "forward_shadow":
             raise ValueError("correction cannot be a forward replacement")
+        if contract == 2:
+            pin = p["manifest"].get("discovery")
+            if p["discovery_id"] is None:
+                if pin is not None:
+                    raise ValueError("discovery pin without a cited pass")
+            else:
+                if not isinstance(pin, dict) or set(pin) != PIN_FIELDS:
+                    raise ValueError("contract-2 decision requires an exact discovery pin")
+                if pin["id"] != p["discovery_id"]:
+                    raise ValueError("discovery pin cites another pass")
+                sha(pin["digest"])
+                sha(pin["collector_config_hash"])
     elif table == "forecast_publications":
         sha(p["decision_digest"])
         if p["mode"] == "historical_reconstruction" or p["verdict"] not in (
@@ -328,6 +362,10 @@ def key(table, p):
                 "mode",
             )
         ]
+        if version(table, p) == 2:
+            # A contract-1 receipt for the same subject is a different key: an
+            # API-supplied row can neither block nor stand in for a witness observation.
+            values.append(2)
     elif table == "forecast_decisions":
         values = [
             p[k]

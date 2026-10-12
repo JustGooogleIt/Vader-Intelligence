@@ -1,0 +1,9 @@
+-- Record contract 2 (F3.3 plan §9.6). This migration changes no table and touches no
+-- row. Its only effect is the schema_migrations ledger row and user_version 4, which
+-- forecast.schema.migrate writes in the same transaction. Its purpose is detection:
+-- contract-2 receipts and decisions may be written only on schema 4, and every binary
+-- that predates contract 2 refuses a schema-4 archive at open instead of mixing
+-- contract-1 rows beside contract-2 rows and failing later as apparent corruption.
+--
+-- Contract 1 (payload without contract_version) stays valid and inspectable forever;
+-- new contract-1 receipts and decisions are closed on schema 4. No row is converted.
