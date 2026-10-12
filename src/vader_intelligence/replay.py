@@ -50,7 +50,7 @@ def replay(store):
         "errors": errors,
         "status": "partial" if errors else "complete",
     }
-    if store.db.execute("PRAGMA user_version").fetchone()[0] == 3:
+    if store.db.execute("PRAGMA user_version").fetchone()[0] >= 3:
         from .forecast.journal import integrity
 
         # Preserve existing research ledger exactly; raw replay cannot recreate

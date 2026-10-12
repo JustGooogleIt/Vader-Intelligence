@@ -52,10 +52,10 @@ class Store:
             )
             self.db.row_factory = sqlite3.Row
             self.db.execute("PRAGMA query_only=ON")
-            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3):
+            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4):
                 self.db.close()
                 raise RuntimeError("unsupported database schema")
-            if self.db.execute("PRAGMA user_version").fetchone()[0] == 3:
+            if self.db.execute("PRAGMA user_version").fetchone()[0] >= 3:
                 from .forecast.schema import check_schema
 
                 try:
@@ -108,9 +108,9 @@ class Store:
 
     def _validated_schema_version(self):
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3):
+        if version not in (0, 1, 2, 3, 4):
             raise RuntimeError(f"unsupported database schema version {version}")
-        if version == 3:
+        if version >= 3:
             from .forecast.schema import check_schema
 
             check_schema(self.db)
@@ -314,7 +314,7 @@ class Store:
             failures.append("SQLite quick_check failed")
         if self.db.execute("PRAGMA foreign_key_check").fetchone():
             failures.append("foreign key check failed")
-        if self.db.execute("PRAGMA user_version").fetchone()[0] == 3:
+        if self.db.execute("PRAGMA user_version").fetchone()[0] >= 3:
             from .forecast.journal import integrity
 
             try:

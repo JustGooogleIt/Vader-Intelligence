@@ -33,8 +33,15 @@ def parser():
     from .settlement.cli import register
 
     register(commands)
-    forecast = commands.add_parser("forecast", help="explicit forecasting storage migration only")
-    forecast.add_subparsers(dest="forecast_command", required=True).add_parser("migrate")
+    forecast = commands.add_parser("forecast", help="explicit forecasting storage commands")
+    forecast_commands = forecast.add_subparsers(dest="forecast_command", required=True)
+    migrate = forecast_commands.add_parser("migrate")
+    migrate.add_argument(
+        "--record-contract",
+        type=int,
+        choices=[2],
+        help="explicit migration 004: enable record contract 2 on a schema-3 archive",
+    )
     return p
 
 
@@ -52,7 +59,7 @@ def execute(args):
             # as an accidental side effect of a rejected forecast migration.
             probe = sqlite3.connect(Path(config.database).resolve().as_uri() + "?mode=ro", uri=True)
             try:
-                if probe.execute("PRAGMA user_version").fetchone()[0] not in (2, 3):
+                if probe.execute("PRAGMA user_version").fetchone()[0] not in (2, 3, 4):
                     raise ValueError(
                         "forecast migrate requires schema 2; run settlement migrate first"
                     )
@@ -60,10 +67,11 @@ def execute(args):
                 probe.close()
             store = Store(config.database, min_free_bytes=config.min_free_bytes)
             try:
-                changed = migrate(store.db)
+                changed = migrate(store.db, record_contract=args.record_contract)
                 return {
                     "status": "complete",
-                    "schema_version": 3,
+                    "schema_version": store.schema_version(),
+                    "record_contract": 2 if store.schema_version() >= 4 else 1,
                     "migrated": changed,
                     "database": str(store.path),
                 }

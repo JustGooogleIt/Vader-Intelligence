@@ -4,14 +4,14 @@ from ..storage import timestamp
 
 
 def require_schema(store):
-    if store.db.execute("PRAGMA user_version").fetchone()[0] not in (2, 3):
+    if store.db.execute("PRAGMA user_version").fetchone()[0] not in (2, 3, 4):
         raise ValueError("settlement requires explicit migration: vader settlement migrate")
 
 
 def migrate(store):
     version = store.db.execute("PRAGMA user_version").fetchone()[0]
-    if version in (2, 3):
-        return
+    if version in (2, 3, 4):
+        return  # never downgrade an expanded archive
     if version != 1:
         raise ValueError("settlement migration requires baseline schema 1")
     script = files("vader_intelligence").joinpath("migrations/002_settlement.sql").read_text()
