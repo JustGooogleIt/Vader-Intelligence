@@ -33,6 +33,14 @@ class DeadlineExceeded(CollectionError):
     pass
 
 
+class PaginationError(CollectionError):
+    """A bounded market scan that cannot be declared complete; reason is a fixed label."""
+
+    def __init__(self, reason, message):
+        self.reason = reason
+        super().__init__(message)
+
+
 @contextmanager
 def deadline_guard(seconds):
     # The CLI runs on Unix's main thread. Unlike read timeouts, this also bounds a
@@ -115,6 +123,15 @@ class Reader:
             },
         )
         self.now, self.monotonic, self.sleep, self.jitter = now, monotonic, sleep, jitter
+        # Lineage only: a reader with any injected client or clock produces synthetic
+        # evidence. It never asserts publication, availability or clock trust.
+        self.live = (
+            client is None
+            and now is utc_now
+            and monotonic is time.monotonic
+            and sleep is time.sleep
+            and jitter is random.uniform
+        )
         self.next_request = 0.0
 
     def close(self):
