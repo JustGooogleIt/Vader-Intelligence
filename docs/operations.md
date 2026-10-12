@@ -244,9 +244,14 @@ foreign keys, all raw-response hashes/lengths, and counts every supported table.
 Unknown versions are refused. Neither inspection nor collection migrates a database;
 `vader settlement migrate` remains the explicit schema-2 operation and
 `vader forecast migrate` explicitly expands 2 to 3. Fresh `db-init` still creates 1.
-Schema 3 currently supplies storage only, not discovery/forecast generation or
-visibility witnessing. See [forecast storage handoff](handoffs/forecast-storage.md)
-for the supported paths and separate-platform verification. A schema-2 reader
+On schema 3 the collector runs the two-phase protocol: discovery, one immutable
+`discovery_passes` summary, then books; an incomplete summary requests no books, and
+`vader health` reports the latest pass under `latest_discovery` (complete-and-empty is
+`complete: true` with zero counts; incomplete carries `reasons`). See the
+[discovery boundary handoff](handoffs/discovery-boundary.md). Visibility witnessing and
+forecast generation are separate increments. See
+[forecast storage handoff](handoffs/forecast-storage.md) for the storage paths and
+separate-platform verification. A schema-2 reader
 cannot read schema 3 and is not a valid code-only rollback after that migration.
 
 Choose a new backup filename each time. Prefer an independently protected volume

@@ -1,8 +1,12 @@
 # F3.3 implementation plan: independent discovery completion and evidence-availability witnessing
 
-Status: **plan only, not implemented**. Written 2026-10-04 by the third engineering
-session (Claude) in its own checkout. This document changes no application code,
-schema, service, archive or other pull request.
+Status: plan. Written 2026-10-04 by the third engineering session (Claude) in its own
+checkout. This document changes no application code, schema, service, archive or other
+pull request. **Increment 1 (F3.3a, §8.2) is implemented** on branch
+`feat/f33a-discovery-boundary` (2026-10-12); the record-contract patch, witness and
+projection follow on `feat/f33-record-contract-2`. Differences between this plan and
+what was built are listed in §13 and traced in the
+[implementation checklist](f33-implementation-checklist.md).
 
 Revision 2 (2026-10-04) turns the three interface gaps found in revision 1 into
 concrete contracts (§9), adds the mode relationship table, states the discovery
@@ -1217,5 +1221,24 @@ models only the stated assumptions (pass completion at `t_k + 11`, first observa
 by the next tick that runs). That script is not part of the repository and is not a
 test of any implementation.
 
-Not done: no application test was run and no database was created. The contracts in
-§9 were derived by reading code; none was exercised against the merged code.
+Not done at revision 3: no application test was run and no database was created. The
+contracts in §9 were derived by reading code; none was exercised against the merged code.
+
+## 13. Implementation record (2026-10-12)
+
+Increment 1 was implemented against this plan. Where the implementation made a choice
+the plan left open, or departed from a detail, it is recorded here; the specification's
+rules are unchanged.
+
+| Plan item | As implemented | Why |
+|---|---|---|
+| §3.1 E7 `eligibility_incomplete` | Added only when an event answered without covering a discovered contract, or when nothing else explains an undecided candidate. A phase-ending reason (`schedule_unavailable`, `access_denied`, `deadline_exhausted`, `interrupted`, pagination bounds) is reported alone | Keeps one reason per failure mode (acceptance case B2 lists the three event reasons as alternatives) while still reporting an omission that no failure explains |
+| §3.1 E8 deadline exhaustion | A `DeadlineExceeded` inside the event loop ends Phase A and is recorded as `deadline_exhausted`; it does not skip one event and continue | E8 is a phase-level condition; an exhausted request budget makes later events unlikely to succeed, and the pass is incomplete either way |
+| §3.2 `phase_reached` | `done` only when every discovered candidate has a decision and no reason was recorded; an event that omits a discovered contract leaves the pass at `events` | "Last stage that finished": eligibility did not finish |
+| §3.3 step 4 | `runs.summary_json` adds `discovery_pass_id`, `discovery_digest` **and** `discovery_reasons`; every existing field keeps its meaning | Operators can tell empty-complete from incomplete without opening the pass row |
+| §3.3 "no books after incomplete discovery" | Enforced twice: the collector enters Phase B only for a complete summary, and `Store.request` refuses a `book` request for a two-phase run unless the run's latest committed pass belongs to the requesting invocation and is complete | The assignment requires enforcement at the persistence boundary, not only by caller convention |
+| §8.1 `storage.py` | `Store.schema_version()`, `Store.append_forecast()`, `Store.health()["latest_discovery"]`, `Store._require_complete_discovery()` and `DiscoveryGateError` | Health is the existing read-only operational interface for the latest discovery fact |
+| §8.1 `transport.py` | `Reader.live` as specified; `PaginationError(reason)` subclass of `CollectionError` for the three pagination bounds | The legacy loop's `CollectionError` handling is unchanged |
+| §8.1 test files | New `tests/test_discovery_boundary.py` instead of extending `test_collector.py` and `test_integration.py` | Proves "existing schema-1 and schema-2 tests pass with no edits" literally |
+| §8.4 measurement | Synthetic 720-pass measurement recorded in `docs/handoffs/discovery-boundary.md` | As specified; it is not live evidence |
+

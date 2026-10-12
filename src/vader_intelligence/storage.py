@@ -1,5 +1,6 @@
 import fcntl
 import hashlib
+import json
 import shutil
 import sqlite3
 import uuid
@@ -9,6 +10,12 @@ from importlib.resources import files
 from pathlib import Path
 
 from .provenance import json_text
+
+TWO_PHASE_PROTOCOL = "two-phase-v1"
+
+
+class DiscoveryGateError(ValueError):
+    """A book request was refused because this invocation has no complete committed summary."""
 
 
 def utc_now():
@@ -77,6 +84,23 @@ class Store:
 
     def close(self):
         self.db.close()
+
+    def schema_version(self):
+        return self.db.execute("PRAGMA user_version").fetchone()[0]
+
+    def append_forecast(self, table, payload):
+        """Persist one supplied research envelope through the forecast journal.
+
+        Applies the collector's free-space guard, then the journal's own contract,
+        link and reference validation inside one BEGIN IMMEDIATE transaction. Returns
+        the row id and its content digest. No network call may happen inside.
+        """
+        from .forecast.journal import append
+
+        self.check_space()
+        row_id = append(self.db, table, payload)
+        digest = self.db.execute(f"SELECT digest FROM {table} WHERE id=?", (row_id,)).fetchone()[0]
+        return row_id, digest
 
     def check_space(self):
         if shutil.disk_usage(self.path.parent).free < self.min_free_bytes:
@@ -148,9 +172,44 @@ class Store:
                 "UPDATE runs SET status='running',finished_at=NULL WHERE id=?", (run_id,)
             )
 
+    def _require_complete_discovery(self, run_id, key):
+        """Persistence-boundary gate for books under the two-phase protocol.
+
+        A run whose provenance declares two-phase collection may create a book
+        request only when the latest committed discovery summary belongs to this
+        invocation (the session prefix of the request key) and is complete. Legacy,
+        fixture and research runs declare no protocol and are unaffected. The check
+        runs inside the request transaction, so no network request is ever made for
+        a book that the archive would not be allowed to retain.
+        """
+        row = self.db.execute("SELECT provenance_json FROM runs WHERE id=?", (run_id,)).fetchone()
+        if row is None:
+            raise DiscoveryGateError("book request for unknown run")
+        protocol = json.loads(row[0]).get("tool_configuration", {}).get("collection_protocol")
+        if protocol is None:
+            return
+        if protocol != TWO_PHASE_PROTOCOL:
+            raise DiscoveryGateError(f"unknown collection protocol {protocol!r}")
+        session = key.split(":", 1)[0]
+        latest = self.db.execute(
+            "SELECT session_id, json_extract(payload_json,'$.complete') FROM discovery_passes "
+            "WHERE run_id=? ORDER BY id DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if latest is None:
+            raise DiscoveryGateError("book request refused: no committed discovery summary")
+        if latest[0] != session:
+            raise DiscoveryGateError(
+                "book request refused: latest discovery summary belongs to another invocation"
+            )
+        if latest[1] != 1:
+            raise DiscoveryGateError("book request refused: discovery summary is incomplete")
+
     def request(self, run_id, stage, key, url, params):
         identifier = str(uuid.uuid4())
         with self.transaction():
+            if stage == "book":
+                self._require_complete_discovery(run_id, key)
             self.db.execute(
                 "INSERT INTO requests(id,run_id,stage,request_key,url,params_json) "
                 "VALUES (?,?,?,?,?,?) ON CONFLICT(run_id,stage,request_key) DO NOTHING",
@@ -300,7 +359,29 @@ class Store:
         ).fetchone()
         age = (utc_now() - datetime.fromisoformat(book[0])).total_seconds() if book else None
         free = shutil.disk_usage(self.path.parent).free
+        discovery = None
+        if self.schema_version() >= 3:
+            # Immutable discovery fact for operators: complete-and-empty is reported
+            # as complete with zero counts; incomplete carries its reasons.
+            latest = self.db.execute(
+                "SELECT id, run_id, session_id, payload_json FROM discovery_passes "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if latest:
+                payload = json.loads(latest["payload_json"])
+                discovery = {
+                    "id": latest["id"],
+                    "run_id": latest["run_id"],
+                    "session_id": latest["session_id"],
+                    "complete": payload["complete"],
+                    "reasons": payload["reasons"],
+                    "counts": payload["counts"],
+                    "completed_at": payload["completed_at"],
+                    "phase_reached": payload["manifest"].get("phase_reached"),
+                    "mode": payload["mode"],
+                }
         return {
+            "latest_discovery": discovery,
             "latest_run": dict(row) if row else None,
             "last_book_at": book[0] if book else None,
             "book_age_seconds": age,
