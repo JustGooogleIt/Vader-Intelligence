@@ -26,6 +26,13 @@ Amendment (2026-10-05, PR #8): one rule added by operator decision, collector
 configuration cohorting, in §5 and §6. No other rule in this document changed.
 Detail and rationale: [F3.3 implementation plan](f33-implementation-plan.md) §9.2.
 
+Implementation status (2026-10-12, branch `feat/f33a-discovery-boundary`): the §3
+collector phase boundary is implemented for schema-3 archives as collection protocol
+`two-phase-v1`; schemas 1 and 2 keep the interleaved loop. No rule changed. What was
+built, and the routine choices made, are recorded in the
+[F3.3 implementation checklist](f33-implementation-checklist.md) and the
+[discovery boundary handoff](../handoffs/discovery-boundary.md).
+
 ## 1. Scope and measured starting point
 
 Produce reproducible T−60 forecasts for MLB `KXMLBGAME` full-game $1 team-winner
@@ -49,7 +56,7 @@ Grounding at the pinned commit (paths relative to repository root):
 | `migrations/001_initial.sql`: `fetches`, `blobs`, `entities`, `observations`, `eligibility`, `runs` | Raw IDs/bytes, retrieval times, sequence and parser versions exist. `retrieved_at` is HTTP completion, **not database commit time**. Sequence is allocated at request start. Normalized row IDs may be created later by replay. |
 | `normalize.py:book_data`, `normalizer` | Decimal prices; YES ask complements the best NO bid; complete levels and side states retained. Books reference `eligibility_id`. Missing/empty and crossed books are distinct. |
 | `scope.py:eligible`, `collector.py:record_eligibility` | Pregame identity evidence references schedule and event/market fetches. `mapping_version=1` is an algorithm label, not an immutable mapping revision. `scope.eligible` rejects reschedules and requires rule start equal to schedule start. |
-| `collector.py:Collector.run`, `pass_summary` | Discovery/eligibility and book requests currently interleave; completion is summarized at invocation end. F3 requires an immutable discovery-phase summary committed before any book request, independent of book success (§3). This is a future interface change, not existing behavior or a PR #4 edit. |
+| `collector.py:Collector.run`, `pass_summary` | Discovery/eligibility and book requests interleave on schemas 1 and 2; completion is summarized at invocation end. On schema 3 the §3 immutable discovery-phase summary is committed before any book request, independent of book success (implemented 2026-10-12, `Collector._run_two_phase`; the legacy loop is unchanged in `Collector._run_legacy`). |
 | `mapping/__init__.py:rule_identity`, `resolve` | Reviewed aliases; game-number handling; explicit prior identity/reschedule links. `resolve` accepts non-pregame MLB states for settlement: it is **not** a forecast eligibility predicate. |
 | `settlement/journal.py:record`, `map_target`, `latest` | Append-only semantic versions, observation links and complete target evidence tuples. `latest`/`before_seq` is not a decision-time query: anchor sequence alone does not prove every supporting input was available then. |
 | `settlement/models.py:kalshi_result`, `mlb_result` | Independent outcomes. Finalized binary labels require matching exact payout and valid timestamp, with no flags. `is_provisional` does not mean disputed settlement in the verified interpretation. |
@@ -243,7 +250,7 @@ only during later publication affects publication status, not the frozen cutoff 
 
 ## 3. Candidate universe and deterministic contract identity
 
-### Future collector phase boundary (required, not implemented)
+### Collector phase boundary (required; implemented on schema 3, F3.3a)
 
 Refactor a bounded collection pass into discovery/identity/eligibility followed by
 books. This is necessary because the reference collector interleaves them, and a
@@ -766,7 +773,7 @@ below are **planned**, not claims of execution in this documentation task.
 |---|---|---|
 | F3.1 Pure policies | New `forecast/policy.py`, `baselines.py`, `publication.py`, `evaluation/scoring.py`; `tests/forecast/test_policy.py`, `test_baselines.py`, `tests/evaluation/test_scoring.py` | Independent cutoff/publication/settlement decisions, timeline and timing sweeps, exact midpoint/score golden cases; no IO/import side effects |
 | F3.2 Expansion | `migrations/003_forecast_evaluation.sql`, new `forecast/schema.py`, `forecast/journal.py`; minimal `storage.py`, `settlement/schema.py`, `ops/archive.py` compatibility | Explicit idempotent migration and transactional rollback on injected DDL failure; old table fingerprints unchanged; 1/2/3 backups and future guards; append-only/uniqueness/JSON reference checks |
-| F3.3a Discovery boundary | Future schema-3 path in `collector.py`, storage summary insertion; `tests/test_collector.py`, `tests/test_integration.py` | Bounded discovery/identity/eligibility summary commits before any book; book outcome variants preserve it; resume uses new pass; incomplete discovery fails closed |
+| F3.3a Discovery boundary | Schema-3 path in `collector.py`, `forecast/discovery.py`, `Store.request` book gate; `tests/test_discovery_boundary.py` (legacy suites unmodified) | **Implemented 2026-10-12.** Bounded discovery/identity/eligibility summary commits before any book; book outcome variants preserve it; resume uses new pass; incomplete discovery fails closed and the Store refuses books without a complete summary |
 | F3.3b Evidence/selection | New `forecast/selection.py`, `forecast/service.py`; `tests/forecast/test_selection.py`, `test_journal.py` | Complete candidates, pre-C receipts for summary and inputs, no future mapping, repeat/crash behavior, no added witnessing phase |
 | F3.4 Forecast CLI | New `forecast/cli.py`, dedicated research TOML parser; minimal `cli.py` registration and health filtering; `tests/forecast/test_cli.py` | Bounded tick/reconstruct/inspect, clock/source-mode gates, package entry points, no implicit migration or HTTP |
 | F3.5 Outcome/evaluation | New `evaluation/outcomes.py`, `service.py`, `journal.py`, `cli.py`; `tests/evaluation/test_outcomes.py`, `test_service.py` | Two separate views, invariant cutoff population, orthogonal coverage counts, correct latest outcomes, paired denominators, immutable corrections, manifest replay |
