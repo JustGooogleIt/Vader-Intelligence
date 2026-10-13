@@ -1,9 +1,18 @@
-"""Choose within one already identity-qualified game's candidates, without hindsight."""
+"""Choose within one already identity-qualified game's candidates, without hindsight.
 
+select_contract fixes the ticker from the identity binding before any price is read.
+select_inputs then chooses the midpoint book input at the cutoff: the latest completed
+book retrieval received and witnessed by C, with complete rejection evidence and no
+backward search for an older attractive book (specification §4).
+"""
+
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
 from ..normalize import identifier
+from .policy import utc
 
 
 @dataclass(frozen=True, order=True)
@@ -63,3 +72,90 @@ def select_contract(candidates, team_ids):
         return Selection(None, ("event_team_set_mismatch",), ordered)
     selected = min((c for c in chosen if c.yes_team_id == lower), key=lambda c: c.ticker)
     return Selection(selected, (), tuple(c for c in ordered if c != selected))
+
+
+@dataclass(frozen=True)
+class BookInput:
+    fetch_id: str
+    retrieved_at: datetime
+    observed_at: datetime
+    receipt_id: int
+    raw: dict
+
+
+@dataclass(frozen=True)
+class InputsOrAbstention:
+    book: BookInput | None
+    reasons: tuple[str, ...]
+
+    @property
+    def eligible(self):
+        return self.book is not None and not self.reasons
+
+
+def select_inputs(db, *, ticker, game_id, cutoff, namespace, mode):
+    """Return the chosen book input for the midpoint baseline, or book-stage reasons.
+
+    Reads only; writes nothing. The anchor is the latest completed book attempt for
+    the ticker received at or before C (ordered by retrieval time then seq). It must
+    also be witnessed by C. If that anchor is unusable, abstain; never fall back to an
+    older valid book or a post-C snapshot. Arithmetic-level book reasons (side missing,
+    crossed, flagged) are left to baselines.midpoint on the returned raw payload.
+    """
+    from . import evidence  # lazy: keep this module import-pure (no sqlite3 at import)
+
+    cutoff = utc(cutoff)
+    identifier(ticker)
+    row = db.execute(
+        "SELECT f.id, f.seq, f.state, f.retrieved_at, f.truncated FROM fetches f"
+        " JOIN requests r ON r.id=f.request_id"
+        " WHERE r.stage='book' AND r.request_key LIKE ? AND f.retrieved_at IS NOT NULL"
+        " AND f.state IN ('ok','parse_error','error') AND f.retrieved_at<=?"
+        " ORDER BY f.retrieved_at DESC, f.seq DESC LIMIT 1",
+        ("%" + ticker, cutoff.isoformat()),
+    ).fetchone()
+    if row is None:
+        return InputsOrAbstention(None, ("book_missing",))
+    fetch_id, _seq, state, retrieved_at, truncated = row
+    availability = evidence.fetch_availability(db, fetch_id, namespace=namespace, mode=mode)
+    if availability.status == "availability_unproven":
+        return InputsOrAbstention(None, ("book_availability_unproven",))
+    if availability.status == "clock_untrusted":
+        return InputsOrAbstention(None, ("book_clock_untrusted",))
+    if availability.observed_at is None or availability.observed_at > cutoff:
+        return InputsOrAbstention(None, ("book_availability_after_cutoff",))
+    if truncated:
+        return InputsOrAbstention(None, ("book_truncated",))
+    if state == "error":
+        return InputsOrAbstention(None, ("book_fetch_failed",))
+    if state == "parse_error":
+        return InputsOrAbstention(None, ("book_parse_error",))
+    age = (cutoff - utc(datetime.fromisoformat(retrieved_at))).total_seconds()
+    if age > 300:
+        return InputsOrAbstention(None, ("book_stale",))
+    observation = db.execute(
+        "SELECT o.data_json FROM observations o WHERE o.fetch_id=? AND o.kind='book'"
+        " AND o.ticker=? LIMIT 1",
+        (fetch_id, ticker),
+    ).fetchone()
+    if observation is None:
+        return InputsOrAbstention(None, ("book_parse_error",))
+    parsed = json.loads(observation[0])
+    if game_id is not None and parsed.get("game_id") != game_id:
+        return InputsOrAbstention(None, ("book_schedule_mismatch",))
+    blob = db.execute(
+        "SELECT b.body FROM fetches f JOIN blobs b ON b.sha256=f.body_sha256 WHERE f.id=?",
+        (fetch_id,),
+    ).fetchone()
+    if blob is None:
+        return InputsOrAbstention(None, ("archive_corrupt",))
+    return InputsOrAbstention(
+        BookInput(
+            fetch_id=fetch_id,
+            retrieved_at=datetime.fromisoformat(retrieved_at),
+            observed_at=availability.observed_at,
+            receipt_id=availability.receipt_id,
+            raw=json.loads(blob[0]),
+        ),
+        (),
+    )

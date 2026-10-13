@@ -9,6 +9,7 @@ per transaction through the journal. No caller-supplied wall time is accepted; a
 injected clock forces synthetic lineage. The collector never imports this module.
 """
 
+import json
 import sqlite3
 import time
 import uuid
@@ -23,6 +24,15 @@ NAMESPACE = "local-witness-v1"
 DIVERGENCE_SECONDS = 2.0
 HIGH_WATER_WINDOW = 10000
 COMPLETED = ("ok", "parse_error", "error")
+# Research subject kinds the tick witnesses alongside passes and fetches. Their receipt
+# subject digest is the row's content digest and the reference is the row fingerprint.
+RESEARCH_SUBJECTS = {"binding": "forecast_bindings", "publication": "forecast_publications"}
+WITNESS_COUNTER = {
+    "discovery_pass": "passes_witnessed",
+    "fetch": "fetches_witnessed",
+    "binding": "bindings_witnessed",
+    "publication": "publications_witnessed",
+}
 REFUSED_UNDER = ("collect", "discover", "live-check")
 LIMITS = {"max_subjects": (1, 500), "scan_rows": (1, 5000), "max_passes": (1, 100)}
 
@@ -80,6 +90,8 @@ def witness(
         "receipts": 0,
         "passes_witnessed": 0,
         "fetches_witnessed": 0,
+        "bindings_witnessed": 0,
+        "publications_witnessed": 0,
         "untrusted": 0,
         "skipped_existing": 0,
         "skipped_live_passes": 0,
@@ -140,10 +152,10 @@ def witness(
                     "mode": subject["mode"],
                     "references": [subject["reference"]],
                     "subject_kind": subject["kind"],
-                    "fetch_id": subject["fetch_id"],
-                    "binding_id": None,
-                    "publication_id": None,
-                    "discovery_id": subject["discovery_id"],
+                    "fetch_id": subject.get("fetch_id"),
+                    "binding_id": subject.get("binding_id"),
+                    "publication_id": subject.get("publication_id"),
+                    "discovery_id": subject.get("discovery_id"),
                     "subject_digest": subject["digest"],
                     "observed_at": timestamp(observed),
                     "session_id": session,
@@ -159,11 +171,7 @@ def witness(
                     summary["skipped_existing"] += 1
                     continue
                 summary["receipts"] += 1
-                summary[
-                    "passes_witnessed"
-                    if subject["kind"] == "discovery_pass"
-                    else "fetches_witnessed"
-                ] += 1
+                summary[WITNESS_COUNTER[subject["kind"]]] += 1
                 if not trusted:
                     summary["untrusted"] += 1
             else:
@@ -224,6 +232,33 @@ def _read_batch(path, namespace, injected, max_passes, scan_rows, max_subjects):
                     "order": row["id"],
                 }
             )
+        for kind, table in RESEARCH_SUBJECTS.items():
+            id_field = "binding_id" if kind == "binding" else "publication_id"
+            rows = ro.execute(
+                f"SELECT t.id, t.digest, t.payload_json FROM {table} t WHERE NOT EXISTS ("
+                " SELECT 1 FROM forecast_receipts r WHERE r." + id_field + "=t.id"
+                " AND json_extract(r.payload_json,'$.contract_version')=2"
+                " AND json_extract(r.payload_json,'$.observer_namespace')=?"
+                " AND json_extract(r.payload_json,'$.mode')=json_extract(t.payload_json,'$.mode'))"
+                " ORDER BY t.id DESC LIMIT ?",
+                (namespace, max_passes),
+            ).fetchall()
+            for row in rows:
+                payload = json.loads(row["payload_json"])
+                if injected and payload["mode"] != "synthetic":
+                    skipped_live += 1
+                    continue
+                subjects.append(
+                    {
+                        "kind": kind,
+                        id_field: row["id"],
+                        "digest": row["digest"],
+                        "reference": reference(ro, table, {"id": row["id"]}),
+                        "mode": payload["mode"],
+                        "earliest": datetime.fromisoformat(payload["created_at"]),
+                        "order": row["id"],
+                    }
+                )
         window = ro.execute(
             "SELECT f.id, f.seq, f.state, f.retrieved_at, r.kind AS run_kind FROM fetches f"
             " JOIN requests q ON q.id=f.request_id JOIN runs r ON r.id=q.run_id"

@@ -101,6 +101,39 @@ def fetch_availability(db, fetch_id, namespace=NAMESPACE, mode="forward_shadow")
     )
 
 
+@dataclass(frozen=True)
+class SubjectAvailability:
+    row_id: int
+    status: str  # witnessed | availability_unproven | clock_untrusted | missing
+    observed_at: datetime | None
+    receipt_id: int | None
+
+
+def subject_availability(db, table, row_id, namespace=NAMESPACE, mode="forward_shadow"):
+    """When a binding or publication row was first witnessed by a trusted contract-2
+    receipt in this namespace and mode; its observed_at is the availability upper bound."""
+    id_field = {"forecast_bindings": "binding_id", "forecast_publications": "publication_id"}[table]
+    exists = db.execute(f"SELECT 1 FROM {table} WHERE id=?", (row_id,)).fetchone()
+    if exists is None:
+        return SubjectAvailability(row_id, "missing", None, None)
+    where, params = _receipt_filter(namespace, mode)
+    receipts = db.execute(
+        f"SELECT r.id, r.observed_at, json_extract(r.payload_json,'$.clock_status')"
+        f" FROM forecast_receipts r WHERE r.{id_field}=? AND" + where + " ORDER BY r.id",
+        (row_id, *params),
+    ).fetchall()
+    if not receipts:
+        return SubjectAvailability(row_id, "availability_unproven", None, None)
+    receipt_id, observed, clock_status = receipts[0]
+    if clock_status != "trusted":
+        return SubjectAvailability(row_id, "clock_untrusted", None, receipt_id)
+    return SubjectAvailability(row_id, "witnessed", datetime.fromisoformat(observed), receipt_id)
+
+
+def binding_availability(db, binding_id, namespace=NAMESPACE, mode="forward_shadow"):
+    return subject_availability(db, "forecast_bindings", binding_id, namespace, mode)
+
+
 def _run_facts(db, run_id, cache):
     if run_id not in cache:
         row = db.execute("SELECT kind, provenance_json FROM runs WHERE id=?", (run_id,)).fetchone()

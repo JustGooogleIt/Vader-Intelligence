@@ -42,6 +42,15 @@ def parser():
         choices=[2],
         help="explicit migration 004: enable record contract 2 on a schema-3 archive",
     )
+    tick = forecast_commands.add_parser("tick", help="finite forecast tick; no daemon")
+    tick.add_argument("--research-config", help="research protocol TOML ([research] only)")
+    tick.add_argument("--dataset", help="override the cohort dataset namespace")
+    tick.add_argument("--budget", type=float, default=30.0, help="tick time budget in seconds")
+    inspect = forecast_commands.add_parser("inspect", help="read-only recent forecast decisions")
+    inspect.add_argument("--research-config")
+    inspect.add_argument("--dataset")
+    inspect.add_argument("--limit", type=int, default=20, help="max 100")
+    inspect.add_argument("--before", type=int, help="keyset: decisions with id below this")
     return p
 
 
@@ -52,6 +61,8 @@ def execute(args):
 
         from .forecast.schema import migrate
 
+        if args.forecast_command in ("tick", "inspect"):
+            return _forecast_research(args, config)
         if not Path(config.database).is_file():
             raise ValueError("forecast migrate requires an existing schema-2 archive")
         with writer_lock(config.database):
@@ -141,6 +152,32 @@ def execute(args):
             finally:
                 reopened.close()
         return result
+
+
+def _forecast_research(args, config):
+    from contextlib import nullcontext
+
+    from .forecast.research import Protocol
+    from .forecast.tick import inspect, tick
+
+    protocol = Protocol.load(args.research_config, dataset=args.dataset)
+    read_only = args.forecast_command == "inspect"
+    with nullcontext() if read_only else writer_lock(config.database):
+        store = Store(config.database, min_free_bytes=config.min_free_bytes, readonly=read_only)
+        try:
+            if read_only:
+                result = inspect(
+                    store,
+                    limit=args.limit,
+                    after=args.before,
+                    namespace=protocol.observer_namespace,
+                )
+                result["status"] = "complete"
+                return result
+            result = tick(store, protocol, budget=args.budget)
+            return result
+        finally:
+            store.close()
 
 
 def main():
