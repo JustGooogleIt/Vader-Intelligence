@@ -21,18 +21,20 @@ Governing documents: `docs/specs/forecast-evaluation-v1.md` (spec), `docs/specs/
 | F-6 | Witness limits per invocation (review 6, plan §4.3) | `witness.witness` cumulative allowances, `remaining_by_kind` | `::test_witness_pass_limit_is_per_invocation`, `::test_witness_fetch_limit_is_per_invocation` | tested |
 | F-7 | Existing suites unchanged in meaning | — | full suite 749 passed; 2 pre-existing `tmux_jev` failures | tested |
 
-## 1. Durable forecast path (F3.3/F3.4 completion)
+## 1. Durable forecast path (PR: `feat/f34-completion`, stacked on `fix/f33-foundation-repairs`)
 
 | # | Requirement | Implementation | Tests | State |
 |---|---|---|---|---|
-| P-1 | Collection → discovery completion → lineage/receipts → witness → projection → selection → policy → decision/publication or abstention → inspect/replay through supported interfaces | (PRs #9, #10, #11 as repaired) | existing vertical slices | tested; M1 strengthens the assertions |
-| P-2 | Identity, pregame and contract validity established from evidence at C, not hardcoded | pending | pending | pending |
-| P-3 | Schedule/market renewal evidence at C from the applicable pass; start revision abstains | pending | pending | pending |
-| P-4 | Book eligibility proof vs C start revision (`book_schedule_mismatch`) | pending | pending | pending |
-| P-5 | Publication pre-commit operational check (veto with evidence) | pending | pending | pending |
-| P-6 | Later tick publishes a decision lacking a record at the actual time | pending | pending | pending (Q-M1-1) |
-| P-7 | `forecast reconstruct` archive-only campaign | pending | pending | pending |
-| P-8 | Schedule-revision state machine (`decide_schedule`) | — | — | deferred (explicit abstention instead) |
+| P-1 | Collection → discovery completion → lineage/receipts → witness → projection → selection → policy → decision/publication or abstention → inspect/replay through supported interfaces | PRs #9/#10/#11 as repaired; `forecast/tick.py`, `cli.py` | `test_vertical_slice_f34.py`, `test_tick.py`, `test_f34_completion.py` | tested |
+| P-2 | Identity, pregame and contract validity established from evidence at C, not asserted | `service.renewal_at_cutoff`, `decide_opportunity` | `test_f34_completion.py::test_renewal_uses_the_applicable_pass_at_cutoff_not_the_binding_evidence`, `::test_latest_pre_cutoff_evidence_invalidates_eligibility_with_its_reason` (5 cases), `::test_game_missing_from_the_applicable_schedule_is_not_permission_to_reuse` | tested |
+| P-3 | Schedule/market renewal evidence at C from the applicable pass; a binding not renewed abstains; start revision abstains | same | `::test_binding_not_renewed_by_cutoff_abstains_on_stale_evidence`, revision case above | tested |
+| P-4 | Book eligibility proof vs the binding's start (`book_schedule_mismatch`) | `selection.select_inputs(scheduled_start=…)` | `::test_book_collected_under_another_schedule_version_is_rejected` | tested |
+| P-5 | Publication pre-commit check of latest available post-C evidence; veto with evidence; cutoff facts intact | `tick.operational_veto`, `tick._publish` | `::test_post_cutoff_postponement_vetoes_publication_but_not_the_decision`, `::test_post_cutoff_evidence_that_keeps_the_game_pregame_does_not_veto` | tested |
+| P-6 | Later tick publishes a decision lacking a record at the actual time; missed after the window | `tick._unpublished_decisions`, Phase 5 | `test_tick.py::test_crash_between_decision_and_publication_is_published_later_at_actual_time`, `::test_decision_left_unpublished_past_the_window_is_recorded_missed` | tested (decision Q-M1-1) |
+| P-7 | `forecast reconstruct` archive-only campaign: explicit namespace, 31-day/1000-game bounds, source ceiling, H for forward bindings / S for synthetic, no publication, idempotent | `forecast/reconstruct.py`, `cli.py` | `::test_reconstruct_recomputes_the_cutoff_decision_without_publication`, `::test_reconstruct_refuses_the_forward_namespace_and_unbounded_ranges`, `::test_reconstruct_source_ceiling_cannot_exclude_pre_cutoff_evidence`, `::test_reconstruct_through_the_cli` | tested |
+| P-8 | Inspect explains renewal, reasons, publication and its witnessed receipt; dataset filter | `tick.inspect` | `::test_inspect_explains_renewal_and_publication` | tested |
+| P-9 | Abstentions preserve input IDs (binding, pass pin, ticker) | `decide_opportunity` | `test_service.py::test_decide_abstains_when_binding_not_witnessed_by_cutoff` | tested |
+| P-10 | Schedule-revision state machine (`decide_schedule`, moving C, binding chains) | — | — | deferred: explicit `schedule_revised` abstention instead; first reached C stays sticky |
 
 ## 2. F3.5 evaluation materialization — pending
 

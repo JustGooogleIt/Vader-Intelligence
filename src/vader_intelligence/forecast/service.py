@@ -1,10 +1,26 @@
 """Prepare identity bindings and generate cutoff decisions (specification §3, §4, §6).
 
-This is the persistence-and-orchestration layer for the forecast tick. It reuses the
-pure policy (`cutoff_eligibility`, baselines) and the read-side projection; it never
-calls a provider, reads no wall clock of its own (the tick supplies times), and writes
-only through the journal. A decision carries enough provenance in its manifest to
-recompute its result from the same persisted inputs.
+This is the persistence-and-orchestration layer for the forecast tick and the
+archive-only reconstruction. It reuses the pure policy (`cutoff_eligibility`,
+baselines) and the read-side projection; it never calls a provider, reads no wall
+clock of its own (callers supply times), and writes only through the journal. A
+decision carries enough provenance in its manifest to recompute its result from the
+same persisted inputs.
+
+At the cutoff C the common predicates are established from evidence, never asserted:
+
+- identity: the binding was witnessed by C and the applicable discovery pass at C
+  (the most recent complete pass witnessed by C) still lists the selected contract
+  under the same event with the same game and YES team;
+- pregame: that pass's eligibility decision for the selected contract is eligible
+  (official schedule Preview/Scheduled, no reschedule flags, rule start equal to the
+  schedule start) and the start equals the binding's start (no revision);
+- contract validity: the same decision found the market open with the $1 notional
+  and a recognized full-game rule.
+
+The schedule and event evidence behind that decision are the renewal inputs at C:
+both must be retrieved and witnessed by C within the 300-second limit. A binding
+prepared hours earlier is therefore never scored on stale evidence.
 """
 
 import json
@@ -20,6 +36,44 @@ from .selection import Contract, select_contract, select_inputs
 
 HORIZON = 3600
 GAME_NUMBER = re.compile(r"G([12])$")
+
+# scope.eligible rejection reasons by the common predicate they fail (specification §3,
+# §4). An unknown reason fails every predicate closed.
+IDENTITY_REASONS = frozenset(
+    {
+        "unknown_team_alias",
+        "invalid_participants",
+        "ambiguous_contract_family",
+        "winner_label_mismatch",
+        "unmapped_game",
+        "ambiguous_game",
+        "doubleheader_requires_game_number",
+    }
+)
+PREGAME_REASONS = frozenset(
+    {
+        "schedule_stale",
+        "rescheduled_game",
+        "not_scheduled_pregame",
+        "start_time_unknown",
+        "schedule_rule_time_mismatch",
+        "unsupported_game_type",
+        "past_pregame_cutoff",
+    }
+)
+CONTRACT_REASONS = frozenset(
+    {
+        "unsupported_event_scope",
+        "unsupported_market_scope",
+        "market_not_open",
+        "unsupported_notional",
+        "unknown_notional",
+        "unrecognized_full_game_rule",
+        "invalid_rule_time",
+        "rule_timezone_mismatch",
+    }
+)
+KNOWN_REASONS = IDENTITY_REASONS | PREGAME_REASONS | CONTRACT_REASONS | {"eligible"}
 
 
 class BindingUnavailable(Exception):
@@ -39,6 +93,20 @@ class DecisionResult:
     constant_probability: str | None
     midpoint_probability: str | None
     midpoint_reasons: tuple
+
+
+@dataclass(frozen=True)
+class Renewal:
+    """The applicable pass's evidence for the selected contract at C."""
+
+    eligibility_id: int | None
+    identity: bool
+    pregame: bool
+    contract_valid: bool
+    details: tuple
+    schedule_fetch_id: str | None
+    market_fetch_id: str | None
+    reason: str | None
 
 
 def _eligibility_rows(db, pass_payload, game_id):
@@ -173,22 +241,111 @@ def prepare_binding(store, *, pass_id, game_id, protocol, run_id, code_hash, mod
 
 
 def _availability_times(db, fetch_id, namespace, mode):
+    if fetch_id is None:
+        return None, None
     availability = evidence.fetch_availability(db, fetch_id, namespace=namespace, mode=mode)
     if availability.retrieved_at is None:
         return None, availability
     return EvidenceTimes(availability.retrieved_at, availability.observed_at), availability
 
 
+def renewal_at_cutoff(db, projection, binding):
+    """Establish identity, pregame and contract validity for the selected contract from
+    the applicable pass at C. Returns a Renewal; every predicate is False when the pass
+    does not apply, so the pure policy reports the failure in its fixed reason order."""
+    if projection.kind != "pass":
+        return Renewal(None, False, False, False, ("discovery_not_applicable",), None, None, None)
+    pass_payload = json.loads(
+        db.execute(
+            "SELECT payload_json FROM discovery_passes WHERE id=?", (projection.pass_id,)
+        ).fetchone()[0]
+    )
+    manifest = pass_payload["manifest"]
+    details = []
+    identity = pregame = contract_valid = True
+    if binding["game_id"] not in manifest.get("official_game_ids", []):
+        details.append("schedule_missing_game")
+        pregame = False
+    candidate = next(
+        (c for c in manifest.get("candidates", []) if c.get("ticker") == binding["ticker"]), None
+    )
+    if candidate is None:
+        details.append("contract_missing_from_discovery")
+        identity = contract_valid = False
+    elif candidate.get("event_ticker") != binding["event_ticker"]:
+        details.append("event_listing_changed")
+        identity = False
+    row = db.execute(
+        "SELECT id, eligible, reason, data_json, schedule_fetch_id, market_fetch_id FROM eligibility"
+        " WHERE run_id=? AND id>? AND id<=? AND ticker=? ORDER BY id DESC LIMIT 1",
+        (
+            pass_payload["run_id"],
+            pass_payload["eligibility_after_id"],
+            pass_payload["eligibility_through_id"],
+            binding["ticker"],
+        ),
+    ).fetchone()
+    if row is None:
+        details.append("eligibility_row_missing")
+        return Renewal(None, False, False, False, tuple(details), None, None, None)
+    eligibility_id, eligible, reason, data_json, schedule_fetch_id, market_fetch_id = row
+    data = json.loads(data_json)
+    if eligible:
+        if (
+            data.get("game_id") != binding["game_id"]
+            or data.get("team_id") != binding["yes_team_id"]
+        ):
+            details.append("identity_changed")
+            identity = False
+        start = data.get("scheduled_start")
+        if start is None or utc(datetime.fromisoformat(start)) != utc(
+            datetime.fromisoformat(binding["scheduled_start"])
+        ):
+            details.append("schedule_revised")
+            pregame = False
+    else:
+        details.append(reason if reason in KNOWN_REASONS else "unknown_eligibility_reason")
+        if reason not in KNOWN_REASONS:
+            identity = pregame = contract_valid = False
+        identity = identity and reason not in IDENTITY_REASONS
+        pregame = pregame and reason not in PREGAME_REASONS
+        contract_valid = contract_valid and reason not in CONTRACT_REASONS
+    return Renewal(
+        eligibility_id,
+        identity,
+        pregame,
+        contract_valid,
+        tuple(details),
+        schedule_fetch_id,
+        market_fetch_id,
+        reason,
+    )
+
+
 def decide_opportunity(
-    store, *, binding_id, protocol, run_id, code_hash, mode, created_at, namespace
+    store,
+    *,
+    binding_id,
+    protocol,
+    run_id,
+    code_hash,
+    mode,
+    created_at,
+    namespace,
+    dataset=None,
+    source_ceiling=None,
 ):
     """Compute and persist the cutoff decision for one prepared binding at its C.
 
     Reads only evidence available (retrieved and witnessed) at the binding's cutoff.
-    Returns a DecisionResult. Idempotent: the decision key excludes time and ticker, so
-    a repeat returns the existing decision.
+    `mode` is the decision's cohort mode; a historical reconstruction reads the forward
+    receipts of the live evidence it cites (plan §9.3 M9/M10). Returns a DecisionResult.
+    Idempotent: the decision key excludes time and ticker, so a repeat returns the
+    existing decision.
     """
     db = store.db
+    dataset = protocol.dataset if dataset is None else dataset
+    evidence_mode = "forward_shadow" if mode == "historical_reconstruction" else mode
     binding = json.loads(
         db.execute(
             "SELECT payload_json FROM forecast_bindings WHERE id=?", (binding_id,)
@@ -197,25 +354,29 @@ def decide_opportunity(
     game_id = binding["game_id"]
     ticker = binding["ticker"]
     cutoff = utc(datetime.fromisoformat(binding["cutoff"]))
-    bmanifest = binding["manifest"]
 
-    projection = evidence.discovery_as_of(db, cutoff, namespace=namespace, mode=mode)
+    projection = evidence.discovery_as_of(db, cutoff, namespace=namespace, mode=evidence_mode)
+    renewal = renewal_at_cutoff(db, projection, binding)
     schedule_times, schedule_avail = _availability_times(
-        db, bmanifest["schedule_fetch_id"], namespace, mode
+        db, renewal.schedule_fetch_id, namespace, evidence_mode
     )
     market_times, market_avail = _availability_times(
-        db, bmanifest["event_fetch_id"], namespace, mode
+        db, renewal.market_fetch_id, namespace, evidence_mode
     )
-    binding_avail = evidence.binding_availability(db, binding_id, namespace=namespace, mode=mode)
-
+    binding_avail = evidence.binding_availability(
+        db, binding_id, namespace=namespace, mode=evidence_mode
+    )
     untrusted = (
-        any(a.status == "clock_untrusted" for a in (schedule_avail, market_avail))
+        any(a is not None and a.status == "clock_untrusted" for a in (schedule_avail, market_avail))
         or binding_avail.status == "clock_untrusted"
+        or projection.receipt_id is None
+        and projection.diagnostics.get("untrusted_receipts_ignored", 0) > 0
+        and projection.kind is None
     )
     clock_trusted = not untrusted
-    identity_proven = binding_avail.status == "witnessed" and projection.kind == "pass"
-    pregame = projection.kind == "pass" and projection.universe_complete
-    contract_valid = pregame
+    identity_proven = binding_avail.status == "witnessed" and renewal.identity
+    pregame = renewal.pregame
+    contract_valid = renewal.contract_valid
 
     common = cutoff_eligibility(
         cutoff=cutoff,
@@ -230,12 +391,22 @@ def decide_opportunity(
         clock_trusted=clock_trusted,
     )
     cutoff_eligible = common.eligible
+    # All applicable reasons: the policy's fixed-order primary reasons first, then the
+    # evidence-level details that explain them (specification §4).
+    reasons = list(common.reasons)
+    reasons.extend(d for d in renewal.details if d not in reasons)
 
     inputs = select_inputs(
-        db, ticker=ticker, game_id=game_id, cutoff=cutoff, namespace=namespace, mode=mode
+        db,
+        ticker=ticker,
+        game_id=game_id,
+        cutoff=cutoff,
+        namespace=namespace,
+        mode=evidence_mode,
+        scheduled_start=binding["scheduled_start"],
     )
     midpoint_probability = None
-    midpoint_reasons = list(common.reasons)
+    midpoint_reasons = list(reasons)
     midpoint_inputs = {}
     if cutoff_eligible:
         midpoint_reasons = []
@@ -257,7 +428,7 @@ def decide_opportunity(
     if cutoff_eligible:
         constant_result = {"probability": "0.5", "reasons": [], "inputs": {"value": "0.5"}}
     else:
-        constant_result = {"probability": None, "reasons": list(common.reasons), "inputs": {}}
+        constant_result = {"probability": None, "reasons": list(reasons), "inputs": {}}
     midpoint_result = {
         "probability": midpoint_probability,
         "reasons": midpoint_reasons,
@@ -271,22 +442,39 @@ def decide_opportunity(
         if projection.pass_id is not None
         else None
     )
-    source_ceiling = db.execute("SELECT COALESCE(MAX(seq),0) FROM fetches").fetchone()[0]
+    archive_ceiling = db.execute("SELECT COALESCE(MAX(seq),0) FROM fetches").fetchone()[0]
+    if source_ceiling is None:
+        source_ceiling = archive_ceiling
+    elif type(source_ceiling) is not int or not 0 <= source_ceiling <= archive_ceiling:
+        raise ValueError("source ceiling must be an integer within the archive")
 
     manifest = {
         "selection_version": protocol.selection_version,
         "selected_ticker": ticker,
         "event_ticker": binding["event_ticker"],
-        "alternatives": bmanifest.get("alternatives", []),
+        "alternatives": binding["manifest"].get("alternatives", []),
         "binding_receipt_id": binding_avail.receipt_id,
+        "binding_availability": binding_avail.status,
         "discovery_receipt_id": projection.receipt_id,
-        "schedule_fetch_id": bmanifest["schedule_fetch_id"],
-        "event_fetch_id": bmanifest["event_fetch_id"],
+        "discovery_kind": projection.kind,
+        "evidence_mode": evidence_mode,
+        "renewal": {
+            "eligibility_id": renewal.eligibility_id,
+            "reason": renewal.reason,
+            "schedule_fetch_id": renewal.schedule_fetch_id,
+            "market_fetch_id": renewal.market_fetch_id,
+            "schedule_availability": None if schedule_avail is None else schedule_avail.status,
+            "market_availability": None if market_avail is None else market_avail.status,
+            "identity": renewal.identity,
+            "pregame": renewal.pregame,
+            "contract_valid": renewal.contract_valid,
+        },
         "common_reasons": list(common.reasons),
+        "detail_reasons": list(renewal.details),
         "book_reasons": list(inputs.reasons),
     }
     references = []
-    if projection.pass_id is not None and cutoff_eligible:
+    if projection.pass_id is not None:
         manifest["discovery"] = {
             "id": projection.pass_id,
             "digest": pass_row[0],
@@ -304,21 +492,23 @@ def decide_opportunity(
         "config_hash": protocol.config_hash,
         "mode": mode,
         "references": references,
-        "dataset": protocol.dataset,
+        "dataset": dataset,
         "protocol": protocol.protocol_id,
         "game_id": game_id,
         "unresolved_key": None,
-        "ticker": ticker if cutoff_eligible else None,
-        "yes_team_id": binding["yes_team_id"] if cutoff_eligible else None,
+        # Identity and the considered pass are provenance of abstentions as well as of
+        # forecasts: input IDs are preserved even for rejected inputs (specification §4).
+        "ticker": ticker,
+        "yes_team_id": binding["yes_team_id"],
         "horizon": HORIZON,
-        "scheduled_start": binding["scheduled_start"] if cutoff_eligible else None,
+        "scheduled_start": binding["scheduled_start"],
         "cutoff": binding["cutoff"],
-        "binding_id": binding_id if cutoff_eligible else None,
-        "discovery_id": projection.pass_id if cutoff_eligible else None,
+        "binding_id": binding_id,
+        "discovery_id": projection.pass_id,
         "selection_version": protocol.selection_version,
         "baseline_versions": ["constant-v1", "midpoint-v1"],
         "cutoff_eligible": cutoff_eligible,
-        "reasons": [] if cutoff_eligible else list(common.reasons),
+        "reasons": [] if cutoff_eligible else reasons,
         "results": {"constant-v1": constant_result, "midpoint-v1": midpoint_result},
         "manifest": manifest,
         "source_ceiling": source_ceiling,
@@ -329,7 +519,7 @@ def decide_opportunity(
         decision_id=decision_id,
         digest=decision_digest,
         cutoff_eligible=cutoff_eligible,
-        reasons=tuple(common.reasons),
+        reasons=tuple(reasons),
         constant_probability=constant_result["probability"],
         midpoint_probability=midpoint_probability,
         midpoint_reasons=tuple(midpoint_reasons),
@@ -339,10 +529,10 @@ def decide_opportunity(
 def redecide(db, decision_id, namespace):
     """Diagnostic recompute of a persisted decision from the same persisted inputs.
 
-    Writes nothing. Returns the recomputed (cutoff_eligible, constant, midpoint)
-    triple so a caller can assert replay reproduces the stored result. It reuses the
-    binding's cutoff and the same projection/selection, so appended later evidence
-    cannot change it.
+    Writes nothing. Returns the recomputed facts next to the stored ones so a caller can
+    assert replay reproduces the stored result. It reuses the binding's cutoff and the
+    same projection/selection, so appended later evidence (including outcomes) cannot
+    change it.
     """
     row = db.execute(
         "SELECT payload_json FROM forecast_decisions WHERE id=?", (decision_id,)
@@ -359,8 +549,9 @@ def redecide(db, decision_id, namespace):
         ).fetchone()[0]
     )
     cutoff = utc(datetime.fromisoformat(binding["cutoff"]))
-    mode = stored["mode"]
+    mode = stored["manifest"].get("evidence_mode") or stored["mode"]
     projection = evidence.discovery_as_of(db, cutoff, namespace=namespace, mode=mode)
+    renewal = renewal_at_cutoff(db, projection, binding)
     inputs = select_inputs(
         db,
         ticker=binding["ticker"],
@@ -368,6 +559,7 @@ def redecide(db, decision_id, namespace):
         cutoff=cutoff,
         namespace=namespace,
         mode=mode,
+        scheduled_start=binding["scheduled_start"],
     )
     recomputed_midpoint = None
     if stored["cutoff_eligible"] and inputs.eligible:
@@ -378,6 +570,12 @@ def redecide(db, decision_id, namespace):
     return {
         "cutoff_eligible": stored["cutoff_eligible"],
         "universe_complete": projection.universe_complete,
+        "renewal": {
+            "identity": renewal.identity,
+            "pregame": renewal.pregame,
+            "contract_valid": renewal.contract_valid,
+            "details": list(renewal.details),
+        },
         "constant": constant() if stored["cutoff_eligible"] else None,
         "midpoint": recomputed_midpoint,
         "stored_midpoint": stored["results"]["midpoint-v1"]["probability"],

@@ -6,18 +6,32 @@ evidence available at C; attempt operational publication separately; record miss
 opportunities; exit. It adds no provider request, daemon or scheduler. Receipts are
 processed before sources are chosen, and a receipt made now never authorizes an input
 for an earlier C (the projection admits only receipts observed at or before C).
+
+Publication is attempted for every eligible decision of the cohort that has no
+publication record yet, at this tick's actual time: a decision whose publication
+never committed (crash between the two records) is published by a later tick at that
+later time, which is `allowed` inside the window or `missed` after it. It is never
+backdated and never a more favorable time. Immediately before an allowed record is
+committed, the latest already-available operational evidence for the contract is
+checked: a post-cutoff eligibility decision showing the game no longer pregame or the
+market closed vetoes publication with that evidence; it never changes the cutoff
+decision (specification §2, "three independent decisions").
 """
 
 import json
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from ..provenance import RunProvenanceV1, source_hash
 from ..storage import timestamp, utc_now
 from . import publication, service
 from .policy import utc
+from .references import reference
+from .service import CONTRACT_REASONS, PREGAME_REASONS
 from .witness import witness
+
+VETO_REASONS = PREGAME_REASONS | CONTRACT_REASONS
 
 
 def _resolve(clock, monotonic):
@@ -25,7 +39,7 @@ def _resolve(clock, monotonic):
     return (clock or utc_now), (monotonic or time.monotonic), injected
 
 
-def _decision_exists(db, protocol, mode, game_id):
+def _decision_exists(db, protocol, mode, game_id, dataset=None):
     return (
         db.execute(
             "SELECT 1 FROM forecast_decisions WHERE json_extract(payload_json,'$.game_id')=?"
@@ -34,7 +48,13 @@ def _decision_exists(db, protocol, mode, game_id):
             " AND json_extract(payload_json,'$.config_hash')=?"
             " AND json_extract(payload_json,'$.mode')=?"
             " AND json_extract(payload_json,'$.horizon')=3600 LIMIT 1",
-            (game_id, protocol.dataset, protocol.protocol_id, protocol.config_hash, mode),
+            (
+                game_id,
+                protocol.dataset if dataset is None else dataset,
+                protocol.protocol_id,
+                protocol.config_hash,
+                mode,
+            ),
         ).fetchone()
         is not None
     )
@@ -88,6 +108,7 @@ def tick(store, protocol, *, clock=None, monotonic=None, budget=30.0):
         "decisions_abstained": 0,
         "due_opportunities": 0,
         "publications": {"allowed": 0, "missed": 0, "vetoed": 0, "failed": 0},
+        "publications_pending_before": 0,
         "witness": {},
         "errors": [],
     }
@@ -157,13 +178,33 @@ def tick(store, protocol, *, clock=None, monotonic=None, budget=30.0):
                 continue
             if result.cutoff_eligible:
                 summary["decisions_eligible"] += 1
-                # Phase 5: publication is a separate record, attempted now.
-                verdict = _publish(
-                    store, result, cutoff, now, run_id, code_hash, mode, protocol, clock
-                )
-                summary["publications"][verdict] += 1
             else:
                 summary["decisions_abstained"] += 1
+        # Phase 5: publication is a separate record for every eligible decision of this
+        # cohort that has none, attempted at this tick's actual time.
+        pending = _unpublished_decisions(db, protocol, mode)
+        summary["publications_pending_before"] = len(pending)
+        for decision_id, decision_digest, payload in pending:
+            if monotonic() >= deadline:
+                status = "partial"
+                break
+            try:
+                verdict = _publish(
+                    store,
+                    decision_id,
+                    decision_digest,
+                    payload,
+                    now,
+                    run_id,
+                    code_hash,
+                    mode,
+                    protocol,
+                    clock,
+                )
+            except (ValueError, KeyError, TypeError) as exc:
+                summary["errors"].append(f"publish {decision_id}: {str(exc)[:200]}")
+                continue
+            summary["publications"][verdict] += 1
         # Phase 6: witness publications so a later tick can confirm timeliness.
         summary["witness"]["publications"] = witness(
             store,
@@ -232,12 +273,66 @@ def _due_bindings(db, protocol, mode, now):
     return due
 
 
-def _publish(store, result, cutoff, now, run_id, code_hash, mode, protocol, clock):
-    scheduled_start = cutoff + timedelta(seconds=3600)
+def _unpublished_decisions(db, protocol, mode):
+    """Eligible decisions of this cohort with no publication record, oldest first."""
+    rows = db.execute(
+        "SELECT d.id, d.digest, d.payload_json FROM forecast_decisions d"
+        " WHERE d.mode=? AND d.protocol=? AND json_extract(d.payload_json,'$.config_hash')=?"
+        " AND json_extract(d.payload_json,'$.dataset')=?"
+        " AND json_extract(d.payload_json,'$.cutoff_eligible')=1"
+        " AND NOT EXISTS (SELECT 1 FROM forecast_publications p WHERE p.decision_id=d.id)"
+        " ORDER BY d.id",
+        (mode, protocol.protocol_id, protocol.config_hash, protocol.dataset),
+    ).fetchall()
+    return [(row[0], row[1], json.loads(row[2])) for row in rows]
+
+
+def operational_veto(db, payload, now):
+    """Latest already-available post-cutoff evidence for the selected contract.
+
+    Reads the newest committed eligibility decision for the contract made after the one
+    the cutoff decision renewed on (it must already be in the archive: no request is
+    made). A decision showing the game not pregame or the market no longer open vetoes
+    publication; the veto carries that row's observation time and its typed schedule
+    and event references. Returns None when no such evidence exists.
+    """
+    renewed = (payload["manifest"].get("renewal") or {}).get("eligibility_id") or 0
+    row = db.execute(
+        "SELECT id, eligible, reason, checked_at, schedule_fetch_id, market_fetch_id"
+        " FROM eligibility WHERE ticker=? AND id>? AND checked_at<=? ORDER BY id DESC LIMIT 1",
+        (payload["ticker"], renewed, now.isoformat()),
+    ).fetchone()
+    if row is None:
+        return None
+    eligibility_id, eligible, reason, checked_at, schedule_fetch_id, market_fetch_id = row
+    if eligible or reason not in VETO_REASONS:
+        return None
+    references = []
+    for fetch_id in (schedule_fetch_id, market_fetch_id):
+        try:
+            references.append(reference(db, "fetches", {"id": fetch_id}))
+        except ValueError:
+            pass  # a pending/absent attempt cannot be a typed reference; the row still vetoes
+    return {
+        "reason": reason,
+        "observed_at": utc(datetime.fromisoformat(checked_at)),
+        "eligibility_id": eligibility_id,
+        "references": references,
+    }
+
+
+def _publish(
+    store, decision_id, decision_digest, payload, now, run_id, code_hash, mode, protocol, clock
+):
+    db = store.db
+    scheduled_start = utc(datetime.fromisoformat(payload["scheduled_start"]))
+    veto = operational_veto(db, payload, now)
     classification, verdict = publication.decide(
         scheduled_start=scheduled_start,
         attempted_at=now,
         published_at=None,
+        veto_observed_at=None if veto is None else veto["observed_at"],
+        veto_reason=None if veto is None else veto["reason"],
         clock_trusted=True,
         mode=mode,
     )
@@ -249,20 +344,32 @@ def _publish(store, result, cutoff, now, run_id, code_hash, mode, protocol, cloc
         "config_hash": protocol.config_hash,
         "mode": mode,
     }
+    extra = {"decision_created_at": payload["created_at"]}
+    references = ()
+    if veto is not None:
+        extra["veto"] = {
+            "reason": veto["reason"],
+            "observed_at": veto["observed_at"].isoformat(),
+            "eligibility_id": veto["eligibility_id"],
+        }
+        if verdict == "vetoed":
+            references = veto["references"]
     envelope = publication.envelope(
         common,
-        decision_id=result.decision_id,
-        decision_digest=result.digest,
+        decision_id=decision_id,
+        decision_digest=decision_digest,
         attempted_at=timestamp(now),
         classification=classification,
         verdict=verdict,
         publication_policy=protocol.publication_policy,
+        references=references,
+        extra=extra,
     )
     store.append_forecast("forecast_publications", envelope)
     return verdict
 
 
-def inspect(store, *, limit=20, after=None, namespace="local-witness-v1"):
+def inspect(store, *, limit=20, after=None, namespace="local-witness-v1", dataset=None):
     """Read-only: recent decisions with the evidence and policy that produced them.
 
     Keyset pagination by decision id descending. Max limit 100 (specification §7).
@@ -270,29 +377,58 @@ def inspect(store, *, limit=20, after=None, namespace="local-witness-v1"):
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError("limit must be an integer in [1, 100]")
     db = store.db
-    clause = "WHERE id < ?" if after else ""
-    params = ((after,) if after else ()) + (limit,)
+    clauses, params = [], []
+    if after:
+        clauses.append("id < ?")
+        params.append(after)
+    if dataset:
+        clauses.append("json_extract(payload_json,'$.dataset') = ?")
+        params.append(dataset)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     rows = db.execute(
-        f"SELECT id, digest, payload_json FROM forecast_decisions {clause}"
-        " ORDER BY id DESC LIMIT ?",
-        params,
+        f"SELECT id, digest, payload_json FROM forecast_decisions {where} ORDER BY id DESC LIMIT ?",
+        (*params, limit),
     ).fetchall()
     records = []
     for decision_id, digest, payload_json in rows:
         p = json.loads(payload_json)
         manifest = p["manifest"]
         publication_row = db.execute(
-            "SELECT json_extract(payload_json,'$.verdict'),"
-            " json_extract(payload_json,'$.manifest.policy_status')"
+            "SELECT id, json_extract(payload_json,'$.verdict'),"
+            " json_extract(payload_json,'$.manifest.policy_status'),"
+            " json_extract(payload_json,'$.attempted_at'),"
+            " json_extract(payload_json,'$.reasons')"
             " FROM forecast_publications WHERE decision_id=?",
             (decision_id,),
         ).fetchone()
+        publication_record = None
+        if publication_row is not None:
+            receipt = db.execute(
+                "SELECT r.id, r.observed_at, json_extract(r.payload_json,'$.clock_status')"
+                " FROM forecast_receipts r WHERE r.publication_id=?"
+                " AND json_extract(r.payload_json,'$.contract_version')=2"
+                " AND json_extract(r.payload_json,'$.observer_namespace')=?"
+                " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness')"
+                " ORDER BY r.id LIMIT 1",
+                (publication_row[0], namespace),
+            ).fetchone()
+            publication_record = {
+                "id": publication_row[0],
+                "verdict": publication_row[1],
+                "status": publication_row[2],
+                "attempted_at": publication_row[3],
+                "reasons": json.loads(publication_row[4]),
+                "witnessed_at": None if receipt is None else receipt[1],
+                "receipt_clock": None if receipt is None else receipt[2],
+            }
         records.append(
             {
                 "decision_id": decision_id,
                 "digest": digest,
                 "game_id": p["game_id"],
                 "cutoff": p["cutoff"],
+                "scheduled_start": p["scheduled_start"],
+                "created_at": p["created_at"],
                 "protocol": p["protocol"],
                 "dataset": p["dataset"],
                 "config_hash": p["config_hash"],
@@ -302,18 +438,19 @@ def inspect(store, *, limit=20, after=None, namespace="local-witness-v1"):
                 "selected_ticker": manifest.get("selected_ticker"),
                 "discovery": manifest.get("discovery"),
                 "considered": {
+                    "binding_id": p["binding_id"],
                     "binding_receipt_id": manifest.get("binding_receipt_id"),
                     "discovery_receipt_id": manifest.get("discovery_receipt_id"),
+                    "renewal": manifest.get("renewal"),
                     "common_reasons": manifest.get("common_reasons"),
+                    "detail_reasons": manifest.get("detail_reasons"),
                     "book_reasons": manifest.get("book_reasons"),
                 },
                 "results": {
                     name: {"probability": r["probability"], "reasons": r["reasons"]}
                     for name, r in p["results"].items()
                 },
-                "publication": None
-                if publication_row is None
-                else {"verdict": publication_row[0], "status": publication_row[1]},
+                "publication": publication_record,
             }
         )
     return {
