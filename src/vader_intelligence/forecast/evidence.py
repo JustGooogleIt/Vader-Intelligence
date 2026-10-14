@@ -204,15 +204,17 @@ def discovery_as_of(db, cutoff, namespace=NAMESPACE, mode="forward_shadow"):
         "orphan_runs": 0,
     }
     passes = []
+    # Scalars only: the pass payload (a manifest of every candidate and decision) is
+    # loaded for the single applicable pass below, never for every witnessed pass, so
+    # the cost per cutoff does not grow with the archive's history of manifests.
     for row in db.execute(
         "SELECT r.id, r.observed_at, json_extract(r.payload_json,'$.clock_status'), p.id,"
-        " p.run_id, p.payload_json FROM forecast_receipts r JOIN discovery_passes p"
-        " ON p.id=r.discovery_id WHERE r.subject_kind='discovery_pass' AND"
-        + where
-        + " ORDER BY r.id",
+        " p.run_id, json_extract(p.payload_json,'$.manifest.fetch_seq_through')"
+        " FROM forecast_receipts r JOIN discovery_passes p ON p.id=r.discovery_id"
+        " WHERE r.subject_kind='discovery_pass' AND" + where + " ORDER BY r.id",
         params,
     ):
-        receipt_id, observed, clock_status, pass_id, run_id, payload_json = row
+        receipt_id, observed, clock_status, pass_id, run_id, through = row
         if clock_status != "trusted":
             diagnostics["untrusted_receipts_ignored"] += 1
             continue
@@ -222,15 +224,11 @@ def discovery_as_of(db, cutoff, namespace=NAMESPACE, mode="forward_shadow"):
             continue
         if any(p["pass_id"] == pass_id for p in passes):
             continue  # the first receipt for a subject is the permanent one
-        payload = json.loads(payload_json)
-        manifest = payload["manifest"]
-        through = manifest.get("fetch_seq_through")
         through = through if type(through) is int else -1
         passes.append(
             {
                 "pass_id": pass_id,
                 "run_id": run_id,
-                "payload": payload,
                 "observed_at": observed_at,
                 "receipt_id": receipt_id,
                 "through": through,
@@ -296,7 +294,11 @@ def discovery_as_of(db, cutoff, namespace=NAMESPACE, mode="forward_shadow"):
             None,
             diagnostics,
         )
-    payload = record["payload"]
+    payload = json.loads(
+        db.execute(
+            "SELECT payload_json FROM discovery_passes WHERE id=?", (record["pass_id"],)
+        ).fetchone()[0]
+    )
     run = _run_facts(db, record["run_id"], runs)
     if not payload["complete"]:
         reasons = tuple(payload["reasons"])
