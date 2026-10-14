@@ -819,6 +819,22 @@ class ShadowMaintenanceTests(ShadowFixture):
         self.assertIn("--outcomes-as-of", research_argv)
         written = list(self.state.glob("shadow-evaluate-*.json"))
         self.assertEqual(len(written), 1)
+        with (
+            patch.dict(os.environ, {"VADER_OPS_TEST_MAINT_STATUS": "partial"}),
+            patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
+            code = manage.main(
+                [
+                    "--config",
+                    str(self.config_path),
+                    "shadow-evaluate",
+                    "--from",
+                    "2026-10-01",
+                    "--through",
+                    "2026-10-02",
+                ]
+            )
+        self.assertEqual((code, json.loads(out.getvalue())["status"]), (1, "partial"))
         plain = dict(self.config)
         plain.pop("shadow")
         write_json(self.config_path, plain)

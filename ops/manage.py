@@ -190,11 +190,15 @@ def main(argv=None):
                         )
                     )
                 statuses = [r["status"] for r in records]
+                # partial (a truncated or budget-bounded step with no error) is reported
+                # as partial, distinct from an operational failure; both exit 1.
                 overall = (
                     "overlap_skipped"
                     if "overlap_skipped" in statuses
                     else "complete"
                     if all(s in ("complete", "inconclusive") for s in statuses)
+                    else "partial"
+                    if all(s in ("complete", "inconclusive", "partial") for s in statuses)
                     else "failed"
                 )
                 report = {"status": overall, "steps": records}
