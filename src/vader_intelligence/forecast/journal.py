@@ -104,6 +104,11 @@ def validate_links(db, table, p):
     if run is None or (run[0] == "fixture" and p["mode"] != "synthetic"):
         raise ValueError("missing run or synthetic lineage mismatch")
     provenance = json.loads(run[1])
+    tool = provenance.get("tool_configuration") or {}
+    if tool.get("source_lineage") == "synthetic" and p["mode"] != "synthetic":
+        # M1 on persisted lineage: a run made with an injected transport or clock can
+        # only write synthetic records, whatever clock a later process runs with.
+        raise ValueError("synthetic lineage mismatch: run was recorded as synthetic")
     if provenance.get("code_hash") != p["code_hash"]:
         raise ValueError("record code identity differs from writing run")
     if any(
@@ -222,6 +227,19 @@ def validate_links(db, table, p):
                 raise ValueError("contract-2 receipt needs exactly its subject reference")
             if p["config_hash"] != run_configuration_digest(db, p["run_id"]):
                 raise ValueError("receipt configuration differs from its run")
+            # Operational-witness boundary (plan §4.1): contract 2 means "observed by
+            # the witness". The writing run must be a forecast-witness run whose
+            # provenance names this receipt's observer namespace and session, so a
+            # receipt supplied by any other caller is a stored assertion at most and
+            # can never occupy a witness receipt key.
+            if (
+                run[0] != "forecast-witness"
+                or tool.get("observer_namespace") != p["observer_namespace"]
+                or tool.get("session_id") != p["session_id"]
+            ):
+                raise ValueError(
+                    "contract-2 receipt requires the operational witness run that observed it"
+                )
         earliest = (
             subject.get("retrieved_at")
             if target[0] == "fetches"
@@ -256,6 +274,16 @@ def validate_links(db, table, p):
                 raise ValueError("evaluation opportunity mismatch")
             if any(decision[k] != evaluation[k] for k in ("dataset", "protocol", "config_hash")):
                 raise ValueError("evaluation decision cohort mismatch")
+            for name, score in p["scores"].items():
+                if score is None:
+                    continue
+                # A score needs the probability the decision actually froze, and the
+                # discovery provenance that places the decision in exactly one
+                # collector cohort; an unpinned row is honest unscored coverage only.
+                if decision["results"][name]["probability"] is None:
+                    raise ValueError(f"score for {name} without a stored cutoff probability")
+                if decision["discovery_id"] is None:
+                    raise ValueError("scored item requires discovery provenance")
         if p["publication_id"] is not None:
             publication = parent(db, "forecast_publications", p["publication_id"], p["mode"])
             if publication["decision_id"] != p["decision_id"]:
@@ -428,6 +456,7 @@ def check_cohort(db, items):
     """
     contracts_seen = set()
     collector_hashes = set()
+    unpinned = 0
     for item in items:
         if item.get("decision_id") is None:
             continue
@@ -435,7 +464,15 @@ def check_cohort(db, items):
         decision = json.loads(row["payload_json"])
         contract = contracts.version("forecast_decisions", decision)
         contracts_seen.add(contract)
-        if contract == 2 and decision["discovery_id"] is not None:
+        scored = any(v is not None for v in item["scores"].values())
+        if decision["discovery_id"] is None:
+            if scored:
+                raise ValueError(
+                    "scored item cites a decision without discovery provenance; "
+                    "unpinned rows are unscored coverage only"
+                )
+            unpinned += 1
+        elif contract == 2:
             collector_hashes.add(decision["manifest"]["discovery"]["collector_config_hash"])
     if len(contracts_seen) > 1:
         raise ValueError("evaluation mixes contract-1 and contract-2 decisions")
@@ -447,6 +484,7 @@ def check_cohort(db, items):
     return {
         "record_contract": contracts_seen.pop() if contracts_seen else None,
         "collector_config_hash": collector_hashes.pop() if collector_hashes else None,
+        "unpinned_decisions": unpinned,
     }
 
 

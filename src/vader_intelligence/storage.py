@@ -56,10 +56,11 @@ class Store:
                 self.db.close()
                 raise RuntimeError("unsupported database schema")
             if self.db.execute("PRAGMA user_version").fetchone()[0] >= 3:
-                from .forecast.schema import check_schema
+                from .forecast.schema import check_contracts, check_schema
 
                 try:
                     check_schema(self.db)
+                    check_contracts(self.db)
                 except BaseException:
                     self.db.close()
                     raise
@@ -111,9 +112,12 @@ class Store:
         if version not in (0, 1, 2, 3, 4):
             raise RuntimeError(f"unsupported database schema version {version}")
         if version >= 3:
-            from .forecast.schema import check_schema
+            from .forecast.schema import check_contracts, check_schema
 
+            # Layout and stored record contracts are both validated on this connection
+            # before WAL changes the archive header; an invalid archive is untouched.
             check_schema(self.db)
+            check_contracts(self.db)
         return version
 
     def migrate(self):

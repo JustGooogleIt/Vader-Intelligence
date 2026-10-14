@@ -24,6 +24,33 @@ from .fixtures import AT, HASH, connect, envelopes, legacy, populated, snapshot
 
 LIVE_RUN = "live-collect-run"
 LIVE_CONFIG = {"max_pages": 3}
+# Contract-2 receipts are admissible only from operational witness runs that name the
+# receipt's observer namespace and session (plan §4.1). Two such runs: a synthetic one
+# (configuration {} so digest({}) stays the fixture's config hash) and a live one.
+WITNESS_RUN = "synthetic-witness-run"
+LIVE_WITNESS = "live-witness-run"
+WITNESS_TOOL = {"observer_namespace": "local-witness-v1", "session_id": "witness-session"}
+
+
+def witness_run(db, run_id, configuration, lineage):
+    db.execute(
+        "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
+        (
+            run_id,
+            "forecast-witness",
+            AT,
+            AT,
+            "complete",
+            RunProvenanceV1(
+                run_id,
+                "forecast-witness",
+                HASH,
+                configuration,
+                tool_configuration=WITNESS_TOOL | {"source_lineage": lineage},
+            ).to_json(),
+            "{}",
+        ),
+    )
 
 
 @pytest.fixture
@@ -60,6 +87,8 @@ def archive3(tmp_path):
             "{}",
         ),
     )
+    witness_run(db, WITNESS_RUN, {}, "synthetic")
+    witness_run(db, LIVE_WITNESS, LIVE_CONFIG, "live")
     try:
         yield db, payloads
     finally:
@@ -78,6 +107,7 @@ def fetch_receipt(db, p, fetch_id, **changes):
         p["forecast_receipts"]
         | dict(
             contract_version=2,
+            run_id=WITNESS_RUN,
             subject_kind="fetch",
             fetch_id=fetch_id,
             publication_id=None,
@@ -85,7 +115,7 @@ def fetch_receipt(db, p, fetch_id, **changes):
             references=[ref],
             session_id="witness-session",
             observer_namespace="local-witness-v1",
-            config_hash=digest({}),  # synthetic-run's recorded configuration is {}
+            config_hash=digest({}),  # the witness run's recorded configuration is {}
         )
         | changes
     )
@@ -97,6 +127,7 @@ def pass_receipt(db, p, pass_id, **changes):
         p["forecast_receipts"]
         | dict(
             contract_version=2,
+            run_id=WITNESS_RUN,
             subject_kind="discovery_pass",
             discovery_id=pass_id,
             publication_id=None,
@@ -338,7 +369,11 @@ def test_contract_two_row_in_schema_three_archive_is_an_integrity_failure(archiv
     before = snapshot(db)
     with pytest.raises(ValueError, match="contract-2 record in a schema-3 archive"):
         journal.integrity(db)
-    assert schema.migrate(db) is False  # not migrated automatically
+    # Neither a plain nor an explicit migration legitimizes the row by advancing the
+    # version: both refuse before any change (review finding 3).
+    for record_contract in (None, 2):
+        with pytest.raises(ValueError, match="contract-2 record in a schema-3 archive"):
+            schema.migrate(db, record_contract=record_contract)
     assert db.execute("PRAGMA user_version").fetchone()[0] == 3
     assert snapshot(db) == before
 
@@ -555,21 +590,27 @@ def test_mode_table_for_contract_two_receipts(archive3):
             "forecast_receipts", fetch_receipt(db, p, "fetch-2", mode="historical_reconstruction")
         )
     # M5: a forward receipt for a synthetic (fixture) fetch is forbidden.
-    live = fetch_receipt(db, p, "fetch-2", mode="forward_shadow", run_id=LIVE_RUN)
+    live = fetch_receipt(db, p, "fetch-2", mode="forward_shadow", run_id=LIVE_WITNESS)
     live["config_hash"] = digest(LIVE_CONFIG)
     with pytest.raises(ValueError):
         journal.append(db, "forecast_receipts", live)
     # M6: receipt → pass must match modes; S → S allowed, F → S forbidden.
     assert journal.append(db, "forecast_receipts", pass_receipt(db, p, 1)) == 3
-    forward_pass_receipt = pass_receipt(db, p, 1, mode="forward_shadow", run_id=LIVE_RUN)
+    forward_pass_receipt = pass_receipt(db, p, 1, mode="forward_shadow", run_id=LIVE_WITNESS)
     forward_pass_receipt["config_hash"] = digest(LIVE_CONFIG)
     with pytest.raises(ValueError, match="incompatible parent mode|synthetic evidence"):
         journal.append(db, "forecast_receipts", forward_pass_receipt)
-    # F → F for a live pass written by the live run.
+    # F → F for a live pass, observed by a live witness run.
     live_pass_id = journal.append(db, "discovery_passes", live_pass(db, p, digest(LIVE_CONFIG)))
-    receipt = pass_receipt(db, p, live_pass_id, mode="forward_shadow", run_id=LIVE_RUN)
+    receipt = pass_receipt(db, p, live_pass_id, mode="forward_shadow", run_id=LIVE_WITNESS)
     receipt["config_hash"] = digest(LIVE_CONFIG)
     assert journal.append(db, "forecast_receipts", receipt) == 4
+    # The same observation claimed by the live *collection* run is not witness proof.
+    supplied = pass_receipt(db, p, live_pass_id, mode="forward_shadow", run_id=LIVE_RUN)
+    supplied["config_hash"] = digest(LIVE_CONFIG)
+    supplied["session_id"] = "collector-session"
+    with pytest.raises(ValueError, match="operational witness run"):
+        journal.append(db, "forecast_receipts", supplied)
 
 
 @pytest.mark.parametrize(

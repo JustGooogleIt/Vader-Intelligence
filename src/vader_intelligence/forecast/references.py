@@ -21,6 +21,38 @@ def digest(value):
     return hashlib.sha256(json_text(value).encode()).hexdigest()
 
 
+def run_source_mode(db, run_id):
+    """Durable source lineage of a run: "synthetic" or "live" (F3.3 plan §9.3, M1/M2).
+
+    A fixture run is synthetic. A run whose provenance records
+    ``tool_configuration.source_lineage`` carries that value. A two-phase collection
+    run written before lineage was recorded is synthetic when its own immutable
+    discovery summary says so; the inference only ever narrows (never promotes).
+    """
+    row = db.execute("SELECT kind, provenance_json FROM runs WHERE id=?", (run_id,)).fetchone()
+    if row is None:
+        raise ValueError("missing run")
+    if row[0] == "fixture":
+        return "synthetic"
+    tool = json.loads(row[1]).get("tool_configuration") or {}
+    lineage = tool.get("source_lineage")
+    if lineage in ("synthetic", "live"):
+        return lineage
+    if lineage is not None:
+        raise ValueError(f"unknown source lineage {lineage!r}")
+    if (
+        tool.get("collection_protocol") is not None
+        and db.execute("PRAGMA user_version").fetchone()[0] >= 3
+        and db.execute(
+            "SELECT 1 FROM discovery_passes WHERE run_id=?"
+            " AND json_extract(payload_json,'$.mode')='synthetic' LIMIT 1",
+            (run_id,),
+        ).fetchone()
+    ):
+        return "synthetic"
+    return "live"
+
+
 def row_dict(db, table, key):
     if table not in LEGACY | set(COLUMNS):
         raise ValueError("unsupported reference table")
@@ -61,16 +93,12 @@ def reference(db, table, key):
         ]
     else:
         fetch_ids.update(v for k, v in row.items() if k.endswith("fetch_id") and v is not None)
-        if (
-            "run_id" in row
-            and db.execute("SELECT kind FROM runs WHERE id=?", (row["run_id"],)).fetchone()[0]
-            == "fixture"
-        ):
+        if "run_id" in row and run_source_mode(db, row["run_id"]) == "synthetic":
             mode = "synthetic"
     fetches = []
     for fetch_id in sorted(fetch_ids):
         cursor = db.execute(
-            "SELECT f.seq,f.state,f.body_sha256,f.retrieved_at,b.body,b.byte_count,r.kind "
+            "SELECT f.seq,f.state,f.body_sha256,f.retrieved_at,b.body,b.byte_count,r.id "
             "FROM fetches f JOIN requests q ON q.id=f.request_id JOIN runs r ON r.id=q.run_id "
             "LEFT JOIN blobs b ON b.sha256=f.body_sha256 WHERE f.id=?",
             (fetch_id,),
@@ -78,12 +106,14 @@ def reference(db, table, key):
         found = cursor.fetchone()
         if not found or found[1] == "pending" or not found[3]:
             raise ValueError("reference is not completed retrieval evidence")
-        seq, state, sha, at, body, length, run_kind = found
+        seq, state, sha, at, body, length, run_id = found
         if sha is not None and (
             body is None or len(body) != length or hashlib.sha256(body).hexdigest() != sha
         ):
             raise ValueError("corrupt reference raw bytes")
-        if run_kind == "fixture":
+        # Lineage is a property of the writing run, persisted in its provenance: a
+        # collection made with an injected transport or clock stays synthetic forever.
+        if run_source_mode(db, run_id) == "synthetic":
             mode = "synthetic"
         fetches.append(
             {"id": fetch_id, "seq": seq, "state": state, "raw_sha256": sha, "retrieved_at": at}

@@ -12,7 +12,7 @@ from datetime import datetime
 
 from .discovery import COLLECTION_PROTOCOL, MANIFEST_VERSION
 from .policy import EvidenceTimes, freshness, utc
-from .references import digest
+from .references import digest, run_source_mode
 
 NAMESPACE = "local-witness-v1"
 DISCOVERY_STAGES = ("status", "series", "document", "markets", "event")
@@ -68,10 +68,14 @@ class DiscoveryEvidence:
 
 
 def _receipt_filter(namespace, mode):
+    """Only a contract-2 receipt written by an operational witness run is proof; a
+    receipt supplied through the journal by any other caller is ignored here even if
+    the storage layer admitted it (plan §4.1)."""
     return (
         " json_extract(r.payload_json,'$.contract_version')=2"
         " AND json_extract(r.payload_json,'$.observer_namespace')=?"
-        " AND json_extract(r.payload_json,'$.mode')=?",
+        " AND json_extract(r.payload_json,'$.mode')=?"
+        " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness')",
         (namespace, mode),
     )
 
@@ -145,6 +149,7 @@ def _run_facts(db, run_id, cache):
                 "kind": row[0],
                 "config_hash": digest(provenance["configuration"]),
                 "protocol": provenance.get("tool_configuration", {}).get("collection_protocol"),
+                "lineage": run_source_mode(db, run_id),
             }
     return cache[run_id]
 
@@ -172,6 +177,8 @@ def verify_pass(payload, run):
         problems.append("collector_config_mismatch")
     if run is not None and run["protocol"] != COLLECTION_PROTOCOL:
         problems.append("run_not_two_phase")
+    if run is not None and run["lineage"] == "synthetic" and payload["mode"] != "synthetic":
+        problems.append("pass_lineage_mismatch")
     return tuple(dict.fromkeys(problems))
 
 
@@ -188,6 +195,11 @@ def discovery_as_of(db, cutoff, namespace=NAMESPACE, mode="forward_shadow"):
             "SELECT COUNT(*) FROM forecast_receipts r WHERE r.subject_kind IN"
             " ('discovery_pass','fetch') AND json_extract(r.payload_json,'$.contract_version')"
             " IS NULL"
+        ).fetchone()[0],
+        "supplied_receipts_ignored": db.execute(
+            "SELECT COUNT(*) FROM forecast_receipts r WHERE"
+            " json_extract(r.payload_json,'$.contract_version')=2 AND NOT EXISTS"
+            " (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness')"
         ).fetchone()[0],
         "orphan_runs": 0,
     }
