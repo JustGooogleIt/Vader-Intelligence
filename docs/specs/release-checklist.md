@@ -53,9 +53,30 @@ Governing documents: `docs/specs/forecast-evaluation-v1.md` (spec), `docs/specs/
 | E-11 | Evaluation of a population above 1000 opportunities is an explicit error, never truncation | `service.MAX_OPPORTUNITIES` | not exercised (needs >1000 games) | code only |
 
 
-## 3. Research runner — pending
+## 3. Research runner (PR: `feat/research-runner`, stacked on `feat/f35-evaluation`)
 
-## 4. Reports — pending
+| # | Requirement | Implementation | Tests | State |
+|---|---|---|---|---|
+| R-1 | Accept archive, protocol/configuration and evaluation scope; immutable run identity; code/configuration provenance via existing conventions | `research/runner.py:run` (`runs` row kind `research-run`, `archive_identity`) | `test_runner_and_reports.py::test_forward_run_evaluates_each_cohort_once_and_resumes_without_duplicates` | tested |
+| R-2 | Observations processed in temporal order | reconstruct in cutoff order; development before holdout | `::test_reconstruction_run_reconstructs_then_evaluates_in_its_own_namespace`, `::test_split_evaluates_development_before_holdout_and_records_history` | tested |
+| R-3 | Exact inputs referenced for reproduction | decision manifests, evaluation manifests, archive identity, protocol hash | same | tested |
+| R-4 | Explicit completion, partial and failure states; resume without duplicate logical results | run statuses; content keys | `::test_budget_exhaustion_is_partial_and_writes_no_evaluation`, resume case in R-1 | tested |
+| R-5 | Synthetic, reconstruction and forward results separate; incompatible cohorts never pooled | per-cohort evaluations; evaluation mode | `::test_reconstruction_run_reconstructs_then_evaluates_in_its_own_namespace`, `test_materialization.py::test_mixed_collector_cohorts_are_evaluated_separately` | tested |
+| R-6 | Explicit split boundaries; held-out observations not fitted; provenance to audit | split validation, `holdout_history` | `::test_split_evaluates_development_before_holdout_and_records_history` | tested (procedural; v1 has no tunable parameter) |
+| R-7 | Supported baselines and policies | constant-v1 and midpoint-v1 (the fixed pair) | all | tested |
+| R-8 | No LLM providers, training, symbolic regression or agent competition | — | — | not added by design |
+
+## 4. Reports (same PR)
+
+| # | Requirement | Implementation | Tests | State |
+|---|---|---|---|---|
+| T-1 | Machine-readable and concise human-readable reports via existing CLI | `research/report.py`, `vader evaluation report` | `::test_text_and_machine_reports`, `::test_research_run_and_reports_through_the_cli` | tested |
+| T-2 | Metrics with eligible population and scored N; coverage and abstention counts by reason; pending/excluded/invalid/unresolved outcomes; collector and research identities; policy identity; evidence mode and limitations; period | evaluation report fields | same; `test_materialization.py` | tested |
+| T-3 | Policy comparison on the same observations; coverage differences exposed | paired constant/midpoint within an evaluation; `compare` restricted to common scored opportunities | `::test_compare_restricts_to_common_scored_opportunities` | tested |
+| T-4 | Cohorts separate by default; higher-level summaries labelled | per-cohort evaluations; compare labels different cohorts, refuses different views/modes | same | tested |
+| T-5 | No synthetic-as-edge, no PnL, no profitability claim | `provenance_limitations`, report text | demo output | tested |
+| T-6 | Small deterministic demonstration with expected results | `tests/integration/research_demo.py` | `tests/research/test_demo.py` | demonstrated |
+
 
 ## 5. Forward-shadow workflow — pending
 

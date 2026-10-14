@@ -84,6 +84,33 @@ def parser():
     einspect.add_argument("--before", type=int)
     einspect.add_argument("--dataset")
     einspect.add_argument("--view", choices=("forward-shadow", "cutoff-reconstruction"))
+    ereport = evaluation_commands.add_parser("report", help="one evaluation as text or JSON")
+    ereport.add_argument("--id", type=int, required=True)
+    ereport.add_argument("--format", choices=("text", "json"), default="text")
+    ereport.add_argument("--items", action="store_true", help="include items in JSON output")
+    ereport.add_argument("--export", help="write the JSON document to this new file")
+    ecompare = evaluation_commands.add_parser(
+        "compare", help="two evaluations on the opportunities both scored"
+    )
+    ecompare.add_argument("--ids", required=True, help="two evaluation ids, comma separated")
+    ecompare.add_argument("--format", choices=("text", "json"), default="text")
+    research = commands.add_parser("research", help="reproducible offline research runs")
+    research_commands = research.add_subparsers(dest="research_command", required=True)
+    rrun = research_commands.add_parser("run", help="reconstruct (if needed) and evaluate a scope")
+    rrun.add_argument("--research-config", help="research protocol TOML ([research] only)")
+    rrun.add_argument("--dataset", help="study namespace (required for cutoff-reconstruction)")
+    rrun.add_argument("--view", required=True, choices=("forward-shadow", "cutoff-reconstruction"))
+    rrun.add_argument("--outcomes-as-of", required=True)
+    rrun.add_argument("--from", dest="start", required=True)
+    rrun.add_argument("--through", required=True)
+    rrun.add_argument("--source-ceiling", type=int)
+    rrun.add_argument("--development-through", help="last development date (split)")
+    rrun.add_argument("--holdout-from", help="first held-out date (split)")
+    rrun.add_argument("--budget", type=float, default=120.0)
+    rrun.add_argument("--out", help="write the run summary JSON to this new file")
+    rinspect = research_commands.add_parser("inspect", help="read-only research run inspection")
+    rinspect.add_argument("--run-id", help="one run; omit to list recent runs")
+    rinspect.add_argument("--limit", type=int, default=20)
     return p
 
 
@@ -134,6 +161,8 @@ def execute(args):
         return settlement_execute(args, config)
     if args.command in ("evaluate", "evaluation"):
         return _evaluation(args, config)
+    if args.command == "research":
+        return _research(args, config)
     with nullcontext() if args.command == "health" else writer_lock(config.database):
         store = Store(
             config.database, min_free_bytes=config.min_free_bytes, readonly=args.command == "health"
@@ -244,8 +273,25 @@ def _evaluation(args, config):
     from .forecast.research import Protocol
 
     if args.command == "evaluation":
+        from .research import report as reports
+
         store = Store(config.database, min_free_bytes=config.min_free_bytes, readonly=True)
         try:
+            if args.evaluation_command == "report":
+                document = reports.machine_report(store.db, args.id, include_items=args.items)
+                if args.export:
+                    document["exported_to"] = reports.export(args.export, document)
+                if args.format == "text":
+                    return {"status": "complete", "text": reports.text_report(store.db, args.id)}
+                return document | {"status": "complete"}
+            if args.evaluation_command == "compare":
+                ids = [int(v) for v in args.ids.split(",")]
+                if len(ids) != 2:
+                    raise ValueError("--ids needs exactly two evaluation ids")
+                comparison = reports.compare(store.db, *ids)
+                if args.format == "text":
+                    return {"status": "complete", "text": reports.text_compare(comparison)}
+                return comparison | {"status": "complete"}
             if args.id is not None:
                 result = inspect_evaluation(store.db, args.id, items=args.items)
             else:
@@ -283,10 +329,60 @@ def _evaluation(args, config):
             store.close()
 
 
+def _research(args, config):
+    from datetime import datetime
+
+    from .forecast.reconstruct import parse_date
+    from .forecast.research import Protocol
+    from .research import report as reports
+    from .research.runner import inspect_run, list_runs, run
+
+    if args.research_command == "inspect":
+        store = Store(config.database, min_free_bytes=config.min_free_bytes, readonly=True)
+        try:
+            result = (
+                inspect_run(store.db, args.run_id)
+                if args.run_id
+                else list_runs(store.db, limit=args.limit)
+            )
+            result["status"] = "complete"
+            return result
+        finally:
+            store.close()
+    protocol = Protocol.load(args.research_config)
+    as_of = datetime.fromisoformat(args.outcomes_as_of.replace("Z", "+00:00"))
+    with writer_lock(config.database):
+        store = Store(config.database, min_free_bytes=config.min_free_bytes)
+        try:
+            summary = run(
+                store,
+                protocol,
+                view=args.view,
+                outcomes_as_of=as_of,
+                start_date=parse_date(args.start),
+                through_date=parse_date(args.through),
+                dataset=args.dataset,
+                source_ceiling=args.source_ceiling,
+                development_through=None
+                if args.development_through is None
+                else parse_date(args.development_through),
+                holdout_from=None if args.holdout_from is None else parse_date(args.holdout_from),
+                budget=args.budget,
+            )
+        finally:
+            store.close()
+    if args.out:
+        summary["exported_to"] = reports.export(args.out, summary)
+    return summary
+
+
 def main():
     args = parser().parse_args()
     try:
         result = execute(args)
+        if isinstance(result, dict) and set(result) == {"status", "text"}:
+            print(result["text"])  # human-readable report
+            return 0
         print(json.dumps(result, sort_keys=True, allow_nan=False))
         return (
             0 if result["status"] == "complete" else 3 if result["status"] == "inconclusive" else 1
