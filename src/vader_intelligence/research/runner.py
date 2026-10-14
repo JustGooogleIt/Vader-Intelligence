@@ -275,6 +275,15 @@ def run(
         raise
     if summary["errors"] and summary["status"] == "complete":
         summary["status"] = "partial"
+    statuses = [
+        cohort["status"]
+        for segment in summary["segments"].values()
+        for cohort in segment["cohorts"].values()
+    ]
+    if summary["status"] == "complete" and statuses and all(s == "inconclusive" for s in statuses):
+        # No paired binary outcome anywhere: the run is inconclusive (§7 exit 3), not a
+        # success claim about an empty or unsettled population.
+        summary["status"] = "inconclusive"
     summary["runtime_seconds"] = monotonic() - started
     summary["archive_after"] = archive_identity(db)
     store.finish_run(run_id, summary["status"], summary)
