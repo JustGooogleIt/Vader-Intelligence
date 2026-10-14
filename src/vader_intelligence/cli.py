@@ -63,6 +63,27 @@ def parser():
     reconstruct.add_argument("--through", required=True, help="last original date (max 31 days)")
     reconstruct.add_argument("--source-ceiling", type=int, help="fetch sequence ceiling")
     reconstruct.add_argument("--budget", type=float, default=30.0)
+    evaluate = commands.add_parser("evaluate", help="materialize one immutable evaluation")
+    evaluate.add_argument("--research-config", help="research protocol TOML ([research] only)")
+    evaluate.add_argument("--dataset", help="dataset namespace to evaluate (default: protocol)")
+    evaluate.add_argument(
+        "--view", required=True, choices=("forward-shadow", "cutoff-reconstruction")
+    )
+    evaluate.add_argument("--outcomes-as-of", required=True, help="aware UTC retrieval boundary")
+    evaluate.add_argument("--source-ceiling", type=int, help="fetch sequence ceiling")
+    evaluate.add_argument("--from", dest="start", help="first scheduled date (YYYY-MM-DD)")
+    evaluate.add_argument("--through", help="last scheduled date (YYYY-MM-DD)")
+    evaluate.add_argument("--collector-config-hash", help="evaluate this collector cohort only")
+    evaluate.add_argument("--budget", type=float, default=30.0)
+    evaluation = commands.add_parser("evaluation", help="read-only evaluation inspection")
+    evaluation_commands = evaluation.add_subparsers(dest="evaluation_command", required=True)
+    einspect = evaluation_commands.add_parser("inspect")
+    einspect.add_argument("--id", type=int, help="one evaluation; omit to list recent ones")
+    einspect.add_argument("--items", action="store_true", help="include the item rows")
+    einspect.add_argument("--limit", type=int, default=20)
+    einspect.add_argument("--before", type=int)
+    einspect.add_argument("--dataset")
+    einspect.add_argument("--view", choices=("forward-shadow", "cutoff-reconstruction"))
     return p
 
 
@@ -111,6 +132,8 @@ def execute(args):
         from .settlement.cli import execute as settlement_execute
 
         return settlement_execute(args, config)
+    if args.command in ("evaluate", "evaluation"):
+        return _evaluation(args, config)
     with nullcontext() if args.command == "health" else writer_lock(config.database):
         store = Store(
             config.database, min_free_bytes=config.min_free_bytes, readonly=args.command == "health"
@@ -211,6 +234,51 @@ def _forecast_research(args, config):
                     budget=args.budget,
                 )
             return tick(store, protocol, budget=args.budget)
+        finally:
+            store.close()
+
+
+def _evaluation(args, config):
+    from .evaluation.service import evaluate, inspect_evaluation, list_evaluations
+    from .forecast.reconstruct import parse_date
+    from .forecast.research import Protocol
+
+    if args.command == "evaluation":
+        store = Store(config.database, min_free_bytes=config.min_free_bytes, readonly=True)
+        try:
+            if args.id is not None:
+                result = inspect_evaluation(store.db, args.id, items=args.items)
+            else:
+                result = list_evaluations(
+                    store.db,
+                    limit=args.limit,
+                    before=args.before,
+                    dataset=args.dataset,
+                    view=args.view,
+                )
+            result["status"] = "complete"
+            return result
+        finally:
+            store.close()
+    from datetime import datetime
+
+    protocol = Protocol.load(args.research_config)
+    as_of = datetime.fromisoformat(args.outcomes_as_of.replace("Z", "+00:00"))
+    with writer_lock(config.database):
+        store = Store(config.database, min_free_bytes=config.min_free_bytes)
+        try:
+            return evaluate(
+                store,
+                protocol,
+                view=args.view,
+                outcomes_as_of=as_of,
+                dataset=args.dataset,
+                source_ceiling=args.source_ceiling,
+                start_date=None if args.start is None else parse_date(args.start),
+                through_date=None if args.through is None else parse_date(args.through),
+                collector_config_hash=args.collector_config_hash,
+                budget=args.budget,
+            )
         finally:
             store.close()
 

@@ -67,6 +67,7 @@ class SettlementRefresh:
                         "mode": "public_get",
                         "settlement_parser": 1,
                         "database_schema": 2,
+                        "source_lineage": "live" if self.reader.live else "synthetic",
                     },
                 )
             )
