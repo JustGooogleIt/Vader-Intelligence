@@ -322,6 +322,121 @@ def renewal_at_cutoff(db, projection, binding):
     )
 
 
+@dataclass(frozen=True)
+class CutoffFacts:
+    """Everything the cutoff decision froze, computed read-only from the archive."""
+
+    cutoff: object
+    evidence_mode: str
+    projection: object
+    renewal: Renewal
+    binding_avail: object
+    schedule_avail: object
+    market_avail: object
+    common: object
+    reasons: tuple
+    inputs: object
+    midpoint_probability: str | None
+    midpoint_reasons: tuple
+    midpoint_inputs: dict
+
+    @property
+    def cutoff_eligible(self):
+        return self.common.eligible
+
+
+def cutoff_facts(db, *, binding, namespace, evidence_mode):
+    """Read-only computation of the common eligibility, renewal and midpoint input for a
+    binding at its cutoff. Used by the decision writer and by evaluation annotations of
+    unattempted opportunities; writes nothing."""
+    game_id = binding["game_id"]
+    ticker = binding["ticker"]
+    cutoff = utc(datetime.fromisoformat(binding["cutoff"]))
+    projection = evidence.discovery_as_of(db, cutoff, namespace=namespace, mode=evidence_mode)
+    renewal = renewal_at_cutoff(db, projection, binding)
+    schedule_times, schedule_avail = _availability_times(
+        db, renewal.schedule_fetch_id, namespace, evidence_mode
+    )
+    market_times, market_avail = _availability_times(
+        db, renewal.market_fetch_id, namespace, evidence_mode
+    )
+    binding_avail = evidence.binding_availability(
+        db, binding["id"], namespace=namespace, mode=evidence_mode
+    )
+    untrusted = (
+        any(a is not None and a.status == "clock_untrusted" for a in (schedule_avail, market_avail))
+        or binding_avail.status == "clock_untrusted"
+    )
+    common = cutoff_eligibility(
+        cutoff=cutoff,
+        binding_observed_at=binding_avail.observed_at,
+        discovery=projection.times,
+        schedule=schedule_times,
+        market=market_times,
+        universe_complete=projection.universe_complete,
+        identity_proven=binding_avail.status == "witnessed" and renewal.identity,
+        pregame=renewal.pregame,
+        contract_valid=renewal.contract_valid,
+        clock_trusted=not untrusted,
+    )
+    # All applicable reasons: the policy's fixed-order primary reasons first, then the
+    # evidence-level details that explain them (specification §4).
+    reasons = list(common.reasons)
+    reasons.extend(d for d in renewal.details if d not in reasons)
+    inputs = select_inputs(
+        db,
+        ticker=ticker,
+        game_id=game_id,
+        cutoff=cutoff,
+        namespace=namespace,
+        mode=evidence_mode,
+        scheduled_start=binding["scheduled_start"],
+    )
+    midpoint_probability = None
+    midpoint_reasons = list(reasons)
+    midpoint_inputs = {}
+    if common.eligible:
+        midpoint_reasons = []
+        if inputs.eligible:
+            try:
+                value = midpoint(inputs.book.raw)
+                midpoint_probability = format(value, "f")
+                midpoint_inputs = {
+                    "book_fetch_id": inputs.book.fetch_id,
+                    "book_receipt_id": inputs.book.receipt_id,
+                    "retrieved_at": inputs.book.retrieved_at.isoformat(),
+                    "observed_at": inputs.book.observed_at.isoformat(),
+                }
+            except InvalidBook as exc:
+                midpoint_reasons = [exc.reason]
+        else:
+            midpoint_reasons = list(inputs.reasons)
+    return CutoffFacts(
+        cutoff,
+        evidence_mode,
+        projection,
+        renewal,
+        binding_avail,
+        schedule_avail,
+        market_avail,
+        common,
+        tuple(reasons),
+        inputs,
+        midpoint_probability,
+        tuple(midpoint_reasons),
+        midpoint_inputs,
+    )
+
+
+def load_binding(db, binding_id):
+    row = db.execute(
+        "SELECT payload_json FROM forecast_bindings WHERE id=?", (binding_id,)
+    ).fetchone()
+    if row is None:
+        raise ValueError("missing binding")
+    return json.loads(row[0]) | {"id": binding_id}
+
+
 def decide_opportunity(
     store,
     *,
@@ -346,93 +461,19 @@ def decide_opportunity(
     db = store.db
     dataset = protocol.dataset if dataset is None else dataset
     evidence_mode = "forward_shadow" if mode == "historical_reconstruction" else mode
-    binding = json.loads(
-        db.execute(
-            "SELECT payload_json FROM forecast_bindings WHERE id=?", (binding_id,)
-        ).fetchone()[0]
-    )
-    game_id = binding["game_id"]
-    ticker = binding["ticker"]
-    cutoff = utc(datetime.fromisoformat(binding["cutoff"]))
-
-    projection = evidence.discovery_as_of(db, cutoff, namespace=namespace, mode=evidence_mode)
-    renewal = renewal_at_cutoff(db, projection, binding)
-    schedule_times, schedule_avail = _availability_times(
-        db, renewal.schedule_fetch_id, namespace, evidence_mode
-    )
-    market_times, market_avail = _availability_times(
-        db, renewal.market_fetch_id, namespace, evidence_mode
-    )
-    binding_avail = evidence.binding_availability(
-        db, binding_id, namespace=namespace, mode=evidence_mode
-    )
-    untrusted = (
-        any(a is not None and a.status == "clock_untrusted" for a in (schedule_avail, market_avail))
-        or binding_avail.status == "clock_untrusted"
-        or projection.receipt_id is None
-        and projection.diagnostics.get("untrusted_receipts_ignored", 0) > 0
-        and projection.kind is None
-    )
-    clock_trusted = not untrusted
-    identity_proven = binding_avail.status == "witnessed" and renewal.identity
-    pregame = renewal.pregame
-    contract_valid = renewal.contract_valid
-
-    common = cutoff_eligibility(
-        cutoff=cutoff,
-        binding_observed_at=binding_avail.observed_at,
-        discovery=projection.times,
-        schedule=schedule_times,
-        market=market_times,
-        universe_complete=projection.universe_complete,
-        identity_proven=identity_proven,
-        pregame=pregame,
-        contract_valid=contract_valid,
-        clock_trusted=clock_trusted,
-    )
-    cutoff_eligible = common.eligible
-    # All applicable reasons: the policy's fixed-order primary reasons first, then the
-    # evidence-level details that explain them (specification §4).
-    reasons = list(common.reasons)
-    reasons.extend(d for d in renewal.details if d not in reasons)
-
-    inputs = select_inputs(
-        db,
-        ticker=ticker,
-        game_id=game_id,
-        cutoff=cutoff,
-        namespace=namespace,
-        mode=evidence_mode,
-        scheduled_start=binding["scheduled_start"],
-    )
-    midpoint_probability = None
-    midpoint_reasons = list(reasons)
-    midpoint_inputs = {}
-    if cutoff_eligible:
-        midpoint_reasons = []
-        if inputs.eligible:
-            try:
-                value = midpoint(inputs.book.raw)
-                midpoint_probability = format(value, "f")
-                midpoint_inputs = {
-                    "book_fetch_id": inputs.book.fetch_id,
-                    "book_receipt_id": inputs.book.receipt_id,
-                    "retrieved_at": inputs.book.retrieved_at.isoformat(),
-                    "observed_at": inputs.book.observed_at.isoformat(),
-                }
-            except InvalidBook as exc:
-                midpoint_reasons = [exc.reason]
-        else:
-            midpoint_reasons = list(inputs.reasons)
-
+    binding = load_binding(db, binding_id)
+    facts = cutoff_facts(db, binding=binding, namespace=namespace, evidence_mode=evidence_mode)
+    projection, renewal, inputs = facts.projection, facts.renewal, facts.inputs
+    cutoff_eligible = facts.cutoff_eligible
+    reasons = list(facts.reasons)
     if cutoff_eligible:
         constant_result = {"probability": "0.5", "reasons": [], "inputs": {"value": "0.5"}}
     else:
-        constant_result = {"probability": None, "reasons": list(reasons), "inputs": {}}
+        constant_result = {"probability": None, "reasons": reasons, "inputs": {}}
     midpoint_result = {
-        "probability": midpoint_probability,
-        "reasons": midpoint_reasons,
-        "inputs": midpoint_inputs,
+        "probability": facts.midpoint_probability,
+        "reasons": list(facts.midpoint_reasons),
+        "inputs": facts.midpoint_inputs,
     }
 
     pass_row = (
@@ -448,9 +489,14 @@ def decide_opportunity(
     elif type(source_ceiling) is not int or not 0 <= source_ceiling <= archive_ceiling:
         raise ValueError("source ceiling must be an integer within the archive")
 
+    schedule_avail, market_avail, binding_avail = (
+        facts.schedule_avail,
+        facts.market_avail,
+        facts.binding_avail,
+    )
     manifest = {
         "selection_version": protocol.selection_version,
-        "selected_ticker": ticker,
+        "selected_ticker": binding["ticker"],
         "event_ticker": binding["event_ticker"],
         "alternatives": binding["manifest"].get("alternatives", []),
         "binding_receipt_id": binding_avail.receipt_id,
@@ -469,7 +515,7 @@ def decide_opportunity(
             "pregame": renewal.pregame,
             "contract_valid": renewal.contract_valid,
         },
-        "common_reasons": list(common.reasons),
+        "common_reasons": list(facts.common.reasons),
         "detail_reasons": list(renewal.details),
         "book_reasons": list(inputs.reasons),
     }
@@ -494,11 +540,11 @@ def decide_opportunity(
         "references": references,
         "dataset": dataset,
         "protocol": protocol.protocol_id,
-        "game_id": game_id,
+        "game_id": binding["game_id"],
         "unresolved_key": None,
         # Identity and the considered pass are provenance of abstentions as well as of
         # forecasts: input IDs are preserved even for rejected inputs (specification §4).
-        "ticker": ticker,
+        "ticker": binding["ticker"],
         "yes_team_id": binding["yes_team_id"],
         "horizon": HORIZON,
         "scheduled_start": binding["scheduled_start"],
@@ -521,8 +567,8 @@ def decide_opportunity(
         cutoff_eligible=cutoff_eligible,
         reasons=tuple(reasons),
         constant_probability=constant_result["probability"],
-        midpoint_probability=midpoint_probability,
-        midpoint_reasons=tuple(midpoint_reasons),
+        midpoint_probability=facts.midpoint_probability,
+        midpoint_reasons=tuple(facts.midpoint_reasons),
     )
 
 
@@ -543,41 +589,22 @@ def redecide(db, decision_id, namespace):
     binding_id = stored["binding_id"]
     if binding_id is None:
         return stored["cutoff_eligible"], stored["results"]
-    binding = json.loads(
-        db.execute(
-            "SELECT payload_json FROM forecast_bindings WHERE id=?", (binding_id,)
-        ).fetchone()[0]
-    )
-    cutoff = utc(datetime.fromisoformat(binding["cutoff"]))
+    binding = load_binding(db, binding_id)
     mode = stored["manifest"].get("evidence_mode") or stored["mode"]
-    projection = evidence.discovery_as_of(db, cutoff, namespace=namespace, mode=mode)
-    renewal = renewal_at_cutoff(db, projection, binding)
-    inputs = select_inputs(
-        db,
-        ticker=binding["ticker"],
-        game_id=binding["game_id"],
-        cutoff=cutoff,
-        namespace=namespace,
-        mode=mode,
-        scheduled_start=binding["scheduled_start"],
-    )
-    recomputed_midpoint = None
-    if stored["cutoff_eligible"] and inputs.eligible:
-        try:
-            recomputed_midpoint = format(midpoint(inputs.book.raw), "f")
-        except InvalidBook:
-            recomputed_midpoint = None
+    facts = cutoff_facts(db, binding=binding, namespace=namespace, evidence_mode=mode)
     return {
-        "cutoff_eligible": stored["cutoff_eligible"],
-        "universe_complete": projection.universe_complete,
+        "cutoff_eligible": facts.cutoff_eligible,
+        "stored_cutoff_eligible": stored["cutoff_eligible"],
+        "reasons": list(facts.reasons),
+        "universe_complete": facts.projection.universe_complete,
         "renewal": {
-            "identity": renewal.identity,
-            "pregame": renewal.pregame,
-            "contract_valid": renewal.contract_valid,
-            "details": list(renewal.details),
+            "identity": facts.renewal.identity,
+            "pregame": facts.renewal.pregame,
+            "contract_valid": facts.renewal.contract_valid,
+            "details": list(facts.renewal.details),
         },
-        "constant": constant() if stored["cutoff_eligible"] else None,
-        "midpoint": recomputed_midpoint,
+        "constant": constant() if facts.cutoff_eligible else None,
+        "midpoint": facts.midpoint_probability,
         "stored_midpoint": stored["results"]["midpoint-v1"]["probability"],
         "stored_constant": stored["results"]["constant-v1"]["probability"],
     }

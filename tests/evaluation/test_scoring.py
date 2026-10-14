@@ -118,3 +118,62 @@ def test_global_default_context_cannot_change_scores(monkeypatch):
     expected = log_loss("0.4101", 1)
     monkeypatch.setitem(DefaultContext.traps, Inexact, True)
     assert log_loss("0.4101", 1) == expected
+
+
+# ------------------------------------------------------------------ F3.5 summaries
+
+
+def test_score_pair_strings_and_clipping_flag():
+    from vader_intelligence.evaluation.scoring import score_pair
+
+    scores, clipped = score_pair("0.4101", 1)
+    assert scores["brier"] == "0.34798201" and clipped is False
+    assert scores["log_loss"].startswith("0.89135")  # -ln(0.4101)
+    scores, clipped = score_pair("1", 0)
+    assert scores["brier"] == "1" and clipped is True
+    assert scores["log_loss"].startswith("13.8155105579")  # -ln(0.000001)
+    scores, clipped = score_pair("0", 0)
+    assert scores["brier"] == "0" and clipped is True
+    assert scores["log_loss"].startswith("0.00000100000050")  # -ln(1 - 1e-6)
+    with pytest.raises(ValueError):
+        score_pair("1.5", 1)
+    with pytest.raises(ValueError):
+        score_pair("0.5", 2)
+
+
+def test_mean_is_exact_and_null_for_empty():
+    from vader_intelligence.evaluation.scoring import mean
+
+    assert mean([]) is None
+    assert mean(["0.25"]) == "0.25"
+    assert mean(["0.25", "0.126025"]) == "0.1880125"
+    assert mean(["1", "0", "0"]).startswith("0.3333333333333333333333333333333333333333")
+    with pytest.raises(ValueError):
+        mean(["abc"])
+
+
+def test_paired_summary_hand_cases():
+    from vader_intelligence.evaluation.scoring import paired_summary, score_pair
+
+    empty = paired_summary([])
+    assert empty["n"] == 0 and empty["mean_brier_delta"] is None
+    only_constant = paired_summary([{"constant-v1": score_pair("0.5", 1)[0], "midpoint-v1": None}])
+    assert only_constant["n"] == 0 and only_constant["mean_brier_constant"] is None
+    items = [
+        {"constant-v1": score_pair("0.5", 1)[0], "midpoint-v1": score_pair("0.4101", 1)[0]},
+        {"constant-v1": score_pair("0.5", 0)[0], "midpoint-v1": score_pair("0.4101", 0)[0]},
+    ]
+    summary = paired_summary(items)
+    assert summary["n"] == 2
+    assert summary["mean_brier_constant"] == "0.25"
+    assert summary["mean_brier_midpoint"] == "0.25808201"  # (0.34798201 + 0.16818201) / 2
+    assert summary["mean_brier_delta"] == "0.00808201"  # positive: constant did better
+    # log-loss means are exact means of the per-game values under the v1 context
+    from vader_intelligence.evaluation.scoring import arithmetic
+
+    with arithmetic():
+        expected = (
+            Decimal(items[0]["midpoint-v1"]["log_loss"])
+            + Decimal(items[1]["midpoint-v1"]["log_loss"])
+        ) / 2
+    assert Decimal(summary["mean_log_loss_midpoint"]) == expected
