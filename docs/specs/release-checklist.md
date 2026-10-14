@@ -78,6 +78,39 @@ Governing documents: `docs/specs/forecast-evaluation-v1.md` (spec), `docs/specs/
 | T-6 | Small deterministic demonstration with expected results | `tests/integration/research_demo.py` | `tests/research/test_demo.py` | demonstrated |
 
 
-## 5. Forward-shadow workflow — pending
+## 5. Forward-shadow workflow (PR: `feat/forward-shadow-ops`, stacked on `feat/research-runner`)
 
-## 6. Hardening — pending
+| # | Requirement | Implementation | Tests / evidence | State |
+|---|---|---|---|---|
+| S-1 | Documented start/stop procedure | `docs/forward-shadow.md` | — | documented |
+| S-2 | Explicit isolated archive and configuration paths; protection against production paths | `ops/common.py:validate_shadow` (role, test label, forbidden paths, research config), `manage.py configure --shadow-research-config --forbid` | `tests/ops/test_operations.py::ShadowConfigurationTests` (3) | tested |
+| S-3 | Single writer; overlapping invocation behaviour | ops run lock + archive writer lock; `overlap_skipped` exit 75; `shadow-evaluate` under the same lock | `::ShadowRunnerTests::test_overlap_skips_the_whole_cycle`, `::ShadowMaintenanceTests` | tested |
+| S-4 | Bounded retries; clear partial-failure reporting | no in-process retry (next cycle); tick deadline `tick_budget + grace`; tick failure exits 1 without hiding collection | `::test_tick_failure_is_an_operational_failure_without_hiding_collection`, `::test_tick_deadline_is_bounded_and_collection_still_runs`, `::test_invalid_tick_output_is_visible` | tested |
+| S-5 | Restart and recovery | per-record transactions; later-tick publication; `Store.recover`; documented in `docs/forward-shadow.md` | `test_tick.py`, `test_hardening.py` | tested |
+| S-6 | Health/status inspection; "no eligible markets" vs operational failure | `runner.shadow_health` | `::test_shadow_health_distinguishes_no_markets_from_failure` | tested |
+| S-7 | Useful logs without secrets | per-slot tick/collection logs; no credentials exist | documented | documented |
+| S-8 | Scheduling model: existing launchd cycle, tick before collection, combined budget below cadence | `runner.run_locked` + `run_tick`; `validate_shadow` budget rule | `::test_tick_runs_before_collection_in_one_invocation` | tested |
+| S-9 | Public read-only smoke on separate storage, finite duration | scratchpad archive, test label, 5 manual cycles | `docs/handoffs/forward-shadow-ops.md` | demonstrated (see handoff for the actual outcome) |
+| S-10 | Endurance | finite smoke only | handoff | not a 24-hour gate; reported as run |
+
+## 6. Hardening (same PR)
+
+| # | Requirement | Implementation / evidence | Tests | State |
+|---|---|---|---|---|
+| H-1 | Mutation before validation | `schema.check_contracts` before WAL/migration (PR #12) | `test_review_defects.py` | tested |
+| H-2 | Unsupported schema/contract combinations | open-time guards; wheel smoke asserts versions from the archive | `tests/integration/wheel_smoke.py` (41 checks) | tested |
+| H-3 | Synthetic-to-forward lineage promotion | persisted lineage (PR #12); settlement lineage (PR #14) | `test_review_defects.py`, `test_materialization.py` | tested |
+| H-4 | Supplied assertions crossing the witness boundary | journal witness-run rule (PR #12) | `test_review_defects.py` | tested |
+| H-5 | Future information leaking through joins/caches/replay | projection admits receipts ≤ C; outcomes never read by selection; scalar-first projection | `test_materialization.py::test_outcome_evidence_never_enters_forecast_selection`, `test_f34_completion.py` | tested |
+| H-6 | Cross-cohort scoring | `check_cohort`, per-cohort evaluation | `test_materialization.py::test_mixed_collector_cohorts_are_evaluated_separately` | tested |
+| H-7 | Publication/cutoff ordering | `test_hardening.py::test_publication_never_precedes_its_cutoff` | same | tested |
+| H-8 | Duplicate logical work under concurrency | writer lock + content keys | `test_tick.py::test_concurrent_due_ticks_do_not_duplicate`, `test_hardening.py::test_concurrent_evaluations_produce_one_evaluation` | tested |
+| H-9 | Partial writes and crash recovery | single transactions; interrupted reconstruction resumes | `test_hardening.py::test_interrupted_reconstruction_resumes_without_duplicates`, `test_materialization.py` interruption cases | tested |
+| H-10 | Legacy data blocking unrelated valid work | witness skips legacy subjects | `test_hardening.py::test_legacy_records_never_block_unrelated_valid_work` | tested |
+| H-11 | Limits that fail to bound actual work | 1000-opportunity / 1000-game limits; per-invocation witness caps | `test_hardening.py::test_population_limit_bounds_actual_work`, `test_review_defects.py` | tested |
+| H-12 | Backup/restore changing interpretation or provenance | `test_hardening.py::test_backup_and_restore_preserve_interpretation_and_provenance` | same | tested |
+| H-13 | Full regression, lint/format/build, macOS ops tests, installed-wheel tests outside the checkout | commands in the continuation note | 816 passed / 2 pre-existing; ops 42 OK; wheel smoke 41 | run |
+| H-14 | Wheel smoke asserts schema and contract versions explicitly | `assert_schema`, `archive_facts` | wheel smoke | tested |
+| H-15 | `tmux_jev` baseline reconfirmed | both observer tests fail identically on every branch of this release and on the #11 base | full-suite runs | reconfirmed, reported honestly |
+| H-16 | Runtime/memory for selection, replay-side integrity, materialization measured; bottleneck optimized | `tests/integration/perf_probe.py`; `discovery_as_of` scalar-first | handoff tables | measured |
+| H-17 | Property-based / state-machine tests | not added: no hypothesis dependency in `uv.lock`; deterministic fault injection used instead | — | deferred by dependency policy |

@@ -8,7 +8,7 @@ boundary. Resume from here; do not reconstruct the analysis.
 | Item | Value |
 |---|---|
 | Worktree | `/Users/ashwin/Documents/github-repos/Vader-Intelligence-release-work` (attached to the `-claude` checkout; own `.venv` from `uv sync --locked`, uv 0.12.19 at `../Vader-Intelligence/.venv/bin/uv`, Python 3.11.6) |
-| Current branch | `feat/research-runner` (on `feat/f35-evaluation` @ `1d84cb2` PR #14, on `feat/f34-completion` @ `23bd602` PR #13, on `fix/f33-foundation-repairs` @ `bd02c88` PR #12) |
+| Current branch | `feat/forward-shadow-ops` (on `feat/research-runner` @ `c8022ab` PR #15, on `feat/f35-evaluation` @ `1d84cb2` PR #14, on `feat/f34-completion` @ `23bd602` PR #13, on `fix/f33-foundation-repairs` @ `bd02c88` PR #12) |
 | Base | `feat/f34-tick-selection` @ `5811991` (PR #11 head), on `feat/f33-record-contract-2` @ `841af2a` (PR #10), on `feat/f33a-discovery-boundary` @ `8f9f2c0` (PR #9), on `docs/f33-implementation-plan` @ `deea149` (PR #8), on `main` @ `ebb58df` |
 | Review input | Independent PR #10 review (2026-10-12/14), report at `/Users/ashwin/Documents/Vader-Intelligence-reviews/20261012-pr10-evidence/REVIEW.md`, six defects P1/P1/P2/P2/P2/P2; no GitHub comments were posted by that review |
 | Skills | Cool Coder 1.2.0 pinned at `e46e79805be0ee5877fa9bc993492064bbb40aa5` under `~/.codex/skills`; untouched |
@@ -23,28 +23,28 @@ boundary. Resume from here; do not reconstruct the analysis.
 | M2 F3.5 evaluation materialization | **done, tested** | `ab09f72` | Outcome join, two views, immutable superseding runs; `docs/handoffs/f35-evaluation.md`. 789 passed / 2 pre-existing |
 | M3 Research runner | **done, tested** | `313b115` | `research/runner.py`; `docs/handoffs/research-runner.md` |
 | M4 Reports | **done, demonstrated** | `313b115` | `research/report.py`, `tests/integration/research_demo.py`. 798 passed / 2 pre-existing |
-| M5 Forward-shadow workflow | pending | — | |
-| M6 Hardening | pending | — | |
+| M5 Forward-shadow workflow | **done, demonstrated** | `262e23e`, `b6e9dee` | Shadow block, tick-before-collect, shadow-evaluate, shadow health; finite live smoke (5 cycles, `no_eligible_markets`); `docs/handoffs/forward-shadow-ops.md` |
+| M6 Hardening | **done, tested, measured** | `097a4c2` | Wheel smoke 41 checks with schema/contract assertions; perf probe and `discovery_as_of` fix; fault-injection tests. 816 passed / 2 pre-existing |
 
-## Test commands and last results (at `27a3473`)
+## Test commands and last results (at the `feat/forward-shadow-ops` head)
 
 ```sh
 cd /Users/ashwin/Documents/github-repos/Vader-Intelligence-release-work
-.venv/bin/ruff check src tests ops            # passed
-.venv/bin/ruff format --check src tests ops    # passed
+.venv/bin/ruff check src tests ops && .venv/bin/ruff format --check src tests ops   # clean
 .venv/bin/python -m pytest -q -p no:cacheprovider
-#   749 passed, 2 failed (tests/worker_observer: missing optional tmux_jev; pre-existing on main/#9/#10/#11)
-.venv/bin/python -m unittest discover -s tests/ops -q   # 31 run, OK
-git diff --check                               # clean
-# Reviewer's reproductions (file outside git):
-PYTHONPATH="$PWD/src:$PWD/tests" .venv/bin/python -m pytest --noconftest -q \
-  /Users/ashwin/Documents/Vader-Intelligence-reviews/20261012-pr10-evidence/test_independent.py
-#   on 5811991: 14 failed, 2 passed (defects confirmed)
-#   on 27a3473: the five remaining "failures" are in that file's own setup (its helper
-#   now needs a witness run) and in the supplied-receipt case, which is now rejected at
-#   insert; the ported regression file tests/forecast_storage/test_review_defects.py is
-#   the maintained form of those checks (20 passed).
+#   816 passed, 2 failed (tests/worker_observer: missing optional tmux_jev; pre-existing on main/#9/#10/#11)
+.venv/bin/python -m unittest discover -s tests/ops -q                          # 42 OK
+git diff --check                                                               # clean
+/Users/ashwin/Documents/github-repos/Vader-Intelligence/.venv/bin/uv build
+/Users/ashwin/Documents/github-repos/Vader-Intelligence/.venv/bin/uv venv <outside-checkout>/venv-wheel
+/Users/ashwin/Documents/github-repos/Vader-Intelligence/.venv/bin/uv pip install --python <outside>/venv-wheel/bin/python dist/vader_intelligence-0.1.0-py3-none-any.whl
+.venv/bin/python tests/integration/wheel_smoke.py --python <outside>/venv-wheel/bin/python   # 41 checks, schemas 1-4, contracts 1-2
+.venv/bin/python tests/integration/research_demo.py                            # 25 hand-checked expectations
+.venv/bin/python tests/integration/perf_probe.py --games 100 --passes 200      # measurements in docs/handoffs/forward-shadow-ops.md
 ```
+
+Reviewer's original reproductions (outside git), on the #11 base 14 failed / 2 passed;
+their maintained form is `tests/forecast_storage/test_review_defects.py`.
 
 ## Design decisions made in M0 (so a reviewer can disagree)
 
@@ -96,13 +96,43 @@ state machine, which stays deferred with an explicit `schedule_revised` abstenti
   publication record, at the actual later time (allowed in window, missed after);
   alternative was to leave `not_attempted` forever.
 
+## Final delivery (this release scope is complete)
+
+| PR | Branch | Code head | Depends on |
+|---|---|---|---|
+| #12 | `fix/f33-foundation-repairs` | `27a3473` (tip `bd02c88`, docs) | #11 `5811991` |
+| #13 | `feat/f34-completion` | `511f3c6` (tip `23bd602`) | #12 |
+| #14 | `feat/f35-evaluation` | `ab09f72` (tip `1d84cb2`) | #13 |
+| #15 | `feat/research-runner` | `313b115` (tip `c8022ab`) | #14 |
+| #16 | `feat/forward-shadow-ops` | `262e23e`, `097a4c2`, `b6e9dee`; tip is the docs commit | #15 |
+
+- Requirement matrix: `docs/specs/release-checklist.md` (states: tested, demonstrated,
+  documented, deferred, decision needed).
+- Reproducible disposable-data demo: `tests/integration/research_demo.py`.
+- Actual forward-shadow evidence: `docs/handoffs/forward-shadow-ops.md` (5 live cycles,
+  `no_eligible_markets`, reason recorded).
+- Migration/legacy notes: contract 2 amended in place (Q-M0-1); schema 4 only via the
+  explicit `--record-contract 2`; contract-1 and reconstruction rows preserved and
+  skipped, never converted; `check_contracts` runs before any mutation.
+- Performance: `docs/handoffs/forward-shadow-ops.md`.
+- Operational commands and cleanup: `docs/forward-shadow.md`; the smoke's isolated
+  directory is the session scratchpad and can be deleted.
+- Review packets: `docs/handoffs/release-review-packets.md`.
+
+## Known risks, unresolved decisions, remaining gates
+
+- Q-M0-1 contract 2 amended in place (no retained schema-4 archive assumed).
+- Q-M1-1 later-tick publication at the actual time.
+- Q-M2-1 binary label requires a mapped settlement mapping agreeing with the frozen game.
+- Q-M5-1 the reviewed full-game rule grammar rejects current postseason rules that omit
+  the start time; eligibility and settlement mapping both fail closed. Extending the
+  grammar is a reviewed policy change, not done here.
+- Deferred: schedule-revision state machine (explicit `schedule_revised` abstention);
+  property-based tests (no dependency); a 24-hour endurance run (only 5 cycles run).
+- Gates: independent re-review of #9/#10/#11 is still pending; this release's PRs are
+  draft and unreviewed; nothing is merged, deployed or approved for trading.
+
 ## Next action
 
-M5 on `feat/forward-shadow-ops` (stacked on `feat/research-runner`): optional
-`shadow` block in the operations config (role `forward-shadow`, research config path,
-tick budget, forbidden production paths, test label required); the runner executes
-`forecast tick` then `collect --once` in one serialized invocation with a combined
-budget below the cadence; `shadow-evaluate` maintenance action (settlement refresh +
-forward research run) under the ops run lock; health/status distinguishing "no
-eligible markets" from operational failure; documented start/stop/recovery; finite
-public read-only smoke with a test label and disposable archive.
+None within scope. Resume by reading this note, then the review packets; the worktree
+`Vader-Intelligence-release-work` holds every branch; `git worktree remove` once fetched.
