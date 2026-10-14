@@ -74,6 +74,57 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+SHADOW_ROLE = "forward-shadow"
+SHADOW_KEYS = {"role", "research_config", "tick_budget", "forbidden_paths"}
+
+
+def validate_shadow(config):
+    """The optional isolated forward-shadow block (release milestone 5).
+
+    A shadow configuration can only target isolated storage: it requires the test label,
+    an existing research protocol file, a tick budget that fits the cadence together
+    with the collection deadline, and an explicit list of forbidden production paths
+    that none of its own paths may equal or live under.
+    """
+    shadow = config["shadow"]
+    if not isinstance(shadow, dict) or set(shadow) != SHADOW_KEYS:
+        raise ValueError(
+            "shadow block must have exactly role, research_config, tick_budget, forbidden_paths"
+        )
+    if shadow["role"] != SHADOW_ROLE:
+        raise ValueError(f"shadow role must be {SHADOW_ROLE!r}")
+    if config["test_label"] is not True:
+        raise ValueError("a forward-shadow configuration must use the test label")
+    research = absolute(shadow["research_config"])
+    if not research.is_file():
+        raise ValueError("shadow research_config must be an existing absolute file path")
+    budget = shadow["tick_budget"]
+    if type(budget) is not int or not 1 <= budget <= 300:
+        raise ValueError("tick_budget must be an integer in [1, 300]")
+    if budget + config["deadline"] + 2 * config["grace"] >= config["cadence"]:
+        raise ValueError(
+            "tick_budget + deadline + two grace periods must be less than cadence"
+            " (the combined wrapper budget, not the collection deadline alone)"
+        )
+    forbidden = shadow["forbidden_paths"]
+    if not isinstance(forbidden, list) or not forbidden or len(forbidden) > 100:
+        raise ValueError("forbidden_paths must list at least one absolute production path")
+    resolved = [absolute(item).resolve() for item in forbidden]
+    own = {
+        "database": absolute(config["database"]).resolve(),
+        "state": absolute(config["state"]).resolve(),
+        "collector_config": absolute(config["collector_config"]).resolve(),
+        "research_config": research.resolve(),
+    }
+    for name, path in own.items():
+        for banned in resolved:
+            if path == banned or banned in path.parents:
+                raise ValueError(
+                    f"shadow {name} {path} targets a forbidden production path {banned}"
+                )
+    return shadow
+
+
 def validate(config):
     expected = {
         "version",
@@ -89,7 +140,7 @@ def validate(config):
         "log_bytes",
         "test_label",
     }
-    if set(config) != expected or config["version"] != 1:
+    if set(config) - {"shadow"} != expected or config["version"] != 1:
         raise ValueError("unsupported operations configuration")
     for key in ("checkout", "python", "database", "collector_config", "state"):
         absolute(config[key])
@@ -115,6 +166,8 @@ def validate(config):
     state = absolute(config["state"])
     if db == state or state in db.parents:
         raise ValueError("research database must be outside the operations state directory")
+    if "shadow" in config:
+        validate_shadow(config)
     return config
 
 
@@ -145,6 +198,40 @@ def command(config):
         config["database"],
         "collect",
         "--once",
+    ]
+
+
+def tick_command(config):
+    """The archive-only forecast tick that precedes collection in a shadow cycle."""
+    shadow = config["shadow"]
+    return [
+        config["python"],
+        "-m",
+        "vader_intelligence.cli",
+        "--config",
+        config["collector_config"],
+        "--db",
+        config["database"],
+        "forecast",
+        "tick",
+        "--research-config",
+        shadow["research_config"],
+        "--budget",
+        str(shadow["tick_budget"]),
+    ]
+
+
+def maintenance_command(config, argv):
+    """A bounded vader command run under the operations lock (settlement, research)."""
+    return [
+        config["python"],
+        "-m",
+        "vader_intelligence.cli",
+        "--config",
+        config["collector_config"],
+        "--db",
+        config["database"],
+        *argv,
     ]
 
 

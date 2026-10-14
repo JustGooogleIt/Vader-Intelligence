@@ -38,6 +38,35 @@ from ops.common import (  # noqa: E402
 )
 
 FAKE = """import json, os, signal, sqlite3, sys, time
+if "forecast" in sys.argv:
+    # The archive-only tick of a shadow cycle; it never touches the fake collection.
+    tick_mode = os.environ.get("VADER_OPS_TEST_TICK_MODE", "inconclusive")
+    marker = os.environ.get("VADER_OPS_TEST_ORDER_FILE")
+    if marker:
+        open(marker, "a").write("tick\\n")
+    if tick_mode == "hang":
+        time.sleep(30)
+    status, code = {"inconclusive": ("inconclusive", 3), "complete": ("complete", 0),
+                    "failed": ("failed", 1), "garbage": ("garbage", 0)}[tick_mode]
+    if tick_mode == "garbage":
+        print("not-json")
+        sys.exit(0)
+    print(json.dumps({"status": status, "run_id": "tick-run", "bindings_prepared": 1,
+                      "due_opportunities": 1 if tick_mode == "complete" else 0,
+                      "decisions_eligible": 1 if tick_mode == "complete" else 0,
+                      "decisions_abstained": 0,
+                      "publications": {"allowed": 1 if tick_mode == "complete" else 0,
+                                       "missed": 0, "vetoed": 0, "failed": 0},
+                      "errors": [] if tick_mode != "failed" else ["injected"]}))
+    sys.exit(code)
+if "settlement" in sys.argv or "research" in sys.argv:
+    kind = "settlement" if "settlement" in sys.argv else "research"
+    print(json.dumps({"status": os.environ.get("VADER_OPS_TEST_MAINT_STATUS", "complete"),
+                      "kind": kind, "argv": sys.argv[1:]}))
+    sys.exit(0)
+marker = os.environ.get("VADER_OPS_TEST_ORDER_FILE")
+if marker:
+    open(marker, "a").write("collect\\n")
 mode = os.environ.get("VADER_OPS_TEST_MODE", "empty")
 if mode in ("hang", "stubborn"):
     if os.environ.get("VADER_OPS_TEST_PID_FILE"):
@@ -597,3 +626,214 @@ class LaunchdTests(Fixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShadowFixture(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.research = self.root / "research.toml"
+        self.research.write_text('[research]\ndataset = "shadow-test"\n')
+        self.production = self.root / "production"
+        self.production.mkdir()
+        self.config = dict(
+            self.config,
+            cadence=120,
+            deadline=5,
+            grace=1,
+            shadow={
+                "role": "forward-shadow",
+                "research_config": str(self.research),
+                "tick_budget": 3,
+                "forbidden_paths": [str(self.production)],
+            },
+        )
+        write_json(self.config_path, self.config)
+
+    def invoke(self, mode="empty", tick="inconclusive", **extra):
+        env = {"VADER_OPS_TEST_MODE": mode, "VADER_OPS_TEST_TICK_MODE": tick, **extra}
+        with patch.dict(os.environ, env):
+            return runner.run(self.config)
+
+
+class ShadowConfigurationTests(ShadowFixture):
+    def test_shadow_block_is_validated_and_isolated(self):
+        self.assertEqual(validate(self.config)["shadow"]["role"], "forward-shadow")
+        cases = {
+            "test label required": dict(self.config, test_label=False),
+            "role": dict(self.config, shadow=dict(self.config["shadow"], role="production")),
+            "budget fits cadence": dict(
+                self.config, shadow=dict(self.config["shadow"], tick_budget=200)
+            ),
+            "research config exists": dict(
+                self.config,
+                shadow=dict(self.config["shadow"], research_config=str(self.root / "missing.toml")),
+            ),
+            "forbidden list required": dict(
+                self.config, shadow=dict(self.config["shadow"], forbidden_paths=[])
+            ),
+            "unknown key": dict(self.config, shadow=dict(self.config["shadow"], extra=1)),
+        }
+        for name, bad in cases.items():
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                validate(bad)
+
+    def test_shadow_refuses_production_paths(self):
+        banned_db = self.production / "live.sqlite3"
+        with self.assertRaises(ValueError) as caught:
+            validate(dict(self.config, database=str(banned_db)))
+        self.assertIn("forbidden production path", str(caught.exception))
+        with self.assertRaises(ValueError):
+            validate(dict(self.config, state=str(self.production / "state")))
+        nested = self.root / "nested" / "deeper"
+        nested.mkdir(parents=True)
+        config = dict(
+            self.config, shadow=dict(self.config["shadow"], forbidden_paths=[str(self.root)])
+        )
+        with self.assertRaises(ValueError):
+            validate(config)  # the whole root is forbidden, so the database inside it is too
+
+    def test_configure_writes_the_shadow_block(self):
+        args = argparse.Namespace(
+            **dict(
+                {k: v for k, v in self.config.items() if k != "shadow"},
+                state=str(self.root / "shadow state"),
+                output=str(self.root / "shadow config.json"),
+                shadow_research_config=str(self.research),
+                tick_budget=3,
+                forbid=[str(self.production)],
+            )
+        )
+        result = manage.configure(args)
+        written = load(result["config"])
+        self.assertEqual(written["shadow"]["forbidden_paths"], [str(self.production)])
+        self.assertTrue(result["label"].startswith("com.vader.test.collection."))
+        bad = argparse.Namespace(
+            **dict(
+                vars(args),
+                shadow_research_config=None,
+                output=str(self.root / "x.json"),
+                state=str(self.root / "y"),
+            )
+        )
+        with self.assertRaises(ValueError):
+            manage.configure(bad)  # --forbid without a shadow research config
+
+
+class ShadowRunnerTests(ShadowFixture):
+    def test_tick_runs_before_collection_in_one_invocation(self):
+        order = self.root / "order.txt"
+        result, code = self.invoke(VADER_OPS_TEST_ORDER_FILE=str(order))
+        self.assertEqual(order.read_text().split(), ["tick", "collect"])
+        self.assertEqual(code, 3)
+        self.assertEqual(result["status"], "discovery_no_eligible_games")
+        self.assertEqual(result["tick"]["status"], "inconclusive")
+        self.assertEqual(result["tick"]["exit_code"], 3)
+        self.assertTrue(Path(result["tick"]["stdout"]).exists())
+        self.assertEqual(result["tick"]["research_config_sha256"], digest(self.research))
+        tick_argv = result["tick"]["argv"]
+        self.assertEqual(tick_argv[tick_argv.index("--budget") + 1], "3")
+        self.assertIn("forecast", tick_argv)
+
+    def test_tick_failure_is_an_operational_failure_without_hiding_collection(self):
+        result, code = self.invoke(mode="books", tick="failed")
+        self.assertEqual(result["status"], "collected_eligible_games")  # collection still ran
+        self.assertEqual(result["tick"]["status"], "failed")
+        self.assertEqual(code, 1)
+        health = runner.health(self.config)
+        self.assertEqual(health["shadow"]["status"], "operational_failure")
+
+    def test_tick_deadline_is_bounded_and_collection_still_runs(self):
+        started = time.monotonic()
+        result, code = self.invoke(mode="empty", tick="hang")
+        self.assertEqual(result["tick"]["status"], "deadline_exceeded")
+        self.assertEqual(result["status"], "discovery_no_eligible_games")
+        self.assertLess(time.monotonic() - started, 15)
+        self.assertEqual(code, 1)
+
+    def test_invalid_tick_output_is_visible(self):
+        result, code = self.invoke(tick="garbage")
+        self.assertEqual(result["tick"]["status"], "invalid_output")
+        self.assertEqual(code, 1)
+
+    def test_shadow_health_distinguishes_no_markets_from_failure(self):
+        self.assertEqual(runner.health(self.config)["shadow"]["status"], "never_invoked")
+        self.invoke(mode="empty", tick="inconclusive")
+        self.assertEqual(runner.health(self.config)["shadow"]["status"], "no_eligible_markets")
+        self.invoke(mode="books", tick="inconclusive")
+        self.assertEqual(runner.health(self.config)["shadow"]["status"], "waiting_for_cutoff")
+        self.invoke(mode="books", tick="complete")
+        health = runner.health(self.config)
+        self.assertEqual(health["shadow"]["status"], "forecasting")
+        self.assertEqual(health["shadow"]["tick"]["publications"]["allowed"], 1)
+        self.invoke(mode="partial", tick="complete")
+        self.assertEqual(runner.health(self.config)["shadow"]["status"], "operational_failure")
+
+    def test_overlap_skips_the_whole_cycle(self):
+        with lock(self.state.parent / (self.db.name + ".ops-run.lockfile")):
+            result, code = self.invoke()
+        self.assertEqual((result["status"], code), ("overlap_skipped", 75))
+
+
+class ShadowMaintenanceTests(ShadowFixture):
+    def test_maintenance_runs_under_the_lock_and_records_output(self):
+        with patch.dict(os.environ, {"VADER_OPS_TEST_MAINT_STATUS": "complete"}):
+            record = runner.maintenance(
+                self.config,
+                ["settlement", "refresh", "--limit", "5"],
+                name="shadow-settlement",
+                deadline=5,
+            )
+        self.assertEqual(record["status"], "complete")
+        self.assertEqual(record["result"]["kind"], "settlement")
+        self.assertIn("--db", record["argv"])
+        self.assertTrue(Path(record["stdout"]).exists())
+        with lock(self.state.parent / (self.db.name + ".ops-run.lockfile")):
+            skipped = runner.maintenance(
+                self.config, ["research", "run"], name="shadow-research", deadline=5
+            )
+        self.assertEqual(skipped["status"], "overlap_skipped")
+
+    def test_shadow_evaluate_action_writes_a_report(self):
+        with (
+            patch.dict(os.environ, {"VADER_OPS_TEST_MAINT_STATUS": "complete"}),
+            patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
+            code = manage.main(
+                [
+                    "--config",
+                    str(self.config_path),
+                    "shadow-evaluate",
+                    "--from",
+                    "2026-10-01",
+                    "--through",
+                    "2026-10-02",
+                ]
+            )
+        self.assertEqual(code, 0)
+        report = json.loads(out.getvalue())
+        self.assertEqual(
+            [step["name"] for step in report["steps"]], ["shadow-settlement", "shadow-research"]
+        )
+        research_argv = report["steps"][1]["argv"]
+        self.assertIn("forward-shadow", research_argv)
+        self.assertIn("--outcomes-as-of", research_argv)
+        written = list(self.state.glob("shadow-evaluate-*.json"))
+        self.assertEqual(len(written), 1)
+        plain = dict(self.config)
+        plain.pop("shadow")
+        write_json(self.config_path, plain)
+        with patch("sys.stderr", new_callable=io.StringIO):
+            self.assertEqual(
+                manage.main(
+                    [
+                        "--config",
+                        str(self.config_path),
+                        "shadow-evaluate",
+                        "--from",
+                        "2026-10-01",
+                        "--through",
+                        "2026-10-02",
+                    ]
+                ),
+                1,
+            )

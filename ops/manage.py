@@ -32,8 +32,29 @@ def parser():
     configure.add_argument("--retention", type=int, default=1000)
     configure.add_argument("--log-bytes", type=int, default=65536)
     configure.add_argument("--test-label", action="store_true")
+    configure.add_argument(
+        "--shadow-research-config",
+        help="absolute research TOML: makes this an isolated forward-shadow configuration",
+    )
+    configure.add_argument("--tick-budget", type=int, default=15)
+    configure.add_argument(
+        "--forbid",
+        action="append",
+        default=[],
+        help="absolute production path the shadow may never target (repeatable)",
+    )
     for action in ("run", "health", "status", "install", "uninstall", "stop", "restart", "plist"):
         subs.add_parser(action)
+    evaluate = subs.add_parser(
+        "shadow-evaluate",
+        help="bounded settlement refresh then a forward-shadow research run, under the ops lock",
+    )
+    evaluate.add_argument("--from", dest="start", required=True, help="first game date")
+    evaluate.add_argument("--through", required=True, help="last game date")
+    evaluate.add_argument("--settlement-limit", type=int, default=20)
+    evaluate.add_argument("--settlement-budget", type=int, default=120)
+    evaluate.add_argument("--research-budget", type=int, default=120)
+    evaluate.add_argument("--skip-settlement", action="store_true")
     for action in ("backup", "restore"):
         sub = subs.add_parser(action, help="SQLite backup API into a NEW path only")
         sub.add_argument("--source", required=True)
@@ -65,6 +86,17 @@ def configure(args):
     # Do not resolve a venv interpreter symlink: doing so bypasses the environment on Mac.
     absolute(config["python"])
     config["version"] = 1
+    shadow_research = getattr(args, "shadow_research_config", None)
+    forbid = getattr(args, "forbid", None) or []
+    if shadow_research:
+        config["shadow"] = {
+            "role": "forward-shadow",
+            "research_config": str(absolute(shadow_research).resolve()),
+            "tick_budget": getattr(args, "tick_budget", 15),
+            "forbidden_paths": [str(absolute(item).resolve()) for item in forbid],
+        }
+    elif forbid:
+        raise ValueError("--forbid applies only with --shadow-research-config")
     validate(config)
     for name in ("python", "collector_config"):
         if not Path(config[name]).is_file():
@@ -109,6 +141,73 @@ def main(argv=None):
                 result, code = runner.run(config)
                 print(json.dumps(result))
                 return code
+            if args.action == "shadow-evaluate":
+                if "shadow" not in config:
+                    raise ValueError("shadow-evaluate needs a forward-shadow configuration")
+                from datetime import date, datetime, timezone
+
+                for value in (args.start, args.through):
+                    date.fromisoformat(value)
+                records = []
+                if not args.skip_settlement:
+                    records.append(
+                        runner.maintenance(
+                            config,
+                            [
+                                "settlement",
+                                "refresh",
+                                "--limit",
+                                str(args.settlement_limit),
+                                "--budget",
+                                str(args.settlement_budget),
+                            ],
+                            name="shadow-settlement",
+                            deadline=args.settlement_budget + 2 * config["grace"],
+                        )
+                    )
+                if not records or records[-1]["status"] not in ("overlap_skipped",):
+                    records.append(
+                        runner.maintenance(
+                            config,
+                            [
+                                "research",
+                                "run",
+                                "--research-config",
+                                config["shadow"]["research_config"],
+                                "--view",
+                                "forward-shadow",
+                                "--outcomes-as-of",
+                                datetime.now(timezone.utc).isoformat(),
+                                "--from",
+                                args.start,
+                                "--through",
+                                args.through,
+                                "--budget",
+                                str(args.research_budget),
+                            ],
+                            name="shadow-research",
+                            deadline=args.research_budget + 2 * config["grace"],
+                        )
+                    )
+                statuses = [r["status"] for r in records]
+                overall = (
+                    "overlap_skipped"
+                    if "overlap_skipped" in statuses
+                    else "complete"
+                    if all(s in ("complete", "inconclusive") for s in statuses)
+                    else "failed"
+                )
+                report = {"status": overall, "steps": records}
+                write_json(
+                    Path(config["state"])
+                    / f"shadow-evaluate-{records[0].get('started_at', 'overlap')}.json".replace(
+                        ":", ""
+                    ),
+                    report,
+                    new=True,
+                )
+                print(json.dumps(report, indent=2))
+                return 75 if overall == "overlap_skipped" else 0 if overall == "complete" else 1
             if args.action in ("health", "status"):
                 result = runner.health(config)
                 if args.action == "status":
