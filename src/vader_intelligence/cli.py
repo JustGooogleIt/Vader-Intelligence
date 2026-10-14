@@ -70,9 +70,16 @@ def execute(args):
             # as an accidental side effect of a rejected forecast migration.
             probe = sqlite3.connect(Path(config.database).resolve().as_uri() + "?mode=ro", uri=True)
             try:
-                if probe.execute("PRAGMA user_version").fetchone()[0] not in (2, 3, 4):
+                version = probe.execute("PRAGMA user_version").fetchone()[0]
+                if version not in (2, 3, 4):
                     raise ValueError(
                         "forecast migrate requires schema 2; run settlement migrate first"
+                    )
+                if args.record_contract == 2 and version < 3:
+                    # Command prerequisite checked before Store opens (and switches the
+                    # journal to WAL): a rejected migration leaves the file untouched.
+                    raise ValueError(
+                        "record contract 2 requires schema 3; run forecast migrate first"
                     )
             finally:
                 probe.close()

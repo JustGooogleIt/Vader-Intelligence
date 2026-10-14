@@ -120,6 +120,39 @@ def check_schema(db):
                 raise ValueError("missing immutability trigger: " + table)
 
 
+def check_contracts(db):
+    """Stored record contracts must be known before any persistent change (plan §9.6).
+
+    Cheap: reads only the payload's contract_version field, no reference re-hashing.
+    Every receipt or decision declares contract 1 (absent) or the integer 2; no other
+    table carries a contract field; contract 2 exists only on schema 4. Run on the
+    actual connection before WAL, migration or any write so an invalid archive is
+    rejected without being touched or legitimized.
+    """
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    for table in COLUMNS:
+        identity = "opportunity_key" if table == "evaluation_items" else "id"
+        bad = db.execute(
+            f"SELECT {identity}, json_extract(payload_json,'$.contract_version') FROM {table}"
+            " WHERE json_extract(payload_json,'$.contract_version') IS NOT NULL AND NOT ("
+            " json_type(payload_json,'$.contract_version')='integer'"
+            " AND json_extract(payload_json,'$.contract_version')=2 AND ? ) LIMIT 1",
+            (int(table in ("forecast_receipts", "forecast_decisions")),),
+        ).fetchone()
+        if bad:
+            raise ValueError(f"{table} row {bad[0]}: unknown record contract version {bad[1]!r}")
+        if version < 4 and table in ("forecast_receipts", "forecast_decisions"):
+            row = db.execute(
+                f"SELECT id FROM {table}"
+                " WHERE json_extract(payload_json,'$.contract_version') IS NOT NULL LIMIT 1"
+            ).fetchone()
+            if row:
+                raise ValueError(
+                    f"{table} row {row[0]}: contract-2 record in a schema-{version} archive;"
+                    " not migrated automatically"
+                )
+
+
 @contextmanager
 def transaction(db, budget=30):
     """SQLite serialization. Production callers ALSO hold the existing writer_lock.
@@ -163,9 +196,13 @@ def migrate(db, *, record_contract=None):
         version = db.execute("PRAGMA user_version").fetchone()[0]
         if version == 4:
             check_schema(db)
+            check_contracts(db)
             return False
         if version == 3:
             check_schema(db)
+            # A contract-2 row already present on schema 3, or an unknown contract, is an
+            # invalid archive: refuse rather than legitimize it by advancing the version.
+            check_contracts(db)
             if record_contract != 2:
                 return False
             if executable(migration_sql("004_record_contract_2.sql")):

@@ -54,7 +54,7 @@ class Archive:
         )
         return digest(configuration)
 
-    def witness_run(self, run_id):
+    def witness_run(self, run_id, namespace=NS):
         self.db.execute(
             "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
             (
@@ -63,7 +63,17 @@ class Archive:
                 iso(T0),
                 None,
                 "running",
-                RunProvenanceV1(run_id, "forecast-witness", HASH, {"ns": NS}).to_json(),
+                RunProvenanceV1(
+                    run_id,
+                    "forecast-witness",
+                    HASH,
+                    {"ns": NS},
+                    tool_configuration={
+                        "observer_namespace": namespace,
+                        "session_id": "witness-session",
+                        "source_lineage": "synthetic",
+                    },
+                ).to_json(),
                 None,
             ),
         )
@@ -165,9 +175,12 @@ class Archive:
                 "SELECT body_sha256 FROM fetches WHERE id=?", (fetch_id,)
             ).fetchone()[0]
             subject = ("fetch", fetch_id, None, ref["digest"] if contract == 2 else body)
+        run_id = "witness-run" if namespace == NS else f"witness-run-{namespace}"
+        if self.db.execute("SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone() is None:
+            self.witness_run(run_id, namespace)  # one witness run per observer namespace
         payload = {
             "schema_version": 1,
-            "run_id": "witness-run",
+            "run_id": run_id,
             "created_at": iso(observed_at),
             "code_hash": HASH,
             "config_hash": digest({"ns": NS}),

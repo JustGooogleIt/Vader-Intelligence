@@ -115,6 +115,10 @@ class Collector:
         run_id = resume or str(uuid.uuid4())
         session = str(uuid.uuid4())
         two_phase = self.store.schema_version() >= 3
+        # Source lineage is decided once per run and persisted in its provenance, so a
+        # later witness, reference or projection reads it from the archive rather than
+        # from the clock it happens to be running with (plan §9.3 M1/M2).
+        lineage = "live" if self.reader.live and kind != "fixture" else "synthetic"
         if resume:
             row = self.store.db.execute("SELECT * FROM runs WHERE id=?", (resume,)).fetchone()
             if row is None or row["kind"] != kind or row["status"] == "complete":
@@ -132,9 +136,20 @@ class Collector:
                 )
             if not two_phase and protocol is not None:
                 raise ValueError("resume requires the archive schema the run was started on")
+            recorded = prov.get("tool_configuration", {}).get("source_lineage")
+            if recorded is not None and recorded != lineage:
+                raise ValueError(
+                    "resume requires the original source lineage (live or synthetic); "
+                    "start a new run"
+                )
             self.store.recover(run_id)
         else:
-            tool_configuration = {"method": "GET", "series": "KXMLBGAME", "book_depth": 0}
+            tool_configuration = {
+                "method": "GET",
+                "series": "KXMLBGAME",
+                "book_depth": 0,
+                "source_lineage": lineage,
+            }
             if two_phase:
                 tool_configuration["collection_protocol"] = COLLECTION_PROTOCOL
             self.store.start_run(
@@ -148,7 +163,7 @@ class Collector:
                 timestamp(self.reader.now()),
             )
         if two_phase:
-            return self._run_two_phase(kind, resume, run_id, session, started)
+            return self._run_two_phase(kind, resume, run_id, session, started, lineage)
         return self._run_legacy(kind, resume, run_id, session, started)
 
     # ------------------------------------------------------------------ legacy
@@ -310,7 +325,7 @@ class Collector:
     # --------------------------------------------------------------- two-phase
     # Schema 3: discovery, then one immutable summary, then books (plan §3.3).
 
-    def _run_two_phase(self, kind, resume, run_id, session, started):
+    def _run_two_phase(self, kind, resume, run_id, session, started, lineage):
         outcome = DiscoveryOutcome(kind=kind, resumed=bool(resume))
         decisions = []
         errors = []
@@ -325,6 +340,7 @@ class Collector:
             "SELECT COALESCE(MAX(seq),0) FROM fetches"
         ).fetchone()[0]
         mode = "forward_shadow" if self.reader.live and kind != "fixture" else "synthetic"
+        assert mode == ("forward_shadow" if lineage == "live" else "synthetic")
 
         def pass_summary():
             counts = summary["counts"] if summary else {"contracts": 0, "games": 0}

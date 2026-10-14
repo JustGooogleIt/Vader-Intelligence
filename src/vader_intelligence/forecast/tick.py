@@ -67,7 +67,13 @@ def tick(store, protocol, *, clock=None, monotonic=None, budget=30.0):
     run_id = str(uuid.uuid4())
     code_hash = source_hash()
     store.start_run(
-        RunProvenanceV1(run_id, "forecast-tick", code_hash, {"protocol": protocol.config_hash}),
+        RunProvenanceV1(
+            run_id,
+            "forecast-tick",
+            code_hash,
+            {"protocol": protocol.config_hash},
+            tool_configuration={"source_lineage": "synthetic" if injected else "live"},
+        ),
         timestamp(clock()),
     )
     summary = {
@@ -194,7 +200,9 @@ def _bindable_games(db, namespace, mode):
         " AND json_extract(r.payload_json,'$.contract_version')=2"
         " AND json_extract(r.payload_json,'$.observer_namespace')=?"
         " AND json_extract(r.payload_json,'$.clock_status')='trusted'"
-        " AND json_extract(r.payload_json,'$.mode')=?) ORDER BY p.id",
+        " AND json_extract(r.payload_json,'$.mode')=?"
+        " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness'))"
+        " ORDER BY p.id",
         (mode, namespace, mode),
     ).fetchall()
     out = []
