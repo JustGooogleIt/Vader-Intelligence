@@ -8,7 +8,7 @@ boundary. Resume from here; do not reconstruct the analysis.
 | Item | Value |
 |---|---|
 | Worktree | `/Users/ashwin/Documents/github-repos/Vader-Intelligence-release-work` (attached to the `-claude` checkout; own `.venv` from `uv sync --locked`, uv 0.12.19 at `../Vader-Intelligence/.venv/bin/uv`, Python 3.11.6) |
-| Current branch | `feat/f34-completion` (on `fix/f33-foundation-repairs` @ `bd02c88`, PR #12) |
+| Current branch | `feat/f35-evaluation` (on `feat/f34-completion` @ `23bd602` PR #13, on `fix/f33-foundation-repairs` @ `bd02c88` PR #12) |
 | Base | `feat/f34-tick-selection` @ `5811991` (PR #11 head), on `feat/f33-record-contract-2` @ `841af2a` (PR #10), on `feat/f33a-discovery-boundary` @ `8f9f2c0` (PR #9), on `docs/f33-implementation-plan` @ `deea149` (PR #8), on `main` @ `ebb58df` |
 | Review input | Independent PR #10 review (2026-10-12/14), report at `/Users/ashwin/Documents/Vader-Intelligence-reviews/20261012-pr10-evidence/REVIEW.md`, six defects P1/P1/P2/P2/P2/P2; no GitHub comments were posted by that review |
 | Skills | Cool Coder 1.2.0 pinned at `e46e79805be0ee5877fa9bc993492064bbb40aa5` under `~/.codex/skills`; untouched |
@@ -20,7 +20,7 @@ boundary. Resume from here; do not reconstruct the analysis.
 |---|---|---|---|
 | M0 Foundation repairs (six review defects) | **done, tested** | `27a3473` | All six reproduced on the PR #11 head before the fix (14 failing adversarial expectations, 2 positive controls passing); after the fix the ported regression file passes (20 tests) and the full suite is 749 passed / 2 pre-existing observer failures |
 | M1 Durable forecast path (tick completion) | **done, tested** | `511f3c6` | Renewal at C, vetoes, later publication, reconstruct; see `docs/handoffs/f34-completion.md`. 767 passed / 2 pre-existing |
-| M2 F3.5 evaluation materialization | pending | — | |
+| M2 F3.5 evaluation materialization | **done, tested** | `ab09f72` | Outcome join, two views, immutable superseding runs; `docs/handoffs/f35-evaluation.md`. 789 passed / 2 pre-existing |
 | M3 Research runner | pending | — | |
 | M4 Reports | pending | — | |
 | M5 Forward-shadow workflow | pending | — | |
@@ -88,14 +88,19 @@ state machine, which stays deferred with an explicit `schedule_revised` abstenti
 ## Unresolved semantic questions (decisions needed, work continues around them)
 
 - Q-M0-1: contract-2 amendment in place vs contract 3 (decision 2 above).
+- Q-M2-1 (decided, flagged): a binary label requires a `mapped` settlement mapping that
+  agrees with the frozen gamePk; without one the item is `identity_unresolved`.
+- Q-M2-2 (decided, flagged): contract 2 receipts/decisions and the evaluation layer treat
+  `status=complete` as "paired scored N > 0", else `inconclusive` (§7 exit codes).
 - Q-M1-1 (decided, flagged): a later tick publishes an eligible decision that lacks a
   publication record, at the actual later time (allowed in window, missed after);
   alternative was to leave `not_attempted` forever.
 
 ## Next action
 
-M2: F3.5 evaluation materialization on `feat/f35-evaluation` (stacked on
-`feat/f34-completion`): `evaluation/outcomes.py` (settlement join at an
-`outcomes_as_of` ceiling), `evaluation/service.py` (population freeze, both views,
-idempotent and superseding evaluation runs), `vader evaluate` / `vader evaluation
-inspect`.
+M3+M4 on `feat/research-runner` (stacked on `feat/f35-evaluation`): the offline
+research runner (`vader research run`) over the existing reconstruct/evaluate
+interfaces with an immutable run manifest in `runs`, explicit split boundaries, one
+evaluation per collector cohort, resume by construction; machine-readable and text
+reports plus `evaluation compare` on identical populations; the deterministic demo
+script with expected results.

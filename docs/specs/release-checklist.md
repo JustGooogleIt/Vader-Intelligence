@@ -36,7 +36,22 @@ Governing documents: `docs/specs/forecast-evaluation-v1.md` (spec), `docs/specs/
 | P-9 | Abstentions preserve input IDs (binding, pass pin, ticker) | `decide_opportunity` | `test_service.py::test_decide_abstains_when_binding_not_witnessed_by_cutoff` | tested |
 | P-10 | Schedule-revision state machine (`decide_schedule`, moving C, binding chains) | — | — | deferred: explicit `schedule_revised` abstention instead; first reached C stays sticky |
 
-## 2. F3.5 evaluation materialization — pending
+## 2. F3.5 evaluation materialization (PR: `feat/f35-evaluation`, stacked on `feat/f34-completion`)
+
+| # | Requirement | Implementation | Tests | State |
+|---|---|---|---|---|
+| E-1 | Join persisted decisions/publications to valid outcome evidence at an explicit `outcomes_as_of` boundary and source ceiling; latest completed attempt, never latest finalized (spec §5) | `evaluation/outcomes.py:join` | `test_materialization.py::test_outcome_join_dispositions_directly`, `::test_later_evidence_after_the_boundary_is_invisible` | tested |
+| E-2 | Pending/unresolved, settled, canceled/voided/exceptional, conflicting evidence, missing predictions/abstentions handled explicitly | `outcomes.join` dispositions; `service.evaluate` population | `::test_pending_then_settled_outcome_supersedes_without_rewriting`, `::test_ineligible_outcomes_are_visible_and_unscored` (3), `::test_unattempted_binding_is_counted_with_a_labelled_annotation`, `::test_game_without_binding_is_counted_from_the_frozen_manifest` | tested |
+| E-3 | Repeated materialization returns the existing evaluation; interrupted materialization and budget exhaustion write nothing; restart recomputes | `service.evaluate` key lookup, single `append_evaluation` transaction | `::test_repeat_with_identical_manifests_returns_the_existing_evaluation`, `::test_budget_exhaustion_writes_nothing_and_retry_succeeds`, `::test_interrupted_materialization_leaves_no_half_report` | tested |
+| E-4 | Later evidence appends a superseding evaluation; originals immutable; A→B→A keeps three versions | `service.evaluate` supersedes logic; journal triggers | `::test_pending_then_settled_outcome_supersedes_without_rewriting`, `::test_a_b_a_corrections_retain_three_evaluations` | tested |
+| E-5 | Collector-hash cohort isolation at materialization and reporting, including alternate API paths | `service.evaluate` cohort selection; `journal.check_cohort` (PR #12) | `::test_mixed_collector_cohorts_are_evaluated_separately`, `test_review_defects.py::test_scored_unpinned_rows_cannot_bypass_cohort_check` | tested |
+| E-6 | Outcome evidence never enters historical selection or replay | selection reads book stages only | `::test_outcome_evidence_never_enters_forecast_selection` | tested |
+| E-7 | Spec metrics (Brier, natural-log loss with 1e-6 clipping, paired deltas, means) tested independently with hand cases, boundaries, invalid inputs; no silent clipping of stored p | `evaluation/scoring.py` | `test_scoring.py` (F3.1 cases + `score_pair`/`mean`/`paired_summary`) | tested |
+| E-8 | Two views never pooled; forward scores only `published_timely`; reconstruction scores the cutoff population | `service.evaluate` | `::test_forward_view_scores_only_timely_published_decisions`, `::test_reconstruction_view_scores_cutoff_population_without_publication`, `::test_vetoed_publication_is_coverage_not_score_in_forward_view` | tested |
+| E-9 | MLB result is an annotation, never a label | `outcomes.join` | `::test_mlb_disagreement_is_an_annotation_not_a_label` | tested |
+| E-10 | CLI `evaluate` / `evaluation inspect` with spec exit codes | `cli.py` | `::test_evaluate_and_inspect_through_the_cli` | tested |
+| E-11 | Evaluation of a population above 1000 opportunities is an explicit error, never truncation | `service.MAX_OPPORTUNITIES` | not exercised (needs >1000 games) | code only |
+
 
 ## 3. Research runner — pending
 
