@@ -246,4 +246,6 @@ def test_decide_abstains_when_binding_not_witnessed_by_cutoff(store, config):
             "SELECT payload_json FROM forecast_decisions WHERE id=?", (decision.decision_id,)
         ).fetchone()[0]
     )
-    assert stored["binding_id"] is None and stored["reasons"]
+    # An abstention keeps the binding it considered as provenance (input IDs are
+    # preserved for rejected inputs); only the eligibility and probabilities are absent.
+    assert stored["binding_id"] == binding_id and stored["reasons"]

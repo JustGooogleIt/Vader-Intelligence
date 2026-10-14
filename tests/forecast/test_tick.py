@@ -267,10 +267,13 @@ def test_replay_after_appended_evidence_does_not_change_the_decision(store, conf
     assert store.verify_integrity() == []
 
 
-def test_crash_between_decision_and_publication_leaves_not_attempted(store, config, monkeypatch):
+def test_crash_between_decision_and_publication_is_published_later_at_actual_time(
+    store, config, monkeypatch
+):
     """Decision and publication are separate immutable records. A crash after the
     decision commits but before publication leaves the decision standing with no
-    publication (not_attempted); it is not retroactively published by a later tick."""
+    publication (`not_attempted` while no record exists). A later tick attempts the
+    publication at its own actual time: allowed inside the window, never backdated."""
     to_schema4(store)
     collect(store, config, origin=at(18, 3))
     tick_at(store, PROTO, WARMUP)
@@ -288,8 +291,40 @@ def test_crash_between_decision_and_publication_leaves_not_attempted(store, conf
     assert len(decisions(store)) == 1
     assert store.db.execute("SELECT COUNT(*) FROM forecast_publications").fetchone()[0] == 0
     monkeypatch.setattr(tick_module, "_publish", real_publish)
-    # A later tick finds the decision present (idempotent) and does not republish it.
+    # A later tick finds the decision present (idempotent, no second decision) and
+    # publishes it at the later actual time, still inside [C, C+150].
     later = tick_at(store, PROTO, at(18, 6, 30))
     assert later["decisions_eligible"] == 0 and later["due_opportunities"] == 1
-    assert store.db.execute("SELECT COUNT(*) FROM forecast_publications").fetchone()[0] == 0
+    assert later["publications_pending_before"] == 1 and later["publications"]["allowed"] == 1
+    assert len(decisions(store)) == 1
+    attempted, created = store.db.execute(
+        "SELECT json_extract(payload_json,'$.attempted_at'),"
+        " json_extract(payload_json,'$.manifest.decision_created_at') FROM forecast_publications"
+    ).fetchone()
+    assert attempted == at(18, 6, 30).isoformat() and created == at(18, 5, 30).isoformat()
     assert store.verify_integrity() == []
+
+
+def test_decision_left_unpublished_past_the_window_is_recorded_missed(store, config, monkeypatch):
+    to_schema4(store)
+    collect(store, config, origin=at(18, 3))
+    tick_at(store, PROTO, WARMUP)
+    import vader_intelligence.forecast.tick as tick_module
+
+    real_publish = tick_module._publish
+    monkeypatch.setattr(
+        tick_module, "_publish", lambda *a, **k: (_ for _ in ()).throw(KeyboardInterrupt())
+    )
+    with pytest.raises(KeyboardInterrupt):
+        tick_at(store, PROTO, DUE)
+    monkeypatch.setattr(tick_module, "_publish", real_publish)
+    late = tick_at(store, PROTO, at(18, 20, 0))  # C + 15 min
+    assert late["publications"]["missed"] == 1 and late["publications"]["allowed"] == 0
+    verdict, reason = store.db.execute(
+        "SELECT json_extract(payload_json,'$.verdict'), json_extract(payload_json,'$.reasons[0]')"
+        " FROM forecast_publications"
+    ).fetchone()
+    assert (verdict, reason) == ("missed", "late_invocation")
+    # The cutoff decision is intact.
+    (decision,) = decisions(store)
+    assert decision["results"]["midpoint-v1"]["probability"] == "0.6450"

@@ -48,9 +48,21 @@ def parser():
     tick.add_argument("--budget", type=float, default=30.0, help="tick time budget in seconds")
     inspect = forecast_commands.add_parser("inspect", help="read-only recent forecast decisions")
     inspect.add_argument("--research-config")
-    inspect.add_argument("--dataset")
+    inspect.add_argument("--dataset", help="show only this dataset namespace")
     inspect.add_argument("--limit", type=int, default=20, help="max 100")
     inspect.add_argument("--before", type=int, help="keyset: decisions with id below this")
+    reconstruct = forecast_commands.add_parser(
+        "reconstruct", help="archive-only historical reconstruction; no HTTP, no publication"
+    )
+    reconstruct.add_argument("--research-config", help="research protocol TOML ([research] only)")
+    reconstruct.add_argument("--dataset", required=True, help="explicit reconstruction namespace")
+    reconstruct.add_argument(
+        "--forward-dataset", help="dataset of the forward cohort whose bindings are reconstructed"
+    )
+    reconstruct.add_argument("--from", dest="start", required=True, help="first original date")
+    reconstruct.add_argument("--through", required=True, help="last original date (max 31 days)")
+    reconstruct.add_argument("--source-ceiling", type=int, help="fetch sequence ceiling")
+    reconstruct.add_argument("--budget", type=float, default=30.0)
     return p
 
 
@@ -61,7 +73,7 @@ def execute(args):
 
         from .forecast.schema import migrate
 
-        if args.forecast_command in ("tick", "inspect"):
+        if args.forecast_command in ("tick", "inspect", "reconstruct"):
             return _forecast_research(args, config)
         if not Path(config.database).is_file():
             raise ValueError("forecast migrate requires an existing schema-2 archive")
@@ -167,8 +179,12 @@ def _forecast_research(args, config):
     from .forecast.research import Protocol
     from .forecast.tick import inspect, tick
 
-    protocol = Protocol.load(args.research_config, dataset=args.dataset)
     read_only = args.forecast_command == "inspect"
+    # The reconstruction dataset is its own explicit namespace, never the protocol's.
+    protocol = Protocol.load(
+        args.research_config,
+        dataset=args.forward_dataset if args.forecast_command == "reconstruct" else args.dataset,
+    )
     with nullcontext() if read_only else writer_lock(config.database):
         store = Store(config.database, min_free_bytes=config.min_free_bytes, readonly=read_only)
         try:
@@ -178,11 +194,23 @@ def _forecast_research(args, config):
                     limit=args.limit,
                     after=args.before,
                     namespace=protocol.observer_namespace,
+                    dataset=args.dataset,
                 )
                 result["status"] = "complete"
                 return result
-            result = tick(store, protocol, budget=args.budget)
-            return result
+            if args.forecast_command == "reconstruct":
+                from .forecast.reconstruct import parse_date, reconstruct
+
+                return reconstruct(
+                    store,
+                    protocol,
+                    dataset=args.dataset,
+                    start_date=parse_date(args.start),
+                    through_date=parse_date(args.through),
+                    source_ceiling=args.source_ceiling,
+                    budget=args.budget,
+                )
+            return tick(store, protocol, budget=args.budget)
         finally:
             store.close()
 

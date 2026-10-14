@@ -93,14 +93,17 @@ class InputsOrAbstention:
         return self.book is not None and not self.reasons
 
 
-def select_inputs(db, *, ticker, game_id, cutoff, namespace, mode):
+def select_inputs(db, *, ticker, game_id, cutoff, namespace, mode, scheduled_start=None):
     """Return the chosen book input for the midpoint baseline, or book-stage reasons.
 
     Reads only; writes nothing. The anchor is the latest completed book attempt for
     the ticker received at or before C (ordered by retrieval time then seq). It must
     also be witnessed by C. If that anchor is unusable, abstain; never fall back to an
-    older valid book or a post-C snapshot. Arithmetic-level book reasons (side missing,
-    crossed, flagged) are left to baselines.midpoint on the returned raw payload.
+    older valid book or a post-C snapshot. With `scheduled_start`, the book's own
+    eligibility proof must carry that start: a book collected under a different
+    schedule version is `book_schedule_mismatch` (specification §2 rule 5, §4).
+    Arithmetic-level book reasons (side missing, crossed, flagged) are left to
+    baselines.midpoint on the returned raw payload.
     """
     from . import evidence  # lazy: keep this module import-pure (no sqlite3 at import)
 
@@ -143,6 +146,17 @@ def select_inputs(db, *, ticker, game_id, cutoff, namespace, mode):
     parsed = json.loads(observation[0])
     if game_id is not None and parsed.get("game_id") != game_id:
         return InputsOrAbstention(None, ("book_schedule_mismatch",))
+    if scheduled_start is not None:
+        proof = db.execute(
+            "SELECT json_extract(data_json,'$.scheduled_start') FROM eligibility WHERE id=?",
+            (parsed.get("eligibility_id"),),
+        ).fetchone()
+        if (
+            proof is None
+            or proof[0] is None
+            or utc(datetime.fromisoformat(proof[0])) != utc(datetime.fromisoformat(scheduled_start))
+        ):
+            return InputsOrAbstention(None, ("book_schedule_mismatch",))
     blob = db.execute(
         "SELECT b.body FROM fetches f JOIN blobs b ON b.sha256=f.body_sha256 WHERE f.id=?",
         (fetch_id,),
