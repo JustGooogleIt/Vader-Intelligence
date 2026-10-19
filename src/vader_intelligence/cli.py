@@ -39,8 +39,9 @@ def parser():
     migrate.add_argument(
         "--record-contract",
         type=int,
-        choices=[2],
-        help="explicit migration 004: enable record contract 2 on a schema-3 archive",
+        choices=[2, 3],
+        help="3: explicit migration 005 (and 004 from schema 3) opening record contract 3;"
+        " 2 is frozen (no-op at schema 4/5, refused on schema 3)",
     )
     tick = forecast_commands.add_parser("tick", help="finite forecast tick; no daemon")
     tick.add_argument("--research-config", help="research protocol TOML ([research] only)")
@@ -75,6 +76,13 @@ def parser():
     evaluate.add_argument("--through", help="last scheduled date (YYYY-MM-DD)")
     evaluate.add_argument("--collector-config-hash", help="evaluate this collector cohort only")
     evaluate.add_argument("--budget", type=float, default=30.0)
+    evaluate.add_argument(
+        "--record-contract",
+        type=int,
+        choices=[2, 3],
+        default=3,
+        help="decisions of this record contract only (2 = legacy cohort; default 3)",
+    )
     evaluation = commands.add_parser("evaluation", help="read-only evaluation inspection")
     evaluation_commands = evaluation.add_subparsers(dest="evaluation_command", required=True)
     einspect = evaluation_commands.add_parser("inspect")
@@ -131,15 +139,20 @@ def execute(args):
             probe = sqlite3.connect(Path(config.database).resolve().as_uri() + "?mode=ro", uri=True)
             try:
                 version = probe.execute("PRAGMA user_version").fetchone()[0]
-                if version not in (2, 3, 4):
+                if version not in (2, 3, 4, 5):
                     raise ValueError(
                         "forecast migrate requires schema 2; run settlement migrate first"
                     )
-                if args.record_contract == 2 and version < 3:
+                if args.record_contract is not None and version < 3:
                     # Command prerequisite checked before Store opens (and switches the
                     # journal to WAL): a rejected migration leaves the file untouched.
                     raise ValueError(
-                        "record contract 2 requires schema 3; run forecast migrate first"
+                        f"record contract {args.record_contract} requires schema 3;"
+                        " run forecast migrate first"
+                    )
+                if args.record_contract == 2 and version == 3:
+                    raise ValueError(
+                        "record contract 2 is frozen (decision D-001); use --record-contract 3"
                     )
             finally:
                 probe.close()
@@ -149,7 +162,7 @@ def execute(args):
                 return {
                     "status": "complete",
                     "schema_version": store.schema_version(),
-                    "record_contract": 2 if store.schema_version() >= 4 else 1,
+                    "record_contract": {5: 3, 4: 2}.get(store.schema_version(), 1),
                     "migrated": changed,
                     "database": str(store.path),
                 }
@@ -324,6 +337,7 @@ def _evaluation(args, config):
                 through_date=None if args.through is None else parse_date(args.through),
                 collector_config_hash=args.collector_config_hash,
                 budget=args.budget,
+                record_contract=args.record_contract,
             )
         finally:
             store.close()

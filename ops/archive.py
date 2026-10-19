@@ -62,8 +62,8 @@ def connect(path):
 
 def schema(db):
     version = db.execute("PRAGMA user_version").fetchone()[0]
-    if version not in (1, 2, 3, 4):
-        raise ValueError("expected supported collector schema version 1, 2, 3 or 4")
+    if version not in (1, 2, 3, 4, 5):
+        raise ValueError("expected supported collector schema version 1, 2, 3, 4 or 5")
     tables = COLUMNS | (SETTLEMENT_COLUMNS if version >= 2 else {})
     if version >= 3:
         from vader_intelligence.forecast.schema import COLUMNS as FORECAST_COLUMNS

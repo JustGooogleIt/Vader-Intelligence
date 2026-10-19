@@ -355,7 +355,7 @@ def test_reconstruct_through_the_cli(tmp_path):
     assert cli("db-init")["schema_version"] == 1
     cli("settlement", "migrate")
     cli("forecast", "migrate")
-    cli("forecast", "migrate", "--record-contract", "2")
+    cli("forecast", "migrate", "--record-contract", "3")
     store = Store(path, min_free_bytes=1)
     try:
         collect(store, config, origin=at(18, 3))
@@ -381,7 +381,8 @@ def test_reconstruct_through_the_cli(tmp_path):
     replayed = cli("replay")
     assert replayed["forecast_storage"]["record_contracts"]["forecast_decisions"] == {
         "1": 0,
-        "2": 2,
+        "2": 0,
+        "3": 2,
     }
 
 

@@ -85,20 +85,24 @@ def main():
         assert_schema(database, 3)
         assert invoke(core + ["forecast", "migrate"])["migrated"] is False
         assert_schema(database, 3)
-        # The explicit --record-contract 2 is refused on schema 2 (preflight, no mutation)
-        # and performs migration 004 on schema 3; schema 4 is asserted from the archive.
-        rc2 = invoke(core + ["forecast", "migrate", "--record-contract", "2"])
-        assert rc2["schema_version"] == 4 and rc2["record_contract"] == 2 and rc2["migrated"]
-        assert_schema(database, 4)
-        assert invoke(core + ["forecast", "migrate", "--record-contract", "2"])["migrated"] is False
-        assert_schema(database, 4)
+        # Contract 2 is frozen (decision D-001): --record-contract 2 is refused on schema 3.
+        # --record-contract 3 performs migrations 004 and 005 in one transaction; schema 5
+        # is asserted from the archive.
+        refused2 = invoke(core + ["forecast", "migrate", "--record-contract", "2"], 1)["error"]
+        assert "frozen" in refused2, refused2
+        assert_schema(database, 3)
+        rc3 = invoke(core + ["forecast", "migrate", "--record-contract", "3"])
+        assert rc3["schema_version"] == 5 and rc3["record_contract"] == 3 and rc3["migrated"]
+        assert_schema(database, 5)
+        assert invoke(core + ["forecast", "migrate", "--record-contract", "3"])["migrated"] is False
+        assert_schema(database, 5)
         # A tick on an archive with no forward evidence is a recorded inconclusive (exit 3),
-        # never a fabricated error; its witness receipts are contract 2 and synthetic
+        # never a fabricated error; its witness receipts are contract 3 and synthetic
         # (the fixture run is synthetic lineage), with no forward receipt.
         tick = invoke(core + ["forecast", "tick", "--budget", "5"], expected=3)
         assert tick["status"] == "inconclusive" and tick["mode"] == "forward_shadow"
         facts = archive_facts(database)
-        assert facts["contracts"]["forecast_receipts"] == {2: tick["witness"]["pre"]["receipts"]}
+        assert facts["contracts"]["forecast_receipts"] == {3: tick["witness"]["pre"]["receipts"]}
         with sqlite3.connect(database) as db:
             modes = {
                 r[0]
@@ -166,41 +170,47 @@ def main():
         )
         assert research["status"] == "inconclusive"
         assert invoke(core + ["research", "inspect"])["count"] == 1
-        assert invoke(core + ["db-init"])["schema_version"] == 4
-        assert invoke(core + ["settlement", "migrate"])["schema_version"] == 4
+        assert invoke(core + ["db-init"])["schema_version"] == 5
+        assert invoke(core + ["settlement", "migrate"])["schema_version"] == 5
         replayed = invoke(core + ["replay"])
         assert replayed["forecast_storage"]["replay"] == "preserved_not_reconstructed"
         assert (
-            replayed["forecast_storage"]["record_contracts"]["forecast_receipts"]["2"]
-            == facts["contracts"]["forecast_receipts"][2]
+            replayed["forecast_storage"]["record_contracts"]["forecast_receipts"]["3"]
+            == facts["contracts"]["forecast_receipts"][3]
         )
         assert replayed["forecast_storage"]["record_contracts"]["evaluation_runs"] == {
             "1": 1,
             "2": 0,
+            "3": 0,
         }
-        assert_schema(database, 4)
+        assert_schema(database, 5)
         ops = [str(repo / "ops/manage.py")]
         backup, restored = root / "backup.sqlite3", root / "restored.sqlite3"
         invoke(ops + ["backup", "--source", str(database), "--destination", str(backup)])
         invoke(ops + ["restore", "--source", str(backup), "--destination", str(restored)])
         report = invoke(ops + ["inspect", "--database", str(restored)])
-        assert report["schema_version"] == 4
+        assert report["schema_version"] == 5
         assert "forecast_publications" in report["counts"]
         assert report["research"]["record_contracts"]["forecast_receipts"] == {
             "1": 0,
-            "2": facts["contracts"]["forecast_receipts"][2],
+            "2": 0,
+            "3": facts["contracts"]["forecast_receipts"][3],
         }
-        assert report["research"]["record_contracts"]["evaluation_runs"] == {"1": 1, "2": 0}
-        assert_schema(restored, 4)
+        assert report["research"]["record_contracts"]["evaluation_runs"] == {
+            "1": 1,
+            "2": 0,
+            "3": 0,
+        }
+        assert_schema(restored, 5)
         assert archive_facts(restored)["contracts"] == facts["contracts"]
         future_core = ["-m", "vader_intelligence.cli", "--db", str(restored)]
         with sqlite3.connect(restored) as db:
-            db.execute("PRAGMA user_version=5")  # 1-4 are known; 5 is unknown
+            db.execute("PRAGMA user_version=6")  # 1-5 are known; 6 is unknown
         assert "unsupported" in invoke(future_core + ["db-init"], 1)["error"]
         assert "supported" in invoke(ops + ["inspect", "--database", str(restored)], 1)["error"]
         # An invalid record contract in an archive is refused before any mutation.
         db = sqlite3.connect(restored, isolation_level=None)  # autocommit: no PRAGMA rollback
-        db.execute("PRAGMA user_version=4")
+        db.execute("PRAGMA user_version=5")
         db.execute("DROP TRIGGER forecast_receipts_no_update")
         raw = json.loads(
             db.execute("SELECT payload_json FROM forecast_receipts WHERE id=1").fetchone()[0]
@@ -214,21 +224,37 @@ def main():
         )
         assert db.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
         db.close()
-        assert_schema(restored, 4)
+        assert_schema(restored, 5)
         before = restored.read_bytes()
         refused = invoke(future_core + ["db-init"], 1)["error"]
         assert "unknown record contract version 99" in refused, refused
         assert restored.read_bytes() == before
         with sqlite3.connect(restored) as db:
             assert db.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+        # A schema-4 archive written by the draft code (PR #11 head) is opened, migrated
+        # and backed up by the installed wheel; its legacy rows stay legacy (D-001).
+        legacy = root / "legacy-draft.sqlite3"
+        with sqlite3.connect(legacy) as db:
+            db.executescript(
+                (repo / "tests/fixtures/legacy_archives/draft-5811991-schema4.sql").read_text()
+            )
+        assert_schema(legacy, 4)
+        legacy_core = ["-m", "vader_intelligence.cli", "--db", str(legacy)]
+        assert invoke(legacy_core + ["forecast", "migrate", "--record-contract", "3"])["migrated"]
+        assert_schema(legacy, 5)
+        legacy_replay = invoke(legacy_core + ["replay"])["forecast_storage"]
+        assert legacy_replay["legacy_rows"] == 25, legacy_replay
+        assert legacy_replay["record_contracts"]["forecast_receipts"] == {"1": 0, "2": 22, "3": 0}
+        invoke(ops + ["backup", "--source", str(legacy), "--destination", str(root / "lb.sqlite3")])
     print(
         json.dumps(
             {
                 "status": "complete",
                 "synthetic": True,
                 "installed_module": location,
-                "schema_versions_exercised": [1, 2, 3, 4],
-                "record_contracts_exercised": [1, 2],
+                "schema_versions_exercised": [1, 2, 3, 4, 5],
+                "record_contracts_exercised": [1, 2, 3],
+                "legacy_archives_exercised": ["draft-5811991-schema4"],
                 "checks": evidence,
             },
             indent=2,

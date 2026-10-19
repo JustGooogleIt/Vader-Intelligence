@@ -89,7 +89,7 @@ def test_legacy_records_never_block_unrelated_valid_work(store, config, monkeypa
     settlement_migrate(store)
     forecast_migrate(store.db)  # schema 3
     legacy_pass = legacy_rows(store)
-    forecast_migrate(store.db, record_contract=2)  # schema 4, rows preserved
+    forecast_migrate(store.db, record_contract=3)  # schema 4, rows preserved
     collect(store, config, origin=at(18, 3))
     warm = tick_at(store, PROTO, at(18, 3, 30))
     assert warm["witness"]["pre"]["skipped_legacy_subjects"] == 1 and warm["errors"] == []
@@ -142,8 +142,8 @@ def test_backup_and_restore_preserve_interpretation_and_provenance(
     store.close()
     source = Path(config.database)
     backup, restored = tmp_path / "backup.sqlite3", tmp_path / "restored.sqlite3"
-    assert ops_archive.backup(source, backup)["schema_version"] == 4
-    assert ops_archive.backup(backup, restored)["schema_version"] == 4
+    assert ops_archive.backup(source, backup)["schema_version"] == 5
+    assert ops_archive.backup(backup, restored)["schema_version"] == 5
     reopened = Store(restored, min_free_bytes=1, readonly=True)
     try:
         assert (
@@ -158,7 +158,11 @@ def test_backup_and_restore_preserve_interpretation_and_provenance(
         )
         assert reopened.verify_integrity() == []
         inspected = ops_archive.inspect(restored)
-        assert inspected["research"]["record_contracts"]["evaluation_runs"] == {"1": 1, "2": 0}
+        assert inspected["research"]["record_contracts"]["evaluation_runs"] == {
+            "1": 1,
+            "2": 0,
+            "3": 0,
+        }
     finally:
         reopened.close()
     # A fresh Store on the restored copy re-evaluates to the existing evaluation: same key.

@@ -229,7 +229,7 @@ def test_research_run_and_reports_through_the_cli(tmp_path, monkeypatch):
     cli("db-init")
     cli("settlement", "migrate")
     cli("forecast", "migrate")
-    cli("forecast", "migrate", "--record-contract", "2")
+    cli("forecast", "migrate", "--record-contract", "3")
     store = Store(path, min_free_bytes=1)
     try:
         to_schema4(store) if False else None

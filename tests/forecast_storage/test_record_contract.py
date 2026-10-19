@@ -1,4 +1,7 @@
-"""Record contract 2 and schema 4 (F3.3 plan §9.6, §9.7): cases I4, I5, J2–J4, K, N1–N12.
+"""Versioned record contracts (F3.3 plan §9.6, §9.7; decision D-001): cases I4, I5, J2–J4,
+K, N1–N12, exercised on the current contract 3 (schema 5), which carries the rules the
+draft amended into contract 2. Contract 2 itself is frozen; its legacy archives written
+by older code are tested in test_contract_versioning.py.
 
 Every archive here is synthetic and disposable. Contract-1 rows written by the shipped
 fixtures model records that an operator may already have persisted through the journal
@@ -24,7 +27,7 @@ from .fixtures import AT, HASH, connect, envelopes, legacy, populated, snapshot
 
 LIVE_RUN = "live-collect-run"
 LIVE_CONFIG = {"max_pages": 3}
-# Contract-2 receipts are admissible only from operational witness runs that name the
+# Versioned receipts are admissible only from operational witness runs that name the
 # receipt's observer namespace and session (plan §4.1). Two such runs: a synthetic one
 # (configuration {} so digest({}) stays the fixture's config hash) and a live one.
 WITNESS_RUN = "synthetic-witness-run"
@@ -95,18 +98,18 @@ def archive3(tmp_path):
         db.close()
 
 
-def migrate4(db):
-    assert schema.migrate(db, record_contract=2) is True
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+def migrate5(db):
+    assert schema.migrate(db, record_contract=3) is True
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 5
 
 
 def fetch_receipt(db, p, fetch_id, **changes):
-    """A contract-2 receipt for a fetch in the synthetic observer namespace."""
+    """A contract-3 receipt for a fetch in the synthetic observer namespace."""
     ref = reference(db, "fetches", {"id": fetch_id})
     return (
         p["forecast_receipts"]
         | dict(
-            contract_version=2,
+            contract_version=3,
             run_id=WITNESS_RUN,
             subject_kind="fetch",
             fetch_id=fetch_id,
@@ -126,7 +129,7 @@ def pass_receipt(db, p, pass_id, **changes):
     return (
         p["forecast_receipts"]
         | dict(
-            contract_version=2,
+            contract_version=3,
             run_id=WITNESS_RUN,
             subject_kind="discovery_pass",
             discovery_id=pass_id,
@@ -149,7 +152,7 @@ def pinned_decision(db, p, pass_id, **changes):
         "collector_config_hash": json.loads(row["payload_json"])["config_hash"],
     }
     decision = copy.deepcopy(p["forecast_decisions"]) | dict(
-        contract_version=2, dataset="contract-2-study", discovery_id=pass_id
+        contract_version=3, dataset="contract-3-study", discovery_id=pass_id
     )
     decision["manifest"] = {"discovery": pin}
     decision.update(changes)
@@ -193,46 +196,70 @@ def live_binding(db, p, config_hash):
 # ------------------------------------------------------------------- N11, N6, N7
 
 
-def test_explicit_migration_004_touches_no_row(archive3):
+def test_explicit_migrations_004_and_005_touch_no_row(archive3):
     db, _ = archive3
     before = snapshot(db)
     assert schema.migrate(db) is False  # plain migrate at 3 is a no-op
+    with pytest.raises(ValueError, match="frozen"):
+        schema.migrate(db, record_contract=2)  # contract 2 can no longer be opened
     assert snapshot(db) == before
-    migrate4(db)
+    migrate5(db)
     after = snapshot(db)
     for table, rows in before.items():
         if table == "schema_migrations":
-            assert after[table][:3] == rows and [r[0] for r in after[table]] == [1, 2, 3, 4]
+            assert after[table][:3] == rows and [r[0] for r in after[table]] == [1, 2, 3, 4, 5]
         else:
             assert after[table] == rows  # no row touched, no table changed
     ddl_before = {r[0] for r in db.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL")}
-    assert schema.migrate(db, record_contract=2) is False  # no-op at 4
-    assert schema.migrate(db) is False  # plain migrate at 4 is a no-op, never a downgrade
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+    for record_contract in (3, 2, None):  # no-op at 5, never a downgrade
+        assert schema.migrate(db, record_contract=record_contract) is False
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 5
     assert {r[0] for r in db.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL")} == (
         ddl_before
     )
-    assert schema.executable(schema.migration_sql("004_record_contract_2.sql")) == ""
+    for name in ("004_record_contract_2.sql", "005_record_contract_3.sql"):
+        assert schema.executable(schema.migration_sql(name)) == ""
+
+
+def test_migration_005_from_schema_four_touches_no_row(archive3):
+    db, _ = archive3
+    # A schema-4 archive as the draft code left it (ledger row 4 only).
+    db.execute("INSERT INTO schema_migrations VALUES (4, ?)", (AT,))
+    db.execute("PRAGMA user_version=4")
+    before = snapshot(db)
+    assert schema.migrate(db, record_contract=2) is False  # frozen: no-op at 4
+    assert schema.migrate(db) is False
+    assert snapshot(db) == before
+    migrate5(db)
+    after = snapshot(db)
+    assert [r[0] for r in after["schema_migrations"]] == [1, 2, 3, 4, 5]
+    assert all(after[t] == rows for t, rows in before.items() if t != "schema_migrations")
 
 
 def test_record_contract_flag_requires_schema_three(tmp_path):
     db = legacy(tmp_path / "two.sqlite3")
     before = snapshot(db)
-    with pytest.raises(ValueError, match="requires schema 3"):
-        schema.migrate(db, record_contract=2)
+    for record_contract in (2, 3):
+        with pytest.raises(ValueError, match="requires schema 3"):
+            schema.migrate(db, record_contract=record_contract)
     assert snapshot(db) == before and db.execute("PRAGMA user_version").fetchone()[0] == 2
     with pytest.raises(ValueError, match="unsupported record contract"):
-        schema.migrate(db, record_contract=3)
+        schema.migrate(db, record_contract=4)
     db.close()
 
 
-def test_contract_two_rejected_on_schema_three_and_contract_one_closed_on_four(archive3):
+def test_contract_three_rejected_on_schema_three_and_contract_one_closed_on_five(archive3):
     db, p = archive3
     before = snapshot(db)
-    with pytest.raises(ValueError, match="record-contract 2"):
+    with pytest.raises(ValueError, match="record-contract 3"):
         journal.append(db, "forecast_receipts", fetch_receipt(db, p, "fetch-2"))
     assert snapshot(db) == before
-    migrate4(db)
+    migrate5(db)
+    # Contract 2 is frozen: no new receipt or decision, whatever the schema.
+    with pytest.raises(ValueError, match="frozen"):
+        journal.append(db, "forecast_receipts", fetch_receipt(db, p, "fetch-2", contract_version=2))
+    with pytest.raises(ValueError, match="frozen"):
+        journal.append(db, "forecast_decisions", pinned_decision(db, p, 1, contract_version=2))
     new_contract_one = p["forecast_receipts"] | {"observer_namespace": "another-api-caller"}
     with pytest.raises(ValueError, match="closed"):
         journal.append(db, "forecast_receipts", new_contract_one)
@@ -251,7 +278,7 @@ def test_exact_retry_of_contract_one_returns_original_on_both_schemas(archive3):
     assert journal.append(db, "forecast_receipts", p["legacy_fetch_receipt"]) == 2
     assert journal.append(db, "forecast_decisions", p["forecast_decisions"]) == 1
     assert snapshot(db) == before
-    migrate4(db)
+    migrate5(db)
     after = snapshot(db)
     assert journal.append(db, "forecast_receipts", p["legacy_fetch_receipt"]) == 2
     assert journal.append(db, "forecast_decisions", p["forecast_decisions"]) == 1
@@ -274,11 +301,11 @@ def test_legacy_fetch_receipt_stays_valid_under_contract_one_and_counted(archive
         db.execute("SELECT payload_json FROM forecast_receipts WHERE id=2").fetchone()[0]
     )
     assert "contract_version" not in payload  # contract 1 by absence
-    migrate4(db)
+    migrate5(db)
     assert db.execute("SELECT * FROM forecast_receipts WHERE id=2").fetchone() == row
     result = journal.integrity(db)
     assert result["integrity"] == "verified"
-    assert result["record_contracts"]["forecast_receipts"] == {"1": 2, "2": 0}
+    assert result["record_contracts"]["forecast_receipts"] == {"1": 2, "2": 0, "3": 0}
     # The legacy receipt's digest is the raw body hash: valid under contract 1 only.
     assert (
         payload["subject_digest"]
@@ -288,14 +315,15 @@ def test_legacy_fetch_receipt_stays_valid_under_contract_one_and_counted(archive
 
 def test_mixed_archive_counts_each_row_under_its_own_contract(archive3):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     journal.append(db, "forecast_receipts", fetch_receipt(db, p, "fetch-2"))
     journal.append(db, "forecast_receipts", pass_receipt(db, p, 1))
     journal.append(db, "forecast_decisions", pinned_decision(db, p, 1))
     result = journal.integrity(db)
-    assert result["record_contracts"]["forecast_receipts"] == {"1": 2, "2": 2}
-    assert result["record_contracts"]["forecast_decisions"] == {"1": 1, "2": 1}
-    assert result["record_contracts"]["discovery_passes"] == {"1": 1, "2": 0}
+    assert result["record_contracts"]["forecast_receipts"] == {"1": 2, "2": 0, "3": 2}
+    assert result["record_contracts"]["forecast_decisions"] == {"1": 1, "2": 0, "3": 1}
+    assert result["record_contracts"]["discovery_passes"] == {"1": 1, "2": 0, "3": 0}
+    assert result["legacy_rows"] == 0 and result["admissibility"] == "current"
     # Nothing was converted: the contract-1 rows are byte-identical to their fixtures.
     assert (
         json.loads(
@@ -308,19 +336,19 @@ def test_mixed_archive_counts_each_row_under_its_own_contract(archive3):
 @pytest.mark.parametrize(
     "table,value",
     [
-        ("forecast_receipts", 3),
-        ("forecast_receipts", "2"),
+        ("forecast_receipts", 4),
+        ("forecast_receipts", "3"),
         ("forecast_receipts", 1),
         ("forecast_receipts", True),
         ("forecast_decisions", 1),
-        ("discovery_passes", 2),
+        ("discovery_passes", 3),
         ("forecast_bindings", 2),
-        ("evaluation_runs", 2),
+        ("evaluation_runs", 3),
     ],
 )
 def test_unknown_contract_versions_are_rejected_on_insert(archive3, table, value):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     before = snapshot(db)
     candidate = copy.deepcopy(p[table]) | {"contract_version": value}
     with pytest.raises(ValueError, match="unknown record contract|unknown storage fields"):
@@ -333,8 +361,8 @@ def test_unknown_contract_versions_are_rejected_on_insert(archive3, table, value
 
 def test_unknown_contract_version_in_an_archive_fails_closed_without_mutation(archive3, tmp_path):
     db, p = archive3
-    migrate4(db)
-    bad = p["forecast_receipts"] | {"contract_version": 3, "session_id": "unknown-version"}
+    migrate5(db)
+    bad = p["forecast_receipts"] | {"contract_version": 4, "session_id": "unknown-version"}
     row = {k: bad[k] for k in schema.PROJECTIONS["forecast_receipts"]}
     row.update(
         digest=digest(bad),
@@ -359,48 +387,51 @@ def test_unknown_contract_version_in_an_archive_fails_closed_without_mutation(ar
     assert snapshot(db) == before
 
 
-def test_contract_two_row_in_schema_three_archive_is_an_integrity_failure(archive3):
+@pytest.mark.parametrize("lowered_to", [3, 4])
+def test_contract_three_row_in_a_lower_schema_archive_is_an_integrity_failure(archive3, lowered_to):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     journal.append(db, "forecast_receipts", fetch_receipt(db, p, "fetch-2"))
     # Model an archive whose version was lowered by hand: ledger has no triggers.
-    db.execute("DELETE FROM schema_migrations WHERE version=4")
-    db.execute("PRAGMA user_version=3")
+    db.execute("DELETE FROM schema_migrations WHERE version>?", (lowered_to,))
+    db.execute(f"PRAGMA user_version={lowered_to}")
     before = snapshot(db)
-    with pytest.raises(ValueError, match="contract-2 record in a schema-3 archive"):
+    message = f"contract-3 record in a schema-{lowered_to} archive"
+    with pytest.raises(ValueError, match=message):
         journal.integrity(db)
     # Neither a plain nor an explicit migration legitimizes the row by advancing the
-    # version: both refuse before any change (review finding 3).
-    for record_contract in (None, 2):
-        with pytest.raises(ValueError, match="contract-2 record in a schema-3 archive"):
+    # version: every one refuses before any change (review finding 3).
+    for record_contract in (None, 2, 3):
+        with pytest.raises(ValueError, match=message):
             schema.migrate(db, record_contract=record_contract)
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert db.execute("PRAGMA user_version").fetchone()[0] == lowered_to
     assert snapshot(db) == before
 
 
 # ------------------------------------------------------------------------ N8, N10
 
 
-def test_backup_restore_and_replay_preserve_a_mixed_schema_four_archive(archive3, tmp_path):
+def test_backup_restore_and_replay_preserve_a_mixed_schema_five_archive(archive3, tmp_path):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     journal.append(db, "forecast_receipts", fetch_receipt(db, p, "fetch-2"))
     journal.append(db, "forecast_decisions", pinned_decision(db, p, 1))
     before = snapshot(db)
     integrity_before = journal.integrity(db)
     report = archive.backup(tmp_path / "contract.sqlite3", tmp_path / "backup.sqlite3")
-    assert report["schema_version"] == 4
+    assert report["schema_version"] == 5
     assert report["research"]["record_contracts"] == integrity_before["record_contracts"]
     archive.backup(tmp_path / "backup.sqlite3", tmp_path / "restored.sqlite3")
     restored = connect(tmp_path / "restored.sqlite3")
     try:
         assert snapshot(restored) == before
-        assert restored.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert restored.execute("PRAGMA user_version").fetchone()[0] == 5
         assert [r[0] for r in restored.execute("SELECT version FROM schema_migrations")] == [
             1,
             2,
             3,
             4,
+            5,
         ]
         assert journal.integrity(restored) == integrity_before
     finally:
@@ -410,23 +441,30 @@ def test_backup_restore_and_replay_preserve_a_mixed_schema_four_archive(archive3
 # ------------------------------------------------------------------------------ N9
 
 
-def test_binary_at_main_refuses_a_schema_four_archive(archive3, tmp_path):
-    """Extract src/ at main (ebb58df) with git archive and run its CLI against schema 4."""
+@pytest.mark.parametrize(
+    "revision",
+    [
+        "ebb58df9b89922db4828fda7d23891dd917a4b90",  # main: schemas 1-3
+        "82665cd02a9db9694f957eca32537cca5cf71c31",  # PR #16 head: schemas 1-4
+    ],
+)
+def test_older_binaries_refuse_a_schema_five_archive(archive3, tmp_path, revision):
+    """Extract src/ at an older revision with git archive and run its CLI on schema 5."""
     db, _ = archive3
-    migrate4(db)
+    migrate5(db)
     path = Path(db.execute("PRAGMA database_list").fetchone()[2])
     repo = Path(__file__).resolve().parents[2]
     old = tmp_path / "old-binary"
     old.mkdir()
     try:
         bundle = subprocess.run(
-            ["git", "-C", str(repo), "archive", "ebb58df9b89922db4828fda7d23891dd917a4b90", "src"],
+            ["git", "-C", str(repo), "archive", revision, "src"],
             capture_output=True,
             timeout=60,
             check=True,
         ).stdout
     except (OSError, subprocess.CalledProcessError) as exc:
-        pytest.skip(f"main at ebb58df unavailable here: {exc}")
+        pytest.skip(f"revision {revision[:7]} unavailable here: {exc}")
     with tarfile.open(fileobj=__import__("io").BytesIO(bundle)) as tar:
         tar.extractall(old, filter="data")
     db.close()
@@ -447,17 +485,17 @@ def test_binary_at_main_refuses_a_schema_four_archive(archive3, tmp_path):
         assert "unsupported" in error or "schema" in error, (command, error)
     assert path.read_bytes() == before
     with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as check:
-        assert check.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert check.execute("PRAGMA user_version").fetchone()[0] == 5
 
 
 # -------------------------------------------------------------------------- I4, I5
 
 
-def test_contract_two_fetch_receipt_rejects_body_hash_digest_and_fingerprints_rows(archive3):
+def test_contract_three_fetch_receipt_rejects_body_hash_digest_and_fingerprints_rows(archive3):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     body_hash = db.execute("SELECT body_sha256 FROM fetches WHERE id='fetch-1'").fetchone()[0]
-    with pytest.raises(ValueError, match="contract-2 receipt subject digest"):
+    with pytest.raises(ValueError, match="contract-3 receipt subject digest"):
         journal.append(
             db, "forecast_receipts", fetch_receipt(db, p, "fetch-1", subject_digest=body_hash)
         )
@@ -476,7 +514,7 @@ def test_contract_two_fetch_receipt_rejects_body_hash_digest_and_fingerprints_ro
         (first, second),
     ).fetchall()
     assert digests[0] != digests[1]
-    # The contract-1 receipt for fetch-1 and the contract-2 receipt coexist: different keys.
+    # The contract-1 receipt for fetch-1 and the contract-3 receipt coexist: different keys.
     assert (
         db.execute("SELECT COUNT(*) FROM forecast_receipts WHERE fetch_id='fetch-1'").fetchone()[0]
         == 2
@@ -484,9 +522,9 @@ def test_contract_two_fetch_receipt_rejects_body_hash_digest_and_fingerprints_ro
     assert journal.append(db, "forecast_receipts", fetch_receipt(db, p, "fetch-1")) == first
 
 
-def test_contract_two_receipt_for_a_failed_attempt_without_body(archive3):
+def test_contract_three_receipt_for_a_failed_attempt_without_body(archive3):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     db.execute(
         "INSERT INTO fetches(id,request_id,attempt,started_at,retrieved_at,state,status,error) "
         "VALUES ('fetch-timeout','request-1',2,?,?,'error',NULL,'ReadTimeout')",
@@ -507,9 +545,9 @@ def test_contract_two_receipt_for_a_failed_attempt_without_body(archive3):
 # -------------------------------------------------------------------------- J2, J3
 
 
-def test_contract_two_decision_requires_the_exact_discovery_pin(archive3):
+def test_contract_three_decision_requires_the_exact_discovery_pin(archive3):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     good = pinned_decision(db, p, 1)
     for change in (
         {"manifest": {}},
@@ -546,9 +584,9 @@ def test_contract_two_decision_requires_the_exact_discovery_pin(archive3):
     assert journal.append(db, "forecast_decisions", unpinned) == 3
 
 
-def test_research_hash_rules_are_retained_under_contract_two(archive3):
+def test_research_hash_rules_are_retained_under_contract_three(archive3):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     decision = pinned_decision(db, p, 1)
     with pytest.raises(ValueError, match="decision parent configuration"):
         journal.append(db, "forecast_decisions", decision | {"config_hash": "c" * 64})
@@ -560,19 +598,19 @@ def test_research_hash_rules_are_retained_under_contract_two(archive3):
         journal.append(db, "forecast_publications", publication)
 
 
-def test_contract_two_decision_cannot_cite_or_supersede_contract_one(archive3):
+def test_contract_three_decision_cannot_cite_or_supersede_contract_one(archive3):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     decision = pinned_decision(db, p, 1)
     decision["references"] = decision["references"] + [
         reference(db, "forecast_receipts", {"id": 1})
     ]
-    with pytest.raises(ValueError, match="contract-1 receipt"):
+    with pytest.raises(ValueError, match="operational receipts only"):
         journal.append(db, "forecast_decisions", decision)
     correction = pinned_decision(db, p, 1, dataset="correction", supersedes_id=1, mode="synthetic")
-    with pytest.raises(ValueError, match="supersede a contract-1"):
+    with pytest.raises(ValueError, match="supersede only a contract-3"):
         journal.append(db, "forecast_decisions", correction)
-    # N3: the contract-1 decision holds the scoring unit; same unit under contract 2 conflicts.
+    # N3: the contract-1 decision holds the scoring unit; same unit under contract 3 conflicts.
     same_unit = pinned_decision(db, p, 1, dataset=p["forecast_decisions"]["dataset"])
     with pytest.raises(journal.IdempotencyConflict):
         journal.append(db, "forecast_decisions", same_unit)
@@ -582,9 +620,9 @@ def test_contract_two_decision_cannot_cite_or_supersede_contract_one(archive3):
 # ------------------------------------------------------------------------- K1–K3
 
 
-def test_mode_table_for_contract_two_receipts(archive3):
+def test_mode_table_for_contract_three_receipts(archive3):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     with pytest.raises(ValueError, match="M4"):
         contracts.validate(
             "forecast_receipts", fetch_receipt(db, p, "fetch-2", mode="historical_reconstruction")
@@ -626,11 +664,11 @@ def test_mode_table_for_contract_two_receipts(archive3):
         ("historical_reconstruction", "forward_shadow", "synthetic", False),  # M10 H→S
     ],
 )
-def test_mode_table_for_contract_two_decisions(
+def test_mode_table_for_contract_three_decisions(
     archive3, decision_mode, binding_mode, pass_mode, accepted
 ):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     research_hash = digest({"protocol": "mlb-t60-v1"})
     if pass_mode == "synthetic":
         pass_id = 1
@@ -689,7 +727,7 @@ def evaluation_for(db, p, decisions):
         item["references"] = [reference(db, "settlement_versions", {"id": 3})]
         items.append(item)
     report = copy.deepcopy(p["evaluation_runs"]) | dict(
-        dataset="contract-2-study",
+        dataset="contract-3-study",
         outcomes_as_of="2026-09-30T19:00:05+00:00",
         population_manifest=[
             {k: item[k] for k in ("opportunity_key", "decision_id", "game_id", "horizon")}
@@ -704,7 +742,7 @@ def evaluation_for(db, p, decisions):
 
 def test_evaluation_cohort_has_exactly_one_collector_configuration_hash(archive3):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     other_collector = p["discovery_passes"] | dict(
         session_id="other-collector", config_hash="d" * 64
     )
@@ -726,9 +764,9 @@ def test_evaluation_cohort_has_exactly_one_collector_configuration_hash(archive3
     assert journal.integrity(db)["integrity"] == "verified"
 
 
-def test_evaluation_cannot_mix_contract_one_and_contract_two_decisions(archive3):
+def test_evaluation_cannot_mix_contract_one_and_contract_three_decisions(archive3):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     pinned = pinned_decision(
         db, p, 1, game_id=900002, ticker="KXMLBGAME-SYNTHETIC-B", dataset="synthetic-study"
     )
@@ -736,16 +774,16 @@ def test_evaluation_cannot_mix_contract_one_and_contract_two_decisions(archive3)
     report, items = evaluation_for(db, p, [(1, p["forecast_decisions"]), (pinned_id, pinned)])
     report["dataset"] = "synthetic-study"
     before = snapshot(db)
-    with pytest.raises(ValueError, match="mixes contract-1 and contract-2"):
+    with pytest.raises(ValueError, match="mixes record contracts 1, 3"):
         journal.append_evaluation(db, report, items)
     assert snapshot(db) == before
     # The pre-existing contract-1 evaluation of the contract-1 decision stays valid.
-    assert journal.integrity(db)["record_contracts"]["evaluation_runs"] == {"1": 1, "2": 0}
+    assert journal.integrity(db)["record_contracts"]["evaluation_runs"] == {"1": 1, "2": 0, "3": 0}
 
 
 def test_research_hash_change_is_distinct_from_collector_provenance(archive3):
     db, p = archive3
-    migrate4(db)
+    migrate5(db)
     decision = pinned_decision(db, p, 1)
     decision_id = journal.append(db, "forecast_decisions", decision)
     stored = json.loads(
@@ -781,11 +819,11 @@ def test_research_hash_change_is_distinct_from_collector_provenance(archive3):
     )
 
 
-def test_envelopes_fixture_still_builds_on_schema_four(tmp_path):
-    """The shipped fixture envelopes are contract 1; on schema 4 they are closed (N6)."""
-    db = legacy(tmp_path / "fresh4.sqlite3")
+def test_envelopes_fixture_is_closed_on_schema_five(tmp_path):
+    """The shipped fixture envelopes are contract 1; on schema 5 they are closed (N6)."""
+    db = legacy(tmp_path / "fresh5.sqlite3")
     schema.migrate(db)
-    migrate4(db)
+    migrate5(db)
     with pytest.raises(ValueError, match="closed"):
         envelopes(db)
     db.close()

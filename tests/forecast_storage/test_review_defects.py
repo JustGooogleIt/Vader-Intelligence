@@ -56,7 +56,7 @@ def test_synthetic_collector_fetches_never_become_forward_evidence(tmp_path):
         store = Store(path, min_free_bytes=1)
         settlement_migrate(store)
         schema.migrate(store.db)
-        schema.migrate(store.db, record_contract=2)
+        schema.migrate(store.db, record_contract=3)
         handler, _, _ = handler_for(json.loads(FIXTURE.read_text()))
         reader = reader_for(store, cfg, handler, Clock())
         assert reader.live is False
@@ -137,7 +137,7 @@ def test_supplied_receipts_are_rejected_and_never_operational_proof(tmp_path):
         )
         return dict(
             schema_version=1,
-            contract_version=2,
+            contract_version=3,
             run_id="ordinary-journal-caller",
             created_at=iso(T0),
             code_hash=HASH,
@@ -161,6 +161,9 @@ def test_supplied_receipts_are_rejected_and_never_operational_proof(tmp_path):
     for kwargs in ({"fetch_id": fetch_id}, {"pass_id": pass_id}):
         with pytest.raises(ValueError, match="operational witness run"):
             journal.append(a.db, "forecast_receipts", supplied(**kwargs))
+        # The frozen contract 2 accepts no new row at all (decision D-001).
+        with pytest.raises(ValueError, match="frozen"):
+            journal.append(a.db, "forecast_receipts", supplied(**kwargs) | {"contract_version": 2})
     assert snapshot(a.db) == before
     assert evidence.fetch_availability(a.db, fetch_id).status == "availability_unproven"
     assert evidence.discovery_as_of(a.db, T0).universe_complete is False
@@ -178,9 +181,12 @@ def test_supplied_receipts_are_rejected_and_never_operational_proof(tmp_path):
     a.db.close()
 
 
-def test_projection_ignores_a_supplied_receipt_present_in_a_malformed_archive(tmp_path):
+@pytest.mark.parametrize("contract", [2, 3])
+def test_projection_ignores_a_supplied_receipt_present_in_a_malformed_archive(tmp_path, contract):
     """Defense in depth: a row inserted around the journal (triggers dropped) is ignored by
-    the projection and the witness, and integrity names it."""
+    the projection and the witness. Integrity names it: a contract-3 row is a failure; a
+    contract-2 row is valid only under the frozen draft rules, so it is reported as a
+    legacy row with its current-rule reason and is never proof (decision D-001)."""
     a = Archive(tmp_path / "malformed.sqlite3")
     a.run("collector")
     fetch_id, _ = a.fetch("collector", "status", T0 - timedelta(seconds=20))
@@ -190,7 +196,7 @@ def test_projection_ignores_a_supplied_receipt_present_in_a_malformed_archive(tm
     ref = reference(a.db, "fetches", {"id": fetch_id})
     payload = dict(
         schema_version=1,
-        contract_version=2,
+        contract_version=contract,
         run_id="ordinary-journal-caller",
         created_at=iso(T0),
         code_hash=HASH,
@@ -230,8 +236,15 @@ def test_projection_ignores_a_supplied_receipt_present_in_a_malformed_archive(tm
     )
     assert evidence.fetch_availability(a.db, fetch_id).status == "availability_unproven"
     assert evidence.discovery_as_of(a.db, T0).diagnostics["supplied_receipts_ignored"] == 1
-    with pytest.raises(ValueError, match="operational witness run"):
-        journal.integrity(a.db)
+    if contract == 3:
+        with pytest.raises(ValueError, match="operational witness run"):
+            journal.integrity(a.db)
+    else:
+        result = journal.integrity(a.db)
+        assert result["classification"]["forecast_receipts"]["legacy_draft"] == 1
+        assert result["admissibility"] == "legacy_rows_present"
+        (example,) = result["legacy_examples"]
+        assert example["contract"] == 2 and "operational witness run" in example["reason"]
     a.db.close()
 
 
@@ -240,11 +253,11 @@ def test_projection_ignores_a_supplied_receipt_present_in_a_malformed_archive(tm
 
 def invalid_archive(path, corruption):
     db, p = populated(path)
-    if corruption == "contract2_on_3":
+    if corruption == "contract3_on_3":
         witness_run(db, WITNESS_RUN, {}, "synthetic")
-        schema.migrate(db, record_contract=2)
+        schema.migrate(db, record_contract=3)
         journal.append(db, "forecast_receipts", fetch_receipt(db, p, "fetch-2"))
-        db.execute("DELETE FROM schema_migrations WHERE version=4")
+        db.execute("DELETE FROM schema_migrations WHERE version IN (4, 5)")
         db.execute("PRAGMA user_version=3")
     else:
         db.execute("DROP TRIGGER forecast_receipts_no_update")
@@ -264,7 +277,7 @@ def invalid_archive(path, corruption):
     db.close()
 
 
-@pytest.mark.parametrize("corruption", ["contract2_on_3", "unknown_contract"])
+@pytest.mark.parametrize("corruption", ["contract3_on_3", "unknown_contract"])
 @pytest.mark.parametrize(
     "entry", ["store", "readonly_store", "cli_init", "cli_replay", "cli_migrate"]
 )
@@ -279,7 +292,7 @@ def test_invalid_contract_rejected_without_mutation(tmp_path, corruption, entry)
         cmd = {
             "cli_init": ["db-init"],
             "cli_replay": ["replay"],
-            "cli_migrate": ["forecast", "migrate", "--record-contract", "2"],
+            "cli_migrate": ["forecast", "migrate", "--record-contract", "3"],
         }[entry]
         result = subprocess.run(
             [sys.executable, "-m", "vader_intelligence.cli", "--db", str(path), *cmd],
@@ -311,7 +324,7 @@ def test_rejected_schema2_contract_migration_leaves_delete_mode(tmp_path):
             "forecast",
             "migrate",
             "--record-contract",
-            "2",
+            "3",
         ],
         capture_output=True,
         text=True,
@@ -324,25 +337,27 @@ def test_rejected_schema2_contract_migration_leaves_delete_mode(tmp_path):
     db.close()
 
 
-def test_004_failure_rolls_back_then_retry_preserves_rows(tmp_path, monkeypatch):
+def test_005_failure_rolls_back_then_retry_preserves_rows(tmp_path, monkeypatch):
     db, p = populated(tmp_path / "migration.sqlite3")
     before = snapshot(db)
     original = schema.check_schema
 
     def fail_after_version_change(conn):
         original(conn)
-        if conn.execute("PRAGMA user_version").fetchone()[0] == 4:
+        if conn.execute("PRAGMA user_version").fetchone()[0] == 5:
             raise ValueError("injected failure after version write")
 
     monkeypatch.setattr(schema, "check_schema", fail_after_version_change)
     with pytest.raises(ValueError, match="injected failure"):
-        schema.migrate(db, record_contract=2)
+        schema.migrate(db, record_contract=3)
+    # Both markers (004 and 005) roll back together: still schema 3, ledger [1, 2, 3].
     assert snapshot(db) == before and db.execute("PRAGMA user_version").fetchone()[0] == 3
     monkeypatch.setattr(schema, "check_schema", original)
-    assert schema.migrate(db, record_contract=2)
+    assert schema.migrate(db, record_contract=3)
     after = snapshot(db)
     assert all(after[t] == rows for t, rows in before.items() if t != "schema_migrations")
-    assert schema.migrate(db, record_contract=2) is False
+    assert [r[0] for r in after["schema_migrations"]] == [1, 2, 3, 4, 5]
+    assert schema.migrate(db, record_contract=3) is False
     assert snapshot(db) == after
     db.close()
 
@@ -352,7 +367,7 @@ def test_004_failure_rolls_back_then_retry_preserves_rows(tmp_path, monkeypatch)
 
 def test_scored_unpinned_rows_cannot_bypass_cohort_check(tmp_path):
     db, p = populated(tmp_path / "scored-cohort.sqlite3")
-    schema.migrate(db, record_contract=2)
+    schema.migrate(db, record_contract=3)
     decisions, hashes = [], []
     for n in (1, 2):
         rid = f"collector-{n}"
@@ -424,7 +439,7 @@ def test_scored_unpinned_rows_cannot_bypass_cohort_check(tmp_path):
     report["report"]["items_digest"] = digest(items)
     evaluation_id = journal.append_evaluation(db, report, items)
     assert journal.check_cohort(db, items) == {
-        "record_contract": 2,
+        "record_contract": 3,
         "collector_config_hash": None,
         "unpinned_decisions": 2,
     }
@@ -444,7 +459,7 @@ def test_legacy_reconstruction_pass_does_not_poison_witness(tmp_path):
     a.run("research-import", kind="forecast-storage", protocol=None)
     a.pass_("research-import", T0, mode="historical_reconstruction")
     assert journal.integrity(a.db)["integrity"] == "verified"
-    schema.migrate(a.db, record_contract=2)
+    schema.migrate(a.db, record_contract=3)
     a.db.close()
     with writer_lock(path):
         store = Store(path, min_free_bytes=0)

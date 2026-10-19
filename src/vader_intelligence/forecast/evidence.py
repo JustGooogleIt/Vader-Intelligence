@@ -1,8 +1,8 @@
 """Read-side availability projection (F3.3 plan §4.6). Read-only, no clock, no writes.
 
-Turns stored discovery passes, fetches and contract-2 receipts into the arguments the
-pure forecast.policy functions accept. Only contract-2 receipts with a trusted clock are
-proof; a contract-1 receipt contributes nothing whatever time it claims. Sequence
+Turns stored discovery passes, fetches and versioned receipts into the arguments the
+pure forecast.policy functions accept. Only receipts satisfying PROOF with a trusted
+clock are proof; a contract-1 receipt contributes nothing whatever time it claims. Sequence
 numbers order records that are already witnessed and never establish availability.
 """
 
@@ -67,17 +67,49 @@ class DiscoveryEvidence:
         return tuple(reasons)
 
 
+# The single operational-proof predicate (plan §4.1, decision D-001), over a receipt
+# aliased `r`; one parameter, the observer namespace. A receipt is availability proof
+# only when it declares contract 2 or 3, belongs to the namespace, and the run that wrote
+# it is a forecast-witness run whose own provenance names this receipt's namespace and
+# session and records its source lineage. Receipts supplied by any other caller, and
+# receipts of the draft witness (PR #10/#11, which never recorded that provenance), are
+# stored assertions only. Contract 3 enforces this at write time; for contract 2 this is
+# the reader's admissibility rule. Projection, witness deduplication, the tick and the
+# evaluator all use this text, so reader and integrity classification cannot diverge.
+PROOF = (
+    " json_extract(r.payload_json,'$.contract_version') IN (2,3)"
+    " AND json_extract(r.payload_json,'$.observer_namespace')=?"
+    " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness'"
+    " AND json_extract(w.provenance_json,'$.tool_configuration.observer_namespace')"
+    "=json_extract(r.payload_json,'$.observer_namespace')"
+    " AND json_extract(w.provenance_json,'$.tool_configuration.session_id')"
+    "=json_extract(r.payload_json,'$.session_id')"
+    " AND json_extract(w.provenance_json,'$.tool_configuration.source_lineage')"
+    " IN ('live','synthetic'))"
+)
+
+
+def receipt_is_proof(db, receipt_id, namespace=None):
+    """Python form of PROOF for one stored receipt (namespace defaults to its own)."""
+    row = db.execute(
+        "SELECT json_extract(payload_json,'$.observer_namespace') FROM forecast_receipts"
+        " WHERE id=?",
+        (receipt_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    found = db.execute(
+        "SELECT 1 FROM forecast_receipts r WHERE r.id=? AND" + PROOF,
+        (receipt_id, row[0] if namespace is None else namespace),
+    ).fetchone()
+    return found is not None
+
+
 def _receipt_filter(namespace, mode):
-    """Only a contract-2 receipt written by an operational witness run is proof; a
-    receipt supplied through the journal by any other caller is ignored here even if
-    the storage layer admitted it (plan §4.1)."""
-    return (
-        " json_extract(r.payload_json,'$.contract_version')=2"
-        " AND json_extract(r.payload_json,'$.observer_namespace')=?"
-        " AND json_extract(r.payload_json,'$.mode')=?"
-        " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness')",
-        (namespace, mode),
-    )
+    """Operational proof (PROOF) in this namespace and mode; a receipt supplied through
+    the journal by any other caller, or written by the draft witness, is ignored here
+    even if the storage layer holds it."""
+    return (PROOF + " AND json_extract(r.payload_json,'$.mode')=?", (namespace, mode))
 
 
 def fetch_availability(db, fetch_id, namespace=NAMESPACE, mode="forward_shadow"):
@@ -196,10 +228,13 @@ def discovery_as_of(db, cutoff, namespace=NAMESPACE, mode="forward_shadow"):
             " ('discovery_pass','fetch') AND json_extract(r.payload_json,'$.contract_version')"
             " IS NULL"
         ).fetchone()[0],
+        # Versioned receipts in this namespace that are not operational proof: supplied
+        # by another caller or written by the draft witness (D-001).
         "supplied_receipts_ignored": db.execute(
             "SELECT COUNT(*) FROM forecast_receipts r WHERE"
-            " json_extract(r.payload_json,'$.contract_version')=2 AND NOT EXISTS"
-            " (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness')"
+            " json_extract(r.payload_json,'$.contract_version') IN (2,3)"
+            " AND json_extract(r.payload_json,'$.observer_namespace')=? AND NOT (" + PROOF + ")",
+            (namespace, namespace),
         ).fetchone()[0],
         "orphan_runs": 0,
     }

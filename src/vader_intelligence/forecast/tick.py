@@ -26,6 +26,7 @@ from datetime import datetime
 from ..provenance import RunProvenanceV1, source_hash
 from ..storage import timestamp, utc_now
 from . import publication, service
+from .evidence import PROOF
 from .policy import utc
 from .references import reference
 from .service import CONTRACT_REASONS, PREGAME_REASONS
@@ -78,9 +79,9 @@ def tick(store, protocol, *, clock=None, monotonic=None, budget=30.0):
         raise ValueError("budget must be in (0, 600] seconds")
     if store.db.in_transaction:
         raise ValueError("tick requires an idle connection")
-    if store.schema_version() < 4:
+    if store.schema_version() < 5:
         raise ValueError(
-            "forecast tick requires record contract 2: vader forecast migrate --record-contract 2"
+            "forecast tick requires record contract 3: vader forecast migrate --record-contract 3"
         )
     db = store.db
     deadline = monotonic() + budget
@@ -232,17 +233,14 @@ def tick(store, protocol, *, clock=None, monotonic=None, budget=30.0):
 
 def _bindable_games(db, namespace, mode):
     """(pass_id, game_id) for games with an eligible contract in a complete pass that has
-    a trusted contract-2 witness receipt in this namespace and mode."""
+    a trusted operational witness receipt (evidence.PROOF) in this namespace and mode."""
     rows = db.execute(
         "SELECT p.id, p.run_id, p.payload_json FROM discovery_passes p"
         " WHERE json_extract(p.payload_json,'$.complete')=1"
         " AND json_extract(p.payload_json,'$.mode')=?"
         " AND EXISTS (SELECT 1 FROM forecast_receipts r WHERE r.discovery_id=p.id"
-        " AND json_extract(r.payload_json,'$.contract_version')=2"
-        " AND json_extract(r.payload_json,'$.observer_namespace')=?"
-        " AND json_extract(r.payload_json,'$.clock_status')='trusted'"
-        " AND json_extract(r.payload_json,'$.mode')=?"
-        " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness'))"
+        " AND" + PROOF + " AND json_extract(r.payload_json,'$.clock_status')='trusted'"
+        " AND json_extract(r.payload_json,'$.mode')=?)"
         " ORDER BY p.id",
         (mode, namespace, mode),
     ).fetchall()
@@ -406,10 +404,7 @@ def inspect(store, *, limit=20, after=None, namespace="local-witness-v1", datase
             receipt = db.execute(
                 "SELECT r.id, r.observed_at, json_extract(r.payload_json,'$.clock_status')"
                 " FROM forecast_receipts r WHERE r.publication_id=?"
-                " AND json_extract(r.payload_json,'$.contract_version')=2"
-                " AND json_extract(r.payload_json,'$.observer_namespace')=?"
-                " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness')"
-                " ORDER BY r.id LIMIT 1",
+                " AND" + PROOF + " ORDER BY r.id LIMIT 1",
                 (publication_row[0], namespace),
             ).fetchone()
             publication_record = {

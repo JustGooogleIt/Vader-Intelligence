@@ -63,7 +63,7 @@ def build(path, games, passes):
 
     settlement_migrate(store)
     schema.migrate(store.db)
-    schema.migrate(store.db, record_contract=2)
+    schema.migrate(store.db, record_contract=3)
     db = store.db
     db.execute("PRAGMA synchronous=OFF")  # build speed only; the probe measures reads
     collector_config = {"max_pages": 3}
@@ -238,7 +238,7 @@ def build(path, games, passes):
                 "forecast_receipts",
                 {
                     "schema_version": 1,
-                    "contract_version": 2,
+                    "contract_version": 3,
                     "run_id": "witness-run",
                     "created_at": iso(observed),
                     "code_hash": HASH,
@@ -301,7 +301,7 @@ def build(path, games, passes):
             "forecast_decisions",
             {
                 "schema_version": 1,
-                "contract_version": 2,
+                "contract_version": 3,
                 "run_id": "tick-run",
                 "created_at": iso(T0 + timedelta(hours=4, seconds=10)),
                 "code_hash": HASH,

@@ -62,10 +62,10 @@ def reconstruct(
         raise ValueError("budget must be in (0, 600] seconds")
     if store.db.in_transaction:
         raise ValueError("reconstruct requires an idle connection")
-    if store.schema_version() < 4:
+    if store.schema_version() < 5:
         raise ValueError(
-            "forecast reconstruct requires record contract 2: "
-            "vader forecast migrate --record-contract 2"
+            "forecast reconstruct requires record contract 3: "
+            "vader forecast migrate --record-contract 3"
         )
     db = store.db
     archive_ceiling = db.execute("SELECT COALESCE(MAX(seq),0) FROM fetches").fetchone()[0]

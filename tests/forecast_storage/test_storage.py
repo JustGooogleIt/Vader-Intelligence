@@ -268,7 +268,7 @@ def test_integrity_is_read_only(sample):
         "publication_verified": False,
     }
     # Record-contract counts are additive (F3.3 plan §9.6); every fixture row is contract 1.
-    assert all(v == {"1": 1, "2": 0} for v in result["record_contracts"].values())
+    assert all(v == {"1": 1, "2": 0, "3": 0} for v in result["record_contracts"].values())
     assert result["latest_discovery"] == {"id": 1, "complete": True, "reasons": []}
     assert snapshot(db) == before
 

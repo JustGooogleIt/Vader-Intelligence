@@ -58,8 +58,10 @@ COLUMNS = {
 }
 
 
-SUPPORTED = (3, 4)
-LEDGERS = {3: [1, 2, 3], 4: [1, 2, 3, 4]}
+SUPPORTED = (3, 4, 5)
+LEDGERS = {3: [1, 2, 3], 4: [1, 2, 3, 4], 5: [1, 2, 3, 4, 5]}
+# Lowest schema on which each versioned record contract may exist (D-001).
+CONTRACT_SCHEMA = {2: 4, 3: 5}
 
 
 def migration_sql(name="003_forecast_evaluation.sql"):
@@ -124,10 +126,10 @@ def check_contracts(db):
     """Stored record contracts must be known before any persistent change (plan §9.6).
 
     Cheap: reads only the payload's contract_version field, no reference re-hashing.
-    Every receipt or decision declares contract 1 (absent) or the integer 2; no other
-    table carries a contract field; contract 2 exists only on schema 4. Run on the
-    actual connection before WAL, migration or any write so an invalid archive is
-    rejected without being touched or legitimized.
+    Every receipt or decision declares contract 1 (absent) or the integer 2 or 3; no
+    other table carries a contract field; contract 2 exists only on schema 4 or later and
+    contract 3 only on schema 5. Run on the actual connection before WAL, migration or
+    any write so an invalid archive is rejected without being touched or legitimized.
     """
     version = db.execute("PRAGMA user_version").fetchone()[0]
     for table in COLUMNS:
@@ -136,20 +138,23 @@ def check_contracts(db):
             f"SELECT {identity}, json_extract(payload_json,'$.contract_version') FROM {table}"
             " WHERE json_extract(payload_json,'$.contract_version') IS NOT NULL AND NOT ("
             " json_type(payload_json,'$.contract_version')='integer'"
-            " AND json_extract(payload_json,'$.contract_version')=2 AND ? ) LIMIT 1",
+            " AND json_extract(payload_json,'$.contract_version') IN (2,3) AND ? ) LIMIT 1",
             (int(table in ("forecast_receipts", "forecast_decisions")),),
         ).fetchone()
         if bad:
             raise ValueError(f"{table} row {bad[0]}: unknown record contract version {bad[1]!r}")
-        if version < 4 and table in ("forecast_receipts", "forecast_decisions"):
+        for contract, minimum in CONTRACT_SCHEMA.items():
+            if version >= minimum or table not in ("forecast_receipts", "forecast_decisions"):
+                continue
             row = db.execute(
-                f"SELECT id FROM {table}"
-                " WHERE json_extract(payload_json,'$.contract_version') IS NOT NULL LIMIT 1"
+                f"SELECT id FROM {table} WHERE json_extract(payload_json,'$.contract_version')=?"
+                " LIMIT 1",
+                (contract,),
             ).fetchone()
             if row:
                 raise ValueError(
-                    f"{table} row {row[0]}: contract-2 record in a schema-{version} archive;"
-                    " not migrated automatically"
+                    f"{table} row {row[0]}: contract-{contract} record in a schema-{version}"
+                    " archive; not migrated automatically"
                 )
 
 
@@ -182,46 +187,64 @@ def transaction(db, budget=30):
         db.execute(f"PRAGMA busy_timeout={busy_timeout}")
 
 
+def _append_marker(db, version, sql_name):
+    """A no-DDL contract migration: ledger row and user_version in the caller's
+    transaction; the migration file must contain no executable SQL."""
+    if executable(migration_sql(sql_name)):
+        raise ValueError(f"migration {version:03d} must not contain executable SQL")
+    if db.execute("PRAGMA foreign_key_check").fetchone():
+        raise ValueError("legacy foreign key failure")
+    db.execute(
+        "INSERT INTO schema_migrations VALUES (?,?)",
+        (version, datetime.now(timezone.utc).isoformat()),
+    )
+    db.execute(f"PRAGMA user_version={version}")
+
+
 def migrate(db, *, record_contract=None):
-    """Idempotent explicit expansion. Plain: 2→3, no-op at 3 and 4. Schema 1 requires
+    """Idempotent explicit expansion. Plain: 2→3, no-op at 3, 4 and 5. Schema 1 requires
     explicit settlement migration first.
 
-    record_contract=2 performs migration 004 on a schema-3 archive: ledger row and
-    user_version 4 in one transaction, no DDL, no row touched (plan §9.6). It is a
-    no-op at 4 and refused below 3; nothing ever downgrades.
+    record_contract=3 (decision D-001) opens the current contract: on schema 4 it writes
+    migration 005; on schema 3 it writes 004 and 005 in one transaction, so the ledger is
+    always [1..5]. No DDL, no row touched. It is a no-op at 5 and refused below 3.
+    record_contract=2 is frozen: a no-op at 4 or 5 and refused on schema 3, because new
+    contract-2 records can no longer be written. Nothing ever downgrades.
     """
-    if record_contract not in (None, 2):
-        raise ValueError("unsupported record contract; only --record-contract 2 exists")
+    if record_contract not in (None, 2, 3):
+        raise ValueError("unsupported record contract; only --record-contract 3 is open")
     with transaction(db):
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version == 4:
+        if version in (3, 4, 5):
             check_schema(db)
+            # A record of a contract the schema has not opened, or an unknown contract,
+            # is an invalid archive: refuse rather than legitimize it by advancing.
             check_contracts(db)
+        if version == 5 or (version == 4 and record_contract != 3):
             return False
-        if version == 3:
+        if version == 4:
+            _append_marker(db, 5, "005_record_contract_3.sql")
             check_schema(db)
-            # A contract-2 row already present on schema 3, or an unknown contract, is an
-            # invalid archive: refuse rather than legitimize it by advancing the version.
-            check_contracts(db)
-            if record_contract != 2:
+            return True
+        if version == 3:
+            if record_contract is None:
                 return False
-            if executable(migration_sql("004_record_contract_2.sql")):
-                raise ValueError("migration 004 must not contain executable SQL")
-            if db.execute("PRAGMA foreign_key_check").fetchone():
-                raise ValueError("legacy foreign key failure")
-            db.execute(
-                "INSERT INTO schema_migrations VALUES (4,?)",
-                (datetime.now(timezone.utc).isoformat(),),
-            )
-            db.execute("PRAGMA user_version=4")
+            if record_contract == 2:
+                raise ValueError(
+                    "record contract 2 is frozen (decision D-001); use --record-contract 3"
+                )
+            _append_marker(db, 4, "004_record_contract_2.sql")
+            _append_marker(db, 5, "005_record_contract_3.sql")
             check_schema(db)
             return True
         if version != 2:
             raise ValueError(
                 "forecast migrate requires schema 2; on schema 1 run settlement migrate first"
             )
-        if record_contract == 2:
-            raise ValueError("record contract 2 requires schema 3; run forecast migrate first")
+        if record_contract is not None:
+            raise ValueError(
+                f"record contract {record_contract} requires schema 3; run forecast migrate first"
+            )
         expected = {
             "runs",
             "requests",

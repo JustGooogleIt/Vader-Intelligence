@@ -33,6 +33,7 @@ from datetime import datetime
 
 from ..forecast import contracts, journal
 from ..forecast import service as forecast_service
+from ..forecast.evidence import PROOF
 from ..forecast.policy import classify_publication, utc
 from ..forecast.references import digest, reference
 from ..provenance import RunProvenanceV1, source_hash
@@ -94,11 +95,7 @@ def _publication_status(db, decision_id, decision, mode, namespace, view):
         return verdict, list(publication["reasons"]), publication_id, None
     receipt = db.execute(
         "SELECT r.id, r.observed_at, json_extract(r.payload_json,'$.clock_status')"
-        " FROM forecast_receipts r WHERE r.publication_id=?"
-        " AND json_extract(r.payload_json,'$.contract_version')=2"
-        " AND json_extract(r.payload_json,'$.observer_namespace')=?"
-        " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness')"
-        " ORDER BY r.id LIMIT 1",
+        " FROM forecast_receipts r WHERE r.publication_id=? AND" + PROOF + " ORDER BY r.id LIMIT 1",
         (publication_id, namespace),
     ).fetchone()
     if receipt is None:
@@ -177,11 +174,9 @@ def _unbound_games(
         " json_extract(p.payload_json,'$.eligibility_through_id') FROM discovery_passes p"
         " WHERE json_extract(p.payload_json,'$.complete')=1"
         " AND json_extract(p.payload_json,'$.mode')=?"
-        " AND EXISTS (SELECT 1 FROM forecast_receipts r WHERE r.discovery_id=p.id"
-        " AND json_extract(r.payload_json,'$.contract_version')=2"
-        " AND json_extract(r.payload_json,'$.observer_namespace')=?"
-        " AND json_extract(r.payload_json,'$.clock_status')='trusted'"
-        " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness'))"
+        " AND EXISTS (SELECT 1 FROM forecast_receipts r WHERE r.discovery_id=p.id AND"
+        + PROOF
+        + " AND json_extract(r.payload_json,'$.clock_status')='trusted')"
         " ORDER BY p.id",
         (binding_mode, namespace),
     ).fetchall()
@@ -257,9 +252,16 @@ def evaluate(
     clock=None,
     monotonic=None,
     budget=30.0,
+    record_contract=3,
 ):
     """Materialize one evaluation. Returns a summary dict; status complete | inconclusive
-    (no paired binary outcomes) | partial (budget exhausted, nothing written) | existing."""
+    (no paired binary outcomes) | partial (budget exhausted, nothing written) | existing.
+
+    One evaluation covers decisions of one record contract (decision D-001): 3 by
+    default; 2 evaluates a legacy cohort, from which draft-era decisions (not valid under
+    the current rules, or decided before renewal at C existed) are excluded and listed.
+    Decisions of other contracts are never unattempted opportunities; they are listed.
+    """
     injected = clock is not None or monotonic is not None
     clock = clock or utc_now
     monotonic = monotonic or time.monotonic
@@ -269,10 +271,12 @@ def evaluate(
         raise ValueError("budget must be in (0, 600] seconds")
     if store.db.in_transaction:
         raise ValueError("evaluate requires an idle connection")
-    if store.schema_version() < 4:
+    if store.schema_version() < 5:
         raise ValueError(
-            "evaluate requires record contract 2: vader forecast migrate --record-contract 2"
+            "evaluate requires record contract 3: vader forecast migrate --record-contract 3"
         )
+    if record_contract not in (2, 3):
+        raise ValueError("record_contract must be 3 (current) or 2 (legacy cohort)")
     as_of = utc(outcomes_as_of)
     dataset = protocol.dataset if dataset is None else dataset
     namespace = protocol.observer_namespace
@@ -288,7 +292,18 @@ def evaluate(
     # ---- cohort and mode
     allowed_modes = (VIEWS[view], "synthetic")
     decision_rows = _cohort_rows(db, protocol, dataset, allowed_modes, start_date, through_date)
-    decisions = [(row[0], json.loads(row[1])) for row in decision_rows]
+    all_decisions = [(row[0], json.loads(row[1])) for row in decision_rows]
+    decisions, excluded = [], []
+    for decision_id, d in all_decisions:
+        contract = contracts.version("forecast_decisions", d)
+        if contract != record_contract:
+            excluded.append({"id": decision_id, "contract": contract, "reason": "other_contract"})
+        elif contract == 2 and journal.classify(db, "forecast_decisions", d) != "current":
+            excluded.append({"id": decision_id, "contract": 2, "reason": "legacy_draft"})
+        elif contract == 2 and "renewal" not in d["manifest"]:
+            excluded.append({"id": decision_id, "contract": 2, "reason": "pre_renewal_semantics"})
+        else:
+            decisions.append((decision_id, d))
     modes = {d["mode"] for _, d in decisions}
     if len(modes) > 1:
         raise ValueError(f"dataset {dataset!r} mixes record modes {sorted(modes)}; not pooled")
@@ -327,8 +342,9 @@ def evaluate(
     elif collector_config_hash not in pinned and decisions:
         raise ValueError("no decision in this dataset pins that collector configuration hash")
     unattributed = []
-    # A game decided anywhere in the dataset is never also an unattempted opportunity.
-    decided_games = {d["game_id"] for _, d in decisions}
+    # A game decided anywhere in the dataset, under any contract, is never also an
+    # unattempted opportunity.
+    decided_games = {d["game_id"] for _, d in all_decisions}
     if len(cohorts) > 1:
         # With several collector cohorts an unpinned abstention belongs to none; it is
         # reported, not pooled into every cohort.
@@ -364,6 +380,7 @@ def evaluate(
         "start_date": None if start_date is None else start_date.isoformat(),
         "through_date": None if through_date is None else through_date.isoformat(),
         "collector_config_hash": collector_config_hash,
+        "record_contract": record_contract,
     }
     store.start_run(
         RunProvenanceV1(
@@ -583,6 +600,8 @@ def evaluate(
             pinned,
             unresolved_candidates,
         )
+        report["record_contract"] = record_contract
+        report["excluded_decisions"] = excluded[:1000]
         publication_manifest = [
             publication_refs[k]
             for k in sorted(publication_refs, key=lambda k: (str(type(k)), str(k)))
