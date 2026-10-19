@@ -133,9 +133,10 @@ def compare(model_p, rows, names, y, groups, *, seed):
     return out
 
 
-def train(
-    registry,
+def fit(
+    manifest,
     dataset_id,
+    development,
     *,
     family,
     split,
@@ -147,17 +148,17 @@ def train(
     calibration="platt",
     clock=time.monotonic,
 ):
+    """Fit on development rows only and return (artifact, search result, grid).
+
+    Needs no registry: research pods call it on a development/validation snapshot.
+    """
     if family not in FAMILIES:
         raise ValueError(f"family must be one of {FAMILIES}")
     if calibration not in CALIBRATIONS:
         raise ValueError(f"calibration must be one of {CALIBRATIONS}")
-    manifest = registry.dataset(dataset_id)
-    rows = registry.dataset_rows(dataset_id)
-    development, validation = splits.development_and_validation(rows, split)
-    if len(development) < MIN_DEVELOPMENT_ROWS or len(validation) < MIN_EVALUATION_ROWS:
+    if len(development) < MIN_DEVELOPMENT_ROWS:
         raise ValueError(
-            f"insufficient rows: development {len(development)} (≥{MIN_DEVELOPMENT_ROWS}),"
-            f" validation {len(validation)} (≥{MIN_EVALUATION_ROWS})"
+            f"insufficient rows: development {len(development)} (≥{MIN_DEVELOPMENT_ROWS})"
         )
     names = [f["name"] for f in manifest["feature_set"]["features"]]
     specs = feature_specs(manifest)
@@ -197,22 +198,73 @@ def train(
         "code_hash": source_hash(),
         "dependencies": dependency_versions(),
     }
-    artifact = ModelArtifact(family, preprocessor, params, calibrator, training)
-    model_id = registry.register_model(
-        artifact.to_json(),
-        family=family,
-        dataset_id=dataset_id,
-        summary={"feature_set": training["feature_set"], "selected_config": result.selected_config},
-    )
+    return ModelArtifact(family, preprocessor, params, calibrator, training), result, grid
+
+
+def validation_metrics(artifact, manifest, validation, *, seed):
+    """Selection-biased validation comparison of an artifact against the baselines."""
+    names = [f["name"] for f in manifest["feature_set"]["features"]]
     Xv, yv, _, gv = matrices(validation, names)
     p = predict_proba(artifact, Xv)
-    validation_metrics = compare(p, validation, names, yv, gv, seed=seed) | {
+    return compare(p, validation, names, yv, gv, seed=seed) | {
         "selection_biased": True,
         "note": "validation compares families/configurations; only a once-evaluated holdout "
         "is unbiased",
     }
+
+
+def train(
+    registry,
+    dataset_id,
+    *,
+    family,
+    split,
+    grid=None,
+    n_folds=4,
+    seed=0,
+    max_configs=24,
+    deadline_seconds=900.0,
+    calibration="platt",
+    clock=time.monotonic,
+):
+    if family not in FAMILIES:
+        raise ValueError(f"family must be one of {FAMILIES}")
+    if calibration not in CALIBRATIONS:
+        raise ValueError(f"calibration must be one of {CALIBRATIONS}")
+    manifest = registry.dataset(dataset_id)
+    rows = registry.dataset_rows(dataset_id)
+    development, validation = splits.development_and_validation(rows, split)
+    if len(development) < MIN_DEVELOPMENT_ROWS or len(validation) < MIN_EVALUATION_ROWS:
+        raise ValueError(
+            f"insufficient rows: development {len(development)} (≥{MIN_DEVELOPMENT_ROWS}),"
+            f" validation {len(validation)} (≥{MIN_EVALUATION_ROWS})"
+        )
+    artifact, result, grid = fit(
+        manifest,
+        dataset_id,
+        development,
+        family=family,
+        split=split,
+        grid=grid,
+        n_folds=n_folds,
+        seed=seed,
+        max_configs=max_configs,
+        deadline_seconds=deadline_seconds,
+        calibration=calibration,
+        clock=clock,
+    )
+    model_id = registry.register_model(
+        artifact.to_json(),
+        family=family,
+        dataset_id=dataset_id,
+        summary={
+            "feature_set": artifact.training["feature_set"],
+            "selected_config": result.selected_config,
+        },
+    )
+    metrics_ = validation_metrics(artifact, manifest, validation, seed=seed)
     evaluation_id = registry.record_evaluation(
-        model_id, dataset_id, "validation:" + split.key, validation_metrics, selection_biased=True
+        model_id, dataset_id, "validation:" + split.key, metrics_, selection_biased=True
     )
     experiment_id = registry.record_experiment(
         "train",
@@ -238,7 +290,7 @@ def train(
         "search_stop_reason": result.stop_reason,
         "configs_tried": len(result.results),
         "development_rows": len(development),
-        "validation": validation_metrics,
+        "validation": metrics_,
         "holdout": registry.holdout_status(dataset_id, split.key),
     }
 
