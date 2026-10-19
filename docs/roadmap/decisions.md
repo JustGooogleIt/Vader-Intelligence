@@ -340,3 +340,54 @@ Decision. Nothing is changed in this run. Changing the feature would change
   from a witnessed trade time.
 
 This is open for the user, together with the next feature work.
+
+## D-016 The midpoint baseline at C abstains under the specified cycle order (open, 2026-10-19)
+
+Context. In both live forward shadows on 2026-10-19 the midpoint baseline abstained
+with `book_availability_after_cutoff` at C = 23:08:00Z
+(`docs/evidence/live-forward-20261019.md`). The cause is the order the specification
+fixes, not a fault:
+- Each cycle runs the tick first. The tick witnesses evidence from earlier cycles, then
+  the collector runs. The F3.3 plan, §4.2 and §6, says: "The tick runs before
+  collection… No extra witnessing phase is added."
+- Book selection (`forecast/selection.py:select_inputs`) anchors on the latest book
+  retrieved by C. If that book was not witnessed by C, it abstains; it never falls back
+  to an older book.
+- The latest book retrieved by C is therefore witnessed by the next cycle's tick,
+  which runs after C. The only exception is a cycle that starts in the few seconds
+  between its predecessor's book retrieval and C (tonight about 4.5 s, so about 4% of
+  phases at a 120 s cadence).
+
+The plan's timing table covers discovery passes, which may fall back to an older
+witnessed pass. It states that "book evidence follows the same arithmetic". It does not,
+because books have no fallback.
+
+Tonight's timing: the book was retrieved at 23:06:15.8 and witnessed at 23:08:12.2. The
+previous book was retrieved at 23:04:15 and witnessed at 23:06:11; under a fallback
+rule it would have passed the availability and freshness checks (age 224 s ≤ 300). The
+registered models were unaffected: their listing quotes come from the latest market
+fetch witnessed by C (retrieved 23:04:15, witnessed 23:06:11). No forecaster used
+anything witnessed after C.
+
+Effect. Forward evaluations usually have no market-midpoint score, so a registered
+model can be compared only with the constant baseline. Forward evidence is meant to
+make exactly that market comparison.
+
+Decision. Nothing is changed in this run. Both rules are established contracts, and the
+F3.3 plan states the first explicitly. Options for the user:
+1. **Anchor book selection on availability** (recommended). Use the latest book
+   attempt that was both retrieved and witnessed by C. If that attempt is unusable,
+   abstain, so outcomes still cannot select a book. This matches the discovery pass
+   rule and the registered models' quote rule. It changes decisions, so it needs a new
+   selection version (for example `selection-v2`); stored decisions keep their own
+   version.
+2. **Add a witness pass after collection** in the shadow cycle. This reverses the
+   plan's "no extra witnessing phase" rule and adds a budget to the cycle (tick +
+   deadline + witness + three grace periods below the cadence).
+3. **Keep both rules.** Bounded drivers can still get a midpoint by placing one extra
+   ordinary cycle about 1 s before C: its tick witnesses the previous book before C,
+   and its own book is retrieved after C. This uses existing code only, but it depends
+   on the book taking more than 1 s to arrive, and a launchd cadence cannot do it.
+
+Reversibility. Options 1 and 2 are additive behind a new version or configuration.
+Option 3 changes nothing.
