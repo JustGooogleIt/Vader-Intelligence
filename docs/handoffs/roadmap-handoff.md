@@ -33,6 +33,7 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #32 | `fix/review-24-25` | `3827df2adea441b33bdef56d0a48c226d5e89aa7` | repairs from the #24/#25 pre-review: skew latch, TLS trust, ambiguous writes, exits, ingest idempotency, Kelly rounding | 1317 passed |
 | #33 | `fix/review-17-23-28` | `4e44ef5877b2a3311e64a1081639ed0950017a12` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping, forecast tick abstention, synthetic label, case-insensitive ops guard | 1321 passed |
 | #34 | `feat/live-settlements` | `d1ced5f291acc23509af108ee1af16907b71c808` | F live settlement recording: venue settlements recorded only after a clean fills reconciliation and an exact match with the ledger (every venue-reported fill, counts, payout, no fee); operator resolution through the ledger | 1344 passed |
+| #35 | `fix/activation-key-material` | `7686513c9d102b8ee4beab01707d40d4eb34dd22` | repair of the #25 activation gate: `no_key_material` also refuses base64/hex runs that decode to PEM text or a DER private key | 1352 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -135,9 +136,11 @@ each finding in temp directories.
       be cleared) and two minor ones; all four were confirmed by probes and fixed in
       `a02d762`. A second pass found no sequence that settles with venue fills
       missing, and four minor fail-closed gaps, fixed in `d1ced5f`.
+  - Repaired afterwards in #35: `no_key_material` detected only PEM armour.
   - Documented, not changed:
     - fractional quantity steps over-reserving fees;
-    - reduce-only sells under unknown state (by design; guarded by venue coverage).
+    - reduce-only sells under unknown state (by design; guarded by venue coverage);
+    - ACLs on the key file (only the mode bits are checked).
 
 - **#17–#23 and #28:** no critical finding. Contract versioning, rule v2, sticky C,
   leakage guards, lineage, training hygiene and the production ops path all held.
@@ -201,6 +204,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #31 | 1303 passed, 2 deselected (9 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 | #32 | 1317 passed, 2 deselected (14 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 | #33 | 1321 passed, 2 deselected (4 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
+| #35 | 1352 passed, 2 deselected (8 new tests); the old check misses all seven encoded forms the new one refuses |
 | #34 | 1344 passed, 2 deselected (23 new tests) at `d1ced5f`; ruff clean; the synthetic e2e and recovery demos complete (at `9cca473`; no packaging or schema change) |
 
 ## 6. Data and model limitations
@@ -260,7 +264,7 @@ post-only order, cancel, reconcile, shutdown (never executed).
 ## 9. Cleanup (not done automatically)
 
 - Background jobs: live rule-v2 driver (`/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2`), model shadow driver (`.../20261019-models`); both end by themselves (last ≈05:20 UTC 2026-10-20). The acquisitions and backtests have finished.
-- Worktrees (with their venvs): `Vader-Intelligence-wt-{deps,execution-risk,symbolic-engine,research-pods-core,models-library,live-adapter}` (finished subagent work, integrated), `-live-v2`, `-live-models`, `-history-run`, `-history-run2` (pinned run code), `-verify` (holds `feat/live-settlements`, #34; also used for head verification). Local branches `wip/deps`, `feat/execution-risk`, `feat/symbolic-engine`, `feat/research-pods-core`, `feat/models-library`, `feat/live-adapter` are superseded by the stack.
+- Worktrees (with their venvs): `Vader-Intelligence-wt-{deps,execution-risk,symbolic-engine,research-pods-core,models-library,live-adapter}` (finished subagent work, integrated), `-live-v2`, `-live-models`, `-history-run`, `-history-run2` (pinned run code), `-verify` (holds `fix/activation-key-material`, #35; also used for head verification). Local branches `wip/deps`, `feat/execution-risk`, `feat/symbolic-engine`, `feat/research-pods-core`, `feat/models-library`, `feat/live-adapter` are superseded by the stack.
 - Data directories (outside the repo): `/Users/ashwin/Documents/Vader-Intelligence-research/{history (≈0.3 GB),registry,pods-2026,pods-2025-2026 (with backtest-ledgers/),demo}`, `/Users/ashwin/Documents/Vader-Intelligence-shadow/{20261019-rule-v2,20261019-models}`, the session scratchpad (profiles, single-run ledgers, the wheel venv).
 - Research pods added in `pods-2026` by the autopilot demos: `auto-baseline`, `auto-symbolic` (2 rejected candidates) and `auto2-*` (planning only). The orchestration store is append-only, so they stay as history.
 

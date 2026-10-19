@@ -12,7 +12,7 @@ always names the exact next action.
 |---|---|
 | Main worktree | `/Users/ashwin/Documents/github-repos/Vader-Intelligence-roadmap` (`uv sync --locked`, uv 0.12.19 at `../Vader-Intelligence/.venv/bin/uv`, Python 3.11.6) |
 | Stack base | PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c31` |
-| Pinned run worktrees | `-live-v2` (detached `622caad`, live rule-v2 shadow driver), `-live-models` (model shadow driver), `-history-run` / `-history-run2` (pinned acquisition code), `-verify` (now on `feat/live-settlements`, #34) |
+| Pinned run worktrees | `-live-v2` (detached `622caad`, live rule-v2 shadow driver), `-live-models` (model shadow driver), `-history-run` / `-history-run2` (pinned acquisition code), `-verify` (now on `fix/activation-key-material`, #35) |
 | Finished subagent worktrees (cleanup) | `-wt-deps`, `-wt-execution-risk`, `-wt-symbolic-engine`, `-wt-research-pods-core`, `-wt-models-library`, `-wt-live-adapter` |
 | Research data (outside the repo) | `/Users/ashwin/Documents/Vader-Intelligence-research/{history,registry,pods-2026,pods-2025-2026,demo}` |
 | Production | `~/Documents/Vader-Intelligence-operations/20260930-first-deployment/production.sqlite3`: read-only queries only; never copied (disk ~10 GiB free) |
@@ -39,6 +39,7 @@ always names the exact next action.
 | #32 | `fix/review-24-25` | repairs from the #24/#25 pre-review: live-adapter hardening (skew, TLS, writes, exits, bindings), ingest idempotency, fee bound, Kelly rounding |
 | #33 | `fix/review-17-23-28` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping, forecast-tick abstention, synthetic label, case-insensitive ops guard |
 | #34 | `feat/live-settlements` | F live settlement recording: venue settlements recorded only on an exact match with the ledger |
+| #35 | `fix/activation-key-material` | repair: the activation gate refuses encoded key material |
 
 Full SHAs are in the final handoff (`docs/handoffs/roadmap-handoff.md`).
 
@@ -69,9 +70,9 @@ Next:
    `.../20261019-rule-v2`), and the model shadow's decision for the same game.
 3. **After 05:20 UTC 2026-10-20:** read both `shadow-evaluate` reports and record the live
    evidence. The fs-market-v1 models carry the D-015 caveat.
-4. **Then the dry run** on the real forward decision, with the #34 head in `-verify`
-   (#33's corrected dry run; #34 does not touch the dry-run path): it cancels each order
-   and applies optional caps. Command: `vader live dry-run
+4. **Then the dry run** on the real forward decision, with the #35 head in `-verify`
+   (#33's corrected dry run; #34 and #35 do not touch the dry-run path): it cancels each
+   order and applies optional caps. Command: `vader live dry-run
    --archive <models shadow.sqlite3> --forecaster model:<sha16> --ledger <new>
    --sign-with-throwaway-key [--max-order-notional ... --max-daily-notional ...]`.
 5. **Final handoff:** verify every PR's head SHA against GitHub, write §11 (the head of

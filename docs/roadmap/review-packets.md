@@ -24,6 +24,7 @@ merged, deployed or activated; no credentials exist in this system.
 | #31 | `fix/review-26-27` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | holdout pin, evidence binding | dry-run checks, quarantine |
 | #32 | `fix/review-24-25` | repairs from the #24/#25 pre-review: skew latch, TLS trust store, ambiguous write answers, uncapped exits, ingest idempotency, Kelly rounding | ingest identity, fee bound | live adapter safety |
 | #33 | `fix/review-17-23-28` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping (#19), forecast-tick abstention (#22), synthetic label (#20), ops guard | outcome join, abstention | ops guard |
+| #35 | `fix/activation-key-material` | repair of the #25 `no_key_material` gate (encoded key material) | — | false positives on hashes and paths, missed encodings |
 | #34 | `feat/live-settlements` | F live settlement recording (venue settlements recorded only on an exact match with the ledger) | payout and counts identity | allowlist, cursor, fail-closed reasons |
 
 ## Codex Prime — evidence meaning, versioning, leakage, scoring, money correctness
