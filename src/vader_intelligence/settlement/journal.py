@@ -105,8 +105,10 @@ def body(db, fetch_id):
 
 
 def run_rules(db, run_id):
-    """Evidence rules the settlement run recorded (decision D-002); replay derives the
-    same mapping because it reads the original run's configuration, not the caller's."""
+    """Evidence rules the settlement run recorded (decision D-002): a mapping is derived
+    under the run's own configuration, never the caller's. (A replay of a run whose
+    targets are already mapped re-derives nothing: `map_target` keeps the recorded
+    mapping.)"""
     from ..config import Config
 
     row = db.execute("SELECT provenance_json FROM runs WHERE id=?", (run_id,)).fetchone()

@@ -258,3 +258,24 @@ def test_a_trained_artifact_runs_at_the_cutoff_through_the_cli(tmp_path, config)
         )
     )
     assert ran["status"] in ("complete", "inconclusive", "partial")
+
+
+def test_an_unloadable_or_missing_artifact_abstains_and_the_tick_still_decides(store, config):
+    from vader_intelligence.forecast.forecasters import verify_artifact
+
+    to_schema6(store)
+    sha, data = stub_artifact()  # digest and feature checks pass; not a loadable model
+    missing = "f" * 64
+    runner = ForecasterRunner({sha: data, missing: None}, predict_mid, verify=verify_artifact)
+    proto = Protocol(dataset="models", forecasters=sorted([sha, missing]))
+    collect(store, config, origin=at(18, 3))
+    tick_at_runner(store, proto, at(18, 3, 30), runner)
+    due = tick_at_runner(store, proto, at(18, 5, 30), runner)
+    assert due["decisions_eligible"] == 1 and not due["errors"]  # the baseline decision
+    (payload,) = [
+        json.loads(r[0]) for r in store.db.execute("SELECT payload_json FROM forecast_decisions")
+    ]
+    for entry in payload["forecasters"]:
+        result = payload["results"][entry["id"]]
+        assert result["probability"] is None
+        assert result["reasons"][0].startswith("model_unavailable:")

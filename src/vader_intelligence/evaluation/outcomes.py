@@ -71,6 +71,24 @@ def _version_within(db, kind, entity_key, outcomes_as_of, source_ceiling):
     ).fetchone()
 
 
+def _target_mapping(db, mapping_id, anchor_fetch_id, outcomes_as_of, source_ceiling):
+    """(id, revision, data_json) of the mapping a settlement run recorded for its target,
+    when that run's mapping evidence lies inside the frozen outcome view; else None."""
+    if mapping_id is None or anchor_fetch_id is None:
+        return None
+    inside = db.execute(
+        "SELECT 1 FROM fetches WHERE id=? AND seq<=? AND retrieved_at IS NOT NULL"
+        " AND retrieved_at<=?",
+        (anchor_fetch_id, source_ceiling, outcomes_as_of.isoformat()),
+    ).fetchone()
+    if inside is None:
+        return None
+    return db.execute(
+        "SELECT id, revision, data_json FROM settlement_versions WHERE id=? AND kind='mapping'",
+        (mapping_id,),
+    ).fetchone()
+
+
 def join(db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling, scheduled_start=None):
     """Outcome disposition for one opportunity. `outcomes_as_of` is an aware datetime.
 
@@ -83,7 +101,8 @@ def join(db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling, sc
     if ticker is None:
         return Outcome("identity_unresolved", ("no_selected_contract",))
     attempt = db.execute(
-        "SELECT f.id, f.seq, f.state, f.retrieved_at FROM fetches f"
+        "SELECT f.id, f.seq, f.state, f.retrieved_at, t.mapping_version_id,"
+        " COALESCE(t.schedule_fetch_id, t.event_fetch_id, t.market_fetch_id) FROM fetches f"
         " JOIN requests r ON r.id=f.request_id"
         " JOIN settlement_targets t ON t.id=r.request_key AND t.run_id=r.run_id"
         " WHERE r.stage='settlement-market' AND t.ticker=? AND f.retrieved_at IS NOT NULL"
@@ -93,7 +112,7 @@ def join(db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling, sc
     ).fetchone()
     if attempt is None:
         return Outcome("outcome_not_observed", ("no_settlement_attempt_in_view",))
-    fetch_id, _seq, state, retrieved_at = attempt
+    fetch_id, _seq, state, retrieved_at, target_mapping_id, mapping_anchor = attempt
     base = {"fetch_id": fetch_id, "retrieved_at": retrieved_at}
     if state != "ok":
         return Outcome("outcome_fetch_failed", (f"latest_attempt_{state}",), **base)
@@ -128,7 +147,11 @@ def join(db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling, sc
         payout=payout,
         references=references,
     )
-    mapping = _version_within(db, "mapping", ticker, outcomes_as_of, source_ceiling)
+    # The mapping must come from the same settlement run as the Kalshi result, with its
+    # evidence (the run's schedule retrieval) inside the view: an older mapping could
+    # still show a start the game no longer has (a postponement whose schedule fetch
+    # failed or lies beyond the source ceiling).
+    mapping = _target_mapping(db, target_mapping_id, mapping_anchor, outcomes_as_of, source_ceiling)
     mapping_id = mapping_data = None
     if mapping is not None:
         mapping_id, _, mapping_json = mapping
@@ -152,7 +175,7 @@ def join(db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling, sc
         return Outcome(status, reasons, **base)
     # A binary label scores only against the frozen game identity.
     if mapping_data is None:
-        return Outcome("identity_unresolved", ("mapping_missing",), **base)
+        return Outcome("identity_unresolved", ("mapping_incomplete",), **base)
     if mapping_data.get("status") != "mapped":
         return Outcome(
             "identity_unresolved",

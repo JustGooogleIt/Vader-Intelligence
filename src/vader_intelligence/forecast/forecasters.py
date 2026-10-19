@@ -65,11 +65,24 @@ def game_context(db, schedule_fetch_id, game_id):
 class ForecasterRunner:
     """Loads registered artifacts once and computes their forecasts for one decision."""
 
-    def __init__(self, artifacts, predict):
-        """`artifacts`: {sha256: artifact JSON bytes} already read from the registry."""
+    def __init__(self, artifacts, predict, verify=None):
+        """`artifacts`: {sha256: artifact JSON bytes, or None when the registry has no such
+        artifact}. A missing artifact, or one that fails `verify`, is kept as an
+        unavailable forecaster that abstains on every decision (D-004); a digest mismatch
+        or a feature set that is unknown or not forward capable is a configuration error
+        refused here, before any write."""
         self.predict = predict
         self.models = {}
         for sha, data in sorted(artifacts.items()):
+            if data is None:
+                self.models[sha] = {
+                    "data": None,
+                    "feature_set": "unavailable",
+                    "family": "unavailable",
+                    "names": [],
+                    "error": "artifact missing or failed registry verification",
+                }
+                continue
             if hashlib.sha256(data).hexdigest() != sha:
                 raise ValueError(f"artifact {sha} failed verification")
             artifact = json.loads(data)
@@ -84,11 +97,19 @@ class ForecasterRunner:
             names = [d.name for d in definitions.feature_set(feature_set)]
             if artifact.get("feature_names") != names:
                 raise ValueError(f"artifact {sha[:12]} features differ from {feature_set}")
+            error = None
+            if verify is not None:
+                try:
+                    verify(data, names)
+                except (ValueError, KeyError, TypeError) as exc:
+                    error = f"{type(exc).__name__}: {str(exc)[:80]}"
+            family = artifact.get("family")
             self.models[sha] = {
                 "data": data,
                 "feature_set": feature_set,
-                "family": artifact.get("family"),
+                "family": family if isinstance(family, str) and family else "unknown",
                 "names": names,
+                "error": error,
             }
 
     def descriptors(self):
@@ -123,6 +144,13 @@ class ForecasterRunner:
             context_reasons.append("model_game_context_unavailable")
         for sha, model in sorted(self.models.items()):
             key = forecaster_id(sha)
+            if model.get("error"):
+                out[key] = {
+                    "probability": None,
+                    "reasons": ["model_unavailable:" + model["error"][:80]],
+                    "inputs": {},
+                }
+                continue
             if context_reasons:
                 out[key] = {"probability": None, "reasons": context_reasons, "inputs": {}}
                 continue
@@ -189,16 +217,32 @@ def predict_artifact(data, values):
     return float(predict_proba(_LOADED[sha], row)[0])
 
 
+def verify_artifact(data, names):
+    """Parse the artifact and run it on zero rows: refuses anything inference would."""
+    import numpy as np
+
+    from ..models.artifact import ModelArtifact, check_inputs, predict_proba
+
+    artifact = ModelArtifact.from_dict(json.loads(data))
+    check_inputs(artifact, names)
+    predict_proba(artifact, np.zeros((0, len(names)), dtype=np.float64))
+
+
 def runner_from_registry(registry_root, protocol):
     """A runner for the protocol's forecasters read (and verified) from a research registry;
-    None when the protocol registers none."""
+    None when the protocol registers none. A missing or unloadable artifact abstains."""
     if not protocol.forecasters:
         return None
     from ..research.registry import Registry
 
     registry = Registry(registry_root, readonly=True)
     try:
-        artifacts = {sha: registry.model_artifact(sha) for sha in protocol.forecasters}
+        artifacts = {}
+        for sha in protocol.forecasters:
+            try:
+                artifacts[sha] = registry.model_artifact(sha)
+            except (OSError, KeyError, ValueError):
+                artifacts[sha] = None
     finally:
         registry.close()
-    return ForecasterRunner(artifacts, predict_artifact)
+    return ForecasterRunner(artifacts, predict_artifact, verify=verify_artifact)

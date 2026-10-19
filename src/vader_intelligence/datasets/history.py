@@ -50,6 +50,26 @@ def archive_identity(db):
     }
 
 
+def evidence_kind(db, run_id=None):
+    """`historical_retrieval` for live acquisition runs, `synthetic` for synthetic ones;
+    an archive mixing both is refused unless one run is selected (the label must never
+    present synthetic retrievals as real)."""
+    from ..forecast.references import run_source_mode
+
+    if run_id is not None:
+        runs = [run_id]
+    else:
+        runs = [r[0] for r in db.execute("SELECT id FROM runs WHERE kind='historical-acquire'")]
+    lineages = {run_source_mode(db, r) for r in runs}
+    if lineages == {"synthetic"}:
+        return "synthetic"
+    if lineages == {"live"}:
+        return "historical_retrieval"
+    if not lineages:
+        raise ValueError("the archive has no historical acquisition run")
+    raise ValueError("the archive mixes live and synthetic acquisition runs; select one run")
+
+
 def team_histories(games):
     """team id → time-ordered TeamGame results of final regular/postseason games."""
     histories = {}
@@ -189,7 +209,7 @@ def build(
     manifest = {
         "format": DATASET_FORMAT,
         "name": name,
-        "evidence_kind": "historical_retrieval",
+        "evidence_kind": evidence_kind(db, run_id),
         "source": {
             "kind": "history_archive",
             "interpretation": interpret.INTERPRETATION,

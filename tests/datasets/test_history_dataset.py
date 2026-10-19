@@ -33,7 +33,9 @@ def build(store, config, *, handler=None, feature_set="fs-full-v1", **kwargs):
 
 def test_rows_labels_inputs_and_manifest(store, config):
     manifest, rows = build(store, config)
-    assert manifest["evidence_kind"] == "historical_retrieval"
+    assert (
+        manifest["evidence_kind"] == "synthetic"
+    )  # a synthetic-transport archive is never labelled real
     assert manifest["rows"] == 2 and len(rows) == 2
     assert manifest["exclusions"] == {"identity:start_differs": 1}
     by_key = {r["opportunity_key"]: r for r in rows}

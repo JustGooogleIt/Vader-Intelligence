@@ -207,8 +207,10 @@ def backtest_crash(workdir, registry, dataset_id, model_id, rows):
                 "crash_point": index,
                 "step": points[index],
                 "crashed": crashed,
-                "identical": {k: report[k] for k in ("pnl", "orders", "fills")}
-                == {k: clean[k] for k in ("pnl", "orders", "fills")},
+                # The whole report (orders, fills, P&L, exposure history, rejections,
+                # settlements, verification), not only a few fields.
+                "identical": {k: v for k, v in report.items() if k != "manifest"}
+                == {k: v for k, v in clean.items() if k != "manifest"},
                 "verification": report["verification"],
             }
         )

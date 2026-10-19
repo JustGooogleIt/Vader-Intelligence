@@ -28,6 +28,9 @@ def test_end_to_end_chain_with_hand_checked_numbers(tmp_path):
     assert shadow["midpoint_brier"] == "0.126025" and shadow["midpoint_log_loss"] == "0.438505"
     delta = Decimal(shadow["paired_with_midpoint"]["mean_brier_delta"])
     assert math.isclose(float(delta), (p - 1) ** 2 - (0.645 - 1) ** 2, abs_tol=1e-9)
+    # Independent of the evaluator: log-loss delta = (-ln p) - (-ln 0.645).
+    log_delta = Decimal(shadow["paired_with_midpoint"]["mean_log_loss_delta"])
+    assert math.isclose(float(log_delta), math.log(0.645) - math.log(p), abs_tol=1e-9)
 
     assert out["paper"]["state"] == "paper_approved" and out["paper"]["verification"] == []
     assert out["candidate"]["transitions"] == [
@@ -48,3 +51,8 @@ def test_end_to_end_chain_with_hand_checked_numbers(tmp_path):
     assert arithmetic["fill_prices"] == ["0.61"]
     assert Decimal(arithmetic["filled_quantity_with_depth_4"]) <= 2
     assert arithmetic["realized"] == arithmetic["expected_realized"]
+    # Independent of the fee code: Kalshi general taker fee, rounded up to the cent,
+    # ceil(100 x 0.07 x C x P x (1 - P)) / 100 for C = 2 contracts at P = 0.61.
+    fee = Decimal(math.ceil(100 * 0.07 * 2 * 0.61 * 0.39)) / 100
+    assert Decimal(arithmetic["fees"]) == fee == Decimal("0.04")
+    assert Decimal(arithmetic["realized"]) == 2 * Decimal("0.39") - fee

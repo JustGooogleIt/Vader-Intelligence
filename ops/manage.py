@@ -100,9 +100,13 @@ def configure(args):
         }
         registry = getattr(args, "shadow_model_registry", None)
         if registry:
+            if not absolute(registry).is_dir():
+                raise ValueError("--shadow-model-registry must be an existing directory")
             config["shadow"]["model_registry"] = str(absolute(registry).resolve())
-    elif forbid:
-        raise ValueError("--forbid applies only with --shadow-research-config")
+    elif forbid or getattr(args, "shadow_model_registry", None):
+        raise ValueError(
+            "--forbid and --shadow-model-registry apply only with --shadow-research-config"
+        )
     validate(config)
     for name in ("python", "collector_config"):
         if not Path(config[name]).is_file():

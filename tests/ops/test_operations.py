@@ -700,17 +700,34 @@ class ShadowConfigurationTests(ShadowFixture):
         config = dict(self.config, shadow=dict(self.config["shadow"], model_registry=str(registry)))
         validated = validate(config)
         argv = tick_command(validated)
-        self.assertEqual(argv[argv.index("--model-registry") + 1], str(registry))
+        self.assertEqual(argv[argv.index("--model-registry") + 1], str(registry.resolve()))
         self.assertNotIn("--model-registry", tick_command(validate(self.config)))
+        # A registry removed later must not stop lifecycle actions from loading the config;
+        # its existence is checked when configuring.
         missing = dict(config, shadow=dict(config["shadow"], model_registry=str(self.root / "no")))
-        with self.assertRaises(ValueError):
-            validate(missing)
+        validate(missing)
         banned = self.production / "registry"
         banned.mkdir()
         inside = dict(config, shadow=dict(config["shadow"], model_registry=str(banned)))
         with self.assertRaises(ValueError) as caught:
             validate(inside)
         self.assertIn("forbidden production path", str(caught.exception))
+
+    def test_forbidden_paths_resist_case_changes_and_aliases(self):
+        # The Mac's default volume ignores case: a differently cased production path is
+        # the same directory and must be refused, as must an alias through a symlink.
+        upper = Path(str(self.production).upper()) / "shadow.sqlite3"
+        aliased = dict(self.config, database=str(upper))
+        with self.assertRaises(ValueError) as caught:
+            validate(aliased)
+        self.assertIn("forbidden production path", str(caught.exception))
+        link = self.root / "innocent-looking"
+        link.symlink_to(self.production)
+        linked = dict(
+            self.config, shadow=dict(self.config["shadow"], model_registry=str(link / "registry"))
+        )
+        with self.assertRaises(ValueError):
+            validate(linked)
 
     def test_configure_writes_the_shadow_block(self):
         args = argparse.Namespace(
