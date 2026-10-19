@@ -61,3 +61,34 @@ endpoints in isolated storage; nothing here is production evidence.
 | Dedicated archive enforced | `::test_cli_refuses_an_archive_that_holds_other_evidence` | synthetic |
 | Real payload shapes: 9,378 settled markets listed; 15/15 events of 2026-09-20 identified; candles parse | bounded live probe 2026-10-19 (80 requests, scratch archive) | live public, historical retrieval |
 | Full regression | 881 passed, 2 deselected (pre-existing) | — |
+
+## B Datasets and models (`feat/datasets-models`)
+
+| Claim | Evidence | Kind |
+|---|---|---|
+| Features see no quote after C, no result from the game date or later; post-C execution candles never reach features | `tests/datasets/test_history_dataset.py::test_a_quote_after_the_cutoff_cannot_change_a_row` (non-vacuous: the injected candle is archived), `::test_feature_context_refuses_post_cutoff_inputs`, `::test_team_history_uses_only_earlier_official_dates`, `tests/history/test_acquire.py::test_execution_candles_are_a_separate_stage_features_never_read` | synthetic |
+| Datasets deterministic; registry append-only, write-once, deduplicated | `::test_builds_are_deterministic_and_the_registry_deduplicates` | synthetic |
+| Chronological embargoed splits; groups never split; holdout only via `holdout_rows` | `::test_splits_embargo_groups_and_holdout_isolation` | synthetic |
+| Holdout ledger: consumed once, reuse thereafter, never untouched | `::test_holdout_ledger_records_consumption_then_reuse`, `tests/datasets/test_training.py::test_holdout_is_consumed_once_and_then_reported_as_reused` | synthetic |
+| 2025 date-only identity is opt-in and flagged `start_corroborated=false` | `::test_date_only_identity_is_opt_in_and_flagged` | synthetic |
+| Collection datasets: quotes retrieved by C only; live lineage never admits synthetic collection | `tests/datasets/test_collection_dataset.py` | synthetic |
+| Model library: train-only preprocessing, JSON artifacts, numpy GBM parity, OOF predictions never from a model that saw the row | `tests/models/` (54) | synthetic |
+| Training lifecycle: deterministic artifact; labels outside development cannot change it | `tests/datasets/test_training.py::test_labels_outside_development_cannot_change_the_artifact` | synthetic |
+
+## B4 Registered forecasters (`feat/registered-forecasters`)
+
+| Claim | Evidence | Kind |
+|---|---|---|
+| Contract-4 decision carries the model result computed from listing quotes witnessed by C; evaluation contract 2 scores it on the same population | `tests/forecast/test_registered_forecasters.py::test_contract_four_decision_carries_the_forward_model_result` | synthetic |
+| Unwitnessed quotes never feed a model | `::test_only_quotes_witnessed_by_the_cutoff_feed_a_model` | synthetic |
+| Research-only feature sets cannot run forward; schema 6 and artifacts required; older contracts closed | `::test_research_only_feature_sets_cannot_run_forward`, `::test_forecasters_need_schema_six_and_their_artifacts`, `::test_schema_six_closes_older_contracts_for_new_rows` | synthetic |
+| A protocol without forecasters keeps its hash | `::test_a_protocol_without_forecasters_keeps_its_hash_and_writes_contract_four` | synthetic |
+| A trained artifact runs at C through the CLI (`--model-registry`) | `::test_a_trained_artifact_runs_at_the_cutoff_through_the_cli` | synthetic |
+
+## C Symbolic search (`feat/symbolic-search`)
+
+| Claim | Evidence | Kind |
+|---|---|---|
+| Engine: protected operators, budgets, dedup, determinism, planted relation, replay | `tests/symbolic/` (58) | synthetic |
+| Integration: artifact parity with replay; full search record stored; holdout untouched; shared ledger; usable as a forward forecaster | `tests/datasets/test_symbolic_search.py` (4) | synthetic |
+| Full regression at the C head | 1022 passed, 2 deselected (pre-existing) | — |

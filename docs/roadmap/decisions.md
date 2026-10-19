@@ -159,3 +159,22 @@ not an amendment.
 - Evaluation item contract 2 scores every forecaster of the cohort on the same population
   with the same publication and outcome dispositions; reports pair each with midpoint.
 - Opened by an explicit no-DDL migration (schema 6), following D-001's pattern.
+
+## D-005 NBA and NFL adapters: blocked on an authoritative schedule source (2026-10-19)
+
+Context. A5 asks for NBA/NFL adapters only if they can reuse the architecture with
+league-specific identity, schedule and settlement semantics. Research (16 public GETs and
+documentation, `docs/evidence/nba-nfl-sources-20261019.md`): Kalshi is ready
+(`KXNBAGAME` 1,516 settled games, `KXNFLGAME` 474; two complementary contracts per game;
+NFL ties settle at $0.50 each; date-only tickers and rules, no start time). The blocker is
+the official schedule/result source the MLB vertical relies on: the NBA CDN schedule
+returns 403 to scripts and the NBA terms restrict regularly updated databases; the NFL has
+no free official API; ESPN's public endpoints work but are unofficial and their terms
+forbid automated access.
+
+Decision. A5 is blocked by a data-source authorization decision, not by engineering. No
+adapter is built on a source whose terms forbid this use. If the user accepts ESPN (the
+second-ranked settlement source in both Kalshi contracts) or provides an authorized source,
+the recommended order is NFL first (research only; nflverse as an independent cross-check;
+ties and fair-price resolutions as explicit non-binary outcomes), then NBA (preseason,
+makeup games with new tickers, NBA Cup final outside the series).
