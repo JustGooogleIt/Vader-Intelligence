@@ -225,6 +225,14 @@ def parser():
         if name == "limits":
             sub.add_argument("--file", required=True, help="TOML with a [limits] table")
             sub.add_argument("--actor", required=True)
+    live = commands.add_parser(
+        "live", help="live adapter readiness (local checks only; never activates or orders)"
+    )
+    live_commands = live.add_subparsers(dest="live_command", required=True)
+    lready = live_commands.add_parser("readiness", help="evaluate every activation gate locally")
+    lready.add_argument("--activation-config", required=True, help="live activation TOML")
+    lready.add_argument("--acknowledge", required=True, help="SHA-256 of the config file")
+    lready.add_argument("--ledger", required=True, help="live ledger path")
     minspect = model_commands.add_parser("inspect")
     minspect.add_argument("--registry", required=True)
     minspect.add_argument("--id", help="one model; omit to list")
@@ -295,6 +303,8 @@ def execute(args):
         return _symbolic(args)
     if args.command == "ledger":
         return _ledger(args)
+    if args.command == "live":
+        return _live(args)
     with nullcontext() if args.command == "health" else writer_lock(config.database):
         store = Store(
             config.database, min_free_bytes=config.min_free_bytes, readonly=args.command == "health"
@@ -798,6 +808,37 @@ def _ledger(args):
         }
     finally:
         ledger.close()
+
+
+def _live(args):
+    """Readiness only: every activation gate except loading the credential, with no network
+    request. Activation itself is a separate, reviewed user decision (runbook)."""
+    from datetime import datetime, timezone
+
+    from .trading.kalshi.activation import check_gates
+    from .trading.ledger import Ledger
+
+    if not Path(args.ledger).is_file():
+        raise ValueError(f"ledger not found: {args.ledger}")
+    ledger = Ledger(args.ledger, "live", create=False, readonly=True)
+    try:
+        results, activation = check_gates(
+            args.activation_config,
+            acknowledge_hash=args.acknowledge,
+            ledger=ledger,
+            now=datetime.now(timezone.utc),
+        )
+    finally:
+        ledger.close()
+    gates = [{"gate": r.gate, "passed": r.passed, "detail": r.detail} for r in results]
+    ready = all(g["passed"] for g in gates) and activation is not None
+    return {
+        "status": "complete" if ready else "failed",
+        "ready_except_credential": ready,
+        "credential_checked": False,
+        "gates": gates,
+        "note": "readiness never loads the key, contacts the exchange or places an order",
+    }
 
 
 def main():
