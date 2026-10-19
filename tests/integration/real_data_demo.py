@@ -33,6 +33,10 @@ from vader_intelligence.cli import execute, parser  # noqa: E402
 SPLIT = ["--development-through", "2026-07-31", "--validation-through", "2026-08-31"]
 
 
+def set_split(development_through, validation_through):
+    SPLIT[1], SPLIT[3] = development_through, validation_through
+
+
 class Recorder:
     def __init__(self, out):
         self.out = Path(out)
@@ -274,7 +278,10 @@ def main():
     p.add_argument("--root", required=True)
     p.add_argument("--history-db")
     p.add_argument("--out", required=True)
+    p.add_argument("--development-through", default="2026-07-31")
+    p.add_argument("--validation-through", default="2026-08-31")
     args = p.parse_args()
+    set_split(args.development_through, args.validation_through)
     run = Recorder(args.out)
     if args.phase == "pods":
         candidates = pods_phase(args, run)
