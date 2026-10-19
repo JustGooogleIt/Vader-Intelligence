@@ -37,6 +37,7 @@ always names the exact next action.
 | #30 | `feat/pod-autopilot` | D-013 pod autopilot: development-only planners and a bounded loop of approved operations |
 | #31 | `fix/review-26-27` | repairs from the independent #26/#27 pre-review: D-014 pinned holdout, coordinator-only inputs, candidate-bound evidence, dry-run fidelity |
 | #32 | `fix/review-24-25` | repairs from the #24/#25 pre-review: live-adapter hardening (skew, TLS, writes, exits, bindings), ingest idempotency, fee bound, Kelly rounding |
+| #33 | `fix/review-17-23-28` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping, forecast-tick abstention, synthetic label, case-insensitive ops guard |
 
 Full SHAs are in the final handoff (`docs/handoffs/roadmap-handoff.md`).
 

@@ -320,3 +320,23 @@ Decision (#31).
     or after it.
 - **The real datasets.** The three real datasets that have models are pinned at
   2026-09-02, the D-009 boundary, by operator action recorded in the registry.
+
+## D-015 `last_trade_gap_c` is not the same feature in history and forward (open, 2026-10-19)
+
+Context. An independent pre-review of #21 found that `last_trade_gap_c` in `fs-market-v1`
+has two meanings:
+- **From candles (history):** a trade price exists only in minutes that had trades, so
+  the gap is the age of the last trade.
+- **From live listings (forward):** `last_price_dollars` is the last trade ever, stamped
+  with the listing's retrieval time, so the gap measures the retrieval's age.
+
+The same quiet market therefore gives a value forward and `None` historically. Models
+trained on history see a different input distribution forward.
+
+Decision. Nothing is changed in this run. Changing the feature would change
+`fs-market-v1` under trained models and the running shadow. Instead:
+- tonight's forward shadow results for fs-market-v1 models carry this caveat;
+- the proposal is `fs-market-v2`, which either drops the feature or computes it only
+  from a witnessed trade time.
+
+This is open for the user, together with the next feature work.

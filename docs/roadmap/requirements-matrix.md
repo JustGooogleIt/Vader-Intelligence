@@ -30,5 +30,5 @@ recorded output), **simulated** (only against synthetic data or doubles), **unte
 | H5 | One-time holdout evaluation of the final candidate | — | **not done by decision** | D-009: no candidate validated; holdout untouched and pinned at 2026-09-02 (D-014, #31); path demonstrated on synthetic data |
 | X1 | No merges, deployment, production mutation, orders, paid calls, secrets | all | held | production read-only queries only; no credentials exist |
 | X2 | Stacked draft PRs, no force-push under review | #17–#28 | held | the only rewrite was of unpushed branches |
-| X4 | Independent review before Codex | #29–#32 | done (pre-review only) | read-only Opus reviews of #24, #25, #26, #27, #29 and #30; confirmed findings fixed in #30 (`d744766`), #31 and #32; Codex Prime/Secondary review not yet done |
+| X4 | Independent review before Codex | #29–#33 | done (pre-review only) | read-only Opus reviews of every PR in the run (#17–#30); confirmed findings fixed in #30 (`d744766`), #31, #32 and #33; open items listed in the handoff; Codex Prime/Secondary review not yet done |
 | X3 | Persistent run documents | #28 | implemented | continuation, backlog, decisions, evidence index, review packets, this matrix, final handoff |

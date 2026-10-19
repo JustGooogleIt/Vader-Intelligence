@@ -31,6 +31,7 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #30 | `feat/pod-autopilot` | `d744766d96ebb869a9e8ab6ab1fc1c40e9ca5262` | G pod autopilot: development-only planners, bounded loop (D-013) | 1294 passed |
 | #31 | `fix/review-26-27` | `e4b6770baf7332697720819bd86a0a8a7e13ea6c` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | 1303 passed |
 | #32 | `fix/review-24-25` | `3827df2adea441b33bdef56d0a48c226d5e89aa7` | repairs from the #24/#25 pre-review: skew latch, TLS trust, ambiguous writes, exits, ingest idempotency, Kelly rounding | 1317 passed |
+| #33 | `fix/review-17-23-28` | `4e44ef5877b2a3311e64a1081639ed0950017a12` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping, forecast tick abstention, synthetic label, case-insensitive ops guard | 1321 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -130,6 +131,19 @@ each finding in temp directories.
     - fractional quantity steps over-reserving fees;
     - reduce-only sells under unknown state (by design; guarded by venue coverage).
 
+- **#17–#23 and #28:** no critical finding. Contract versioning, rule v2, sticky C,
+  leakage guards, lineage, training hygiene and the production ops path all held.
+  - Fixed in #33:
+    - a postponed game could be scored through a stale settlement mapping (#19);
+    - one unloadable artifact stopped the whole forecast tick (#22);
+    - synthetic acquisitions were labelled real (#20);
+    - the ops forbidden-path guard was case-sensitive on a case-insensitive volume. It
+      predates #28, and a shadow database could have aliased the production archive.
+  - Also corrected: the evidence-doc claims flagged by the #28 review (a row positive
+    before fees, `clip_to_limits` false, single-trade intervals).
+  - Documented, not changed: `last_trade_gap_c` semantics (D-015), forecaster
+    populations, contract-4 auditability, and the #17–#19 minors.
+
 Codex review remains the user's step.
 
 ## 4. Reproduction
@@ -178,6 +192,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #30 | 1294 passed, 2 deselected (15 new autopilot tests); wheel built at this head imports `pods.planner` and `pods.autopilot`, and its smoke test is complete (schemas 1–6). A read-only Opus review of #29 and #30 found nothing critical; its confirmed findings on #30 were fixed in `d744766` |
 | #31 | 1303 passed, 2 deselected (9 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 | #32 | 1317 passed, 2 deselected (14 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
+| #33 | 1321 passed, 2 deselected (4 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 
 ## 6. Data and model limitations
 
@@ -191,6 +206,11 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
   collect regular-season books.
 - Fee schedules are unverified (higher-fee default); Kalshi API facts marked unverified
   are listed in `docs/live-canary-runbook.md` §6 (A1–A20).
+- **`last_trade_gap_c` (D-015).** It is not the same feature from candles and from live
+  listings. The fs-market-v1 models in tonight's forward shadow see a forward input
+  distribution they were not trained on.
+- **Forecaster populations.** A forecaster is scored wherever it gave a probability; only
+  its `paired_with_midpoint` block shares the midpoint's population.
 - Holdout-period data that was read:
   - The candle-vs-book check (§3) read market *features* (mid, spread) at C for 16
     postseason games dated after the 2026-09-02 holdout pin. It read no outcome and
@@ -222,9 +242,11 @@ post-only order, cancel, reconcile, shutdown (never executed).
 3. D-009: whether a two-season split should define a new holdout before further model
    work; the current 2026 holdout stays untouched.
 4. D-008 default criteria (CI below zero and both halves) — stricter or looser?
-5. Backtest slippage semantics: keep "slippage = no fill at a touch limit", or add a
+5. D-015: drop or redefine `last_trade_gap_c` in an `fs-market-v2` before the next
+   model work.
+6. Backtest slippage semantics: keep "slippage = no fill at a touch limit", or add a
    strategy limit offset (pay up to k ticks) so the slippage axis measures price?
-6. Live activation (demo canary) — only after review; requires the user's own key.
+7. Live activation (demo canary) — only after review; requires the user's own key.
 
 ## 9. Cleanup (not done automatically)
 

@@ -23,6 +23,7 @@ merged, deployed or activated; no credentials exist in this system.
 | #30 | `feat/pod-autopilot` | G autonomy: development-only planners, bounded autopilot loop (D-013) | context leakage, selection | bounds, resume, provider refusal |
 | #31 | `fix/review-26-27` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | holdout pin, evidence binding | dry-run checks, quarantine |
 | #32 | `fix/review-24-25` | repairs from the #24/#25 pre-review: skew latch, TLS trust store, ambiguous write answers, uncapped exits, ingest idempotency, Kelly rounding | ingest identity, fee bound | live adapter safety |
+| #33 | `fix/review-17-23-28` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping (#19), forecast-tick abstention (#22), synthetic label (#20), ops guard | outcome join, abstention | ops guard |
 
 ## Codex Prime — evidence meaning, versioning, leakage, scoring, money correctness
 
@@ -94,6 +95,12 @@ Read first: `docs/roadmap/decisions.md` (D-001..), `docs/roadmap/evidence-index.
     - Can a worker still introduce an input artifact?
     - Is paper evidence always the candidate's own coordinator backtest?
     - Is the dry run's report of what it checks now accurate?
+15. **Pre-review repairs (#32, #33).** Several checks:
+    - **#32:** can a skew observation still block a cancel? Can any non-2xx write answer
+      other than 400/401/403/422 be read as "not placed"?
+    - **#33:** can the outcome join still pair a Kalshi result with a mapping from another
+      run? Can a malformed artifact still stop a tick? Can a case or alias variant of a
+      production path pass the ops guard?
 
 Commands:
 
