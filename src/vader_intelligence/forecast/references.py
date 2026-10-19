@@ -53,6 +53,27 @@ def run_source_mode(db, run_id):
     return "live"
 
 
+DERIVATIONS = ("current", "draft")
+
+
+def _synthetic_run(db, run_id, derivation):
+    """Whether evidence written by this run is synthetic under a reference derivation.
+
+    "current": the persisted/inferred lineage of `run_source_mode` (PR #12 onward).
+    "draft": the frozen derivation of the draft code at PR #10/#11 (5811991), under
+    which only fixture runs were synthetic. Used only to validate rows that the draft
+    code wrote (decision D-001); never to admit evidence for current use.
+    """
+    if derivation == "draft":
+        row = db.execute("SELECT kind FROM runs WHERE id=?", (run_id,)).fetchone()
+        if row is None:
+            raise ValueError("missing run")
+        return row[0] == "fixture"
+    if derivation != "current":
+        raise ValueError("unknown reference derivation")
+    return run_source_mode(db, run_id) == "synthetic"
+
+
 def row_dict(db, table, key):
     if table not in LEGACY | set(COLUMNS):
         raise ValueError("unsupported reference table")
@@ -73,7 +94,7 @@ def row_dict(db, table, key):
     return dict(zip((d[0] for d in cursor.description), row))
 
 
-def reference(db, table, key):
+def reference(db, table, key, derivation="current"):
     """Explicitly selected row → exact typed fingerprint, including retrieval identity.
 
     Does not choose the latest row, mint receipts, infer entry identity or claim
@@ -93,7 +114,7 @@ def reference(db, table, key):
         ]
     else:
         fetch_ids.update(v for k, v in row.items() if k.endswith("fetch_id") and v is not None)
-        if "run_id" in row and run_source_mode(db, row["run_id"]) == "synthetic":
+        if "run_id" in row and _synthetic_run(db, row["run_id"], derivation):
             mode = "synthetic"
     fetches = []
     for fetch_id in sorted(fetch_ids):
@@ -113,7 +134,7 @@ def reference(db, table, key):
             raise ValueError("corrupt reference raw bytes")
         # Lineage is a property of the writing run, persisted in its provenance: a
         # collection made with an injected transport or clock stays synthetic forever.
-        if run_source_mode(db, run_id) == "synthetic":
+        if _synthetic_run(db, run_id, derivation):
             mode = "synthetic"
         fetches.append(
             {"id": fetch_id, "seq": seq, "state": state, "raw_sha256": sha, "retrieved_at": at}
@@ -129,7 +150,7 @@ def reference(db, table, key):
     }
 
 
-def validate_references(db, payload):
+def validate_references(db, payload, derivation="current"):
     """Validate every typed nested reference, not just the top-level list."""
     stack = [payload]
     visited = 0
@@ -140,7 +161,7 @@ def validate_references(db, payload):
             raise ValueError("manifest node limit")
         if isinstance(value, dict):
             if "table" in value:
-                expected = reference(db, value["table"], value.get("key"))
+                expected = reference(db, value["table"], value.get("key"), derivation)
                 if value != expected:
                     raise ValueError("reference provenance mismatch")
                 if expected["source_mode"] == "synthetic" and payload["mode"] != "synthetic":

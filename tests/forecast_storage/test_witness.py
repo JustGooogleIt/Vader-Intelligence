@@ -26,7 +26,7 @@ def collected_archive(store, config, fixture_data):
     """Schema 4 holding one complete two-phase collection (1 pass, 9 fetches, 2 books)."""
     settlement_migrate(store)
     schema.migrate(store.db)
-    schema.migrate(store.db, record_contract=2)
+    schema.migrate(store.db, record_contract=3)
     clock = Clock()
     handler, _, _ = handler_for(fixture_data)
     result = Collector(store, reader_for(store, config, handler, clock), config).run()
@@ -59,11 +59,11 @@ def receipts(store):
     ]
 
 
-def test_witness_requires_record_contract_two(store, config, fixture_data):
+def test_witness_requires_record_contract_three(store, config, fixture_data):
     settlement_migrate(store)
     schema.migrate(store.db)
     clock = Clock()
-    with pytest.raises(ValueError, match="record-contract 2"):
+    with pytest.raises(ValueError, match="record-contract 3"):
         witness(store, clock=clock.now, monotonic=clock.mono)
     assert store.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0  # refused before a run
 
@@ -76,7 +76,7 @@ def test_one_receipt_per_subject_and_repeat_is_a_no_op(archive4):
     assert first["fetches_witnessed"] == 9 and first["untrusted"] == 0
     assert first["injected_clock"] is True and first["pending_seen"] == 0
     rows = receipts(store)
-    assert len(rows) == 10 and all(p["contract_version"] == 2 for _, p in rows)
+    assert len(rows) == 10 and all(p["contract_version"] == 3 for _, p in rows)
     assert all(p["mode"] == "synthetic" and p["clock_status"] == "trusted" for _, p in rows)
     assert all(p["observed_at"] == rows[0][1]["observed_at"] for _, p in rows)  # one sample
     # Ordering (plan §8.3 step 7): observed after the subject, never after insertion.
@@ -274,7 +274,7 @@ def test_failed_attempt_without_body_is_witnessed_by_row_fingerprint(archive4):
 def test_fixture_lineage_stays_synthetic_and_replay_creates_no_receipt(store, config, fixture_data):
     settlement_migrate(store)
     schema.migrate(store.db)
-    schema.migrate(store.db, record_contract=2)
+    schema.migrate(store.db, record_contract=3)
     import_fixture(store, FIXTURE, config)  # H3: old-looking timestamps, fixture run
     clock = Clock()
     result = witness(store, clock=clock.now, monotonic=clock.mono)
@@ -285,7 +285,8 @@ def test_fixture_lineage_stays_synthetic_and_replay_creates_no_receipt(store, co
     before = receipts(store)
     assert replay(store)["forecast_storage"]["record_contracts"]["forecast_receipts"] == {
         "1": 0,
-        "2": 7,
+        "2": 0,
+        "3": 7,
     }
     assert receipts(store) == before  # C4
     assert store.verify_integrity() == []
@@ -294,7 +295,7 @@ def test_fixture_lineage_stays_synthetic_and_replay_creates_no_receipt(store, co
 def test_witness_after_failed_collection_leaves_health_unhealthy(store, config, fixture_data):
     settlement_migrate(store)
     schema.migrate(store.db)
-    schema.migrate(store.db, record_contract=2)
+    schema.migrate(store.db, record_contract=3)
     handler, _, _ = handler_for(fixture_data)
     from conftest import response
 

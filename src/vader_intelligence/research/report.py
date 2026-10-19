@@ -148,6 +148,17 @@ def text_report(db, evaluation_id):
         lines.append(
             f"Unattributed decisions (other cohorts present): {r['unattributed_decisions']}"
         )
+    contract = r.get("record_contract")
+    lines.append(
+        "Record contract: "
+        + (str(contract) if contract is not None else "unrecorded (evaluated before D-001)")
+    )
+    if r.get("excluded_decisions"):
+        excluded = {}
+        for entry in r["excluded_decisions"]:
+            label = f"contract {entry['contract']} {entry['reason']}"
+            excluded[label] = excluded.get(label, 0) + 1
+        lines.append("Decisions outside this evaluation: " + _counts(excluded))
     lines.append(
         "Not a trading result: "
         + "; ".join(limit.split(":")[0].replace("_", " ") for limit in r["provenance_limitations"])
@@ -169,6 +180,8 @@ def compare(db, first_id, second_id):
             raise ValueError(f"evaluations differ in {field}; never pooled or compared")
     if ea["config_hash"] != eb["config_hash"]:
         raise ValueError("evaluations use different research protocol configurations")
+    if ea["report"].get("record_contract") != eb["report"].get("record_contract"):
+        raise ValueError("evaluations cover different record contracts; never pooled or compared")
     keys_a, keys_b = set(a["items"]), set(b["items"])
     scored_a = {k for k, i in a["items"].items() if i["paired_delta"] is not None}
     scored_b = {k for k, i in b["items"].items() if i["paired_delta"] is not None}

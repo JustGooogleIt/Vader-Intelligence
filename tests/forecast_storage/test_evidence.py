@@ -26,12 +26,12 @@ def iso(moment):
 
 
 class Archive:
-    """Schema-4 synthetic archive with helpers that write two-phase runs, passes and receipts."""
+    """Schema-5 synthetic archive with helpers that write two-phase runs, passes and receipts."""
 
     def __init__(self, path):
         self.db = legacy(path)
         schema.migrate(self.db)
-        schema.migrate(self.db, record_contract=2)
+        schema.migrate(self.db, record_contract=3)
         self.seq = 0
         self.witness_run("witness-run")
 
@@ -156,7 +156,7 @@ class Archive:
         fetch_id=None,
         observed_at,
         trusted=True,
-        contract=2,
+        contract=3,
         namespace=NS,
         mode="synthetic",
     ):
@@ -167,14 +167,14 @@ class Archive:
                 "discovery_pass",
                 None,
                 pass_id,
-                row["digest"] if contract == 2 else row["digest"],
+                row["digest"],
             )
         else:
             ref = reference(self.db, "fetches", {"id": fetch_id})
             body = self.db.execute(
                 "SELECT body_sha256 FROM fetches WHERE id=?", (fetch_id,)
             ).fetchone()[0]
-            subject = ("fetch", fetch_id, None, ref["digest"] if contract == 2 else body)
+            subject = ("fetch", fetch_id, None, ref["digest"] if contract >= 2 else body)
         run_id = "witness-run" if namespace == NS else f"witness-run-{namespace}"
         if self.db.execute("SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone() is None:
             self.witness_run(run_id, namespace)  # one witness run per observer namespace
@@ -198,8 +198,8 @@ class Archive:
             "monotonic_offset": "1.5",
             "clock_status": "trusted" if trusted else "untrusted",
         }
-        if contract == 2:
-            payload["contract_version"] = 2
+        if contract >= 2:
+            payload["contract_version"] = contract
         return journal.append(self.db, "forecast_receipts", payload)
 
 
@@ -232,11 +232,11 @@ def test_receipt_after_cutoff_is_not_rescued_by_sequence_or_bytes(archive):
 def test_contract_one_receipt_contributes_nothing_whatever_time_it_claims(archive):
     archive.run("r1")
     fetch_id, _ = archive.fetch("r1", "book", T0 - timedelta(seconds=10))
-    archive.db.execute("DELETE FROM schema_migrations WHERE version=4")
+    archive.db.execute("DELETE FROM schema_migrations WHERE version IN (4, 5)")
     archive.db.execute("PRAGMA user_version=3")
     archive.receipt(fetch_id=fetch_id, observed_at=T0 - timedelta(seconds=9), contract=1)
-    archive.db.execute("INSERT INTO schema_migrations VALUES (4, ?)", (iso(T0),))
-    archive.db.execute("PRAGMA user_version=4")
+    archive.db.execute("INSERT INTO schema_migrations VALUES (4, ?), (5, ?)", (iso(T0), iso(T0)))
+    archive.db.execute("PRAGMA user_version=5")
     availability = evidence.fetch_availability(archive.db, fetch_id, mode="synthetic")
     assert availability.status == "availability_unproven" and availability.receipt_id is None
     assert freshness(availability.times, T0).reasons == ("availability_unproven",)
@@ -247,7 +247,8 @@ def test_contract_one_receipt_contributes_nothing_whatever_time_it_claims(archiv
     assert as_of(archive, T0).diagnostics["contract_1_receipts_ignored"] == 1
     assert journal.integrity(archive.db)["record_contracts"]["forecast_receipts"] == {
         "1": 1,
-        "2": 1,
+        "2": 0,
+        "3": 1,
     }
 
 

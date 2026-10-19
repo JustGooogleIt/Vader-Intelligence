@@ -31,8 +31,8 @@ def build_schema4_via_cli(path):
     assert cli(path, "db-init")["schema_version"] == 1
     assert cli(path, "settlement", "migrate")["schema_version"] == 2
     assert cli(path, "forecast", "migrate")["schema_version"] == 3
-    rc2 = cli(path, "forecast", "migrate", "--record-contract", "2")
-    assert rc2["schema_version"] == 4 and rc2["record_contract"] == 2
+    rc2 = cli(path, "forecast", "migrate", "--record-contract", "3")
+    assert rc2["schema_version"] == 5 and rc2["record_contract"] == 3
 
 
 def test_vertical_slice_through_real_entry_points(tmp_path):
@@ -71,7 +71,7 @@ def test_vertical_slice_through_real_entry_points(tmp_path):
     replayed = cli(path, "replay")
     assert replayed["forecast_storage"]["replay"] == "preserved_not_reconstructed"
     counts = replayed["forecast_storage"]["record_contracts"]
-    assert counts["forecast_decisions"] == {"1": 0, "2": 1}
+    assert counts["forecast_decisions"] == {"1": 0, "2": 0, "3": 1}
     assert counts["forecast_bindings"]["1"] == 1
     assert _decision_digest(path) == before  # immutable across replay
 

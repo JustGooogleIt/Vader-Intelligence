@@ -35,6 +35,7 @@ from datetime import datetime
 from ..provenance import RunProvenanceV1, source_hash
 from ..storage import timestamp, utc_now
 from . import journal
+from .evidence import PROOF
 from .references import digest, reference, run_source_mode
 
 NAMESPACE = "local-witness-v1"
@@ -59,12 +60,10 @@ GROUP = {
 }
 REFUSED_UNDER = ("collect", "discover", "live-check")
 LIMITS = {"max_subjects": (1, 500), "scan_rows": (1, 5000), "max_passes": (1, 100)}
-# Only receipts written by an operational witness run count, whatever a payload claims.
-WITNESS_RECEIPT = (
-    " json_extract(r.payload_json,'$.contract_version')=2"
-    " AND json_extract(r.payload_json,'$.observer_namespace')=?"
-    " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness')"
-)
+# Only operational witness receipts count, whatever a payload claims (evidence.PROOF): a
+# subject already witnessed under contract 2 by a lineage-recording witness is not
+# witnessed again; a draft-era or supplied receipt does not count as witnessed.
+WITNESS_RECEIPT = PROOF
 CANDIDATE_LIMIT = 10000
 
 
@@ -96,9 +95,9 @@ def witness(
         raise ValueError("invalid observer namespace")
     if store.db.in_transaction:
         raise ValueError("witness requires an idle connection")
-    if store.schema_version() < 4:
+    if store.schema_version() < 5:
         raise ValueError(
-            "witness requires record contract 2: run vader forecast migrate --record-contract 2"
+            "witness requires record contract 3: run vader forecast migrate --record-contract 3"
         )
     configuration = {
         "namespace": namespace,
@@ -195,7 +194,7 @@ def witness(
                 created = clock()
                 envelope = {
                     "schema_version": 1,
-                    "contract_version": 2,
+                    "contract_version": 3,
                     "run_id": run_id,
                     "created_at": timestamp(max(created, observed)),
                     "code_hash": code_hash,
@@ -419,7 +418,7 @@ def _take(items, allowance):
 
 
 def _high_water_mark(db, namespace, mode):
-    """Newest trusted contract-2 observed_at in this namespace and mode, and whether any
+    """Newest trusted operational observed_at in this namespace and mode, and whether any
     witness receipt exists there at all (receipts but no trusted one means untrusted)."""
     rows = db.execute(
         "SELECT json_extract(r.payload_json,'$.clock_status'), r.observed_at"

@@ -46,7 +46,7 @@ def test_full_tick_slice_eligible_decision_and_publication(store, config):
     assert decision["cutoff_eligible"] is True and decision["game_id"] == GAME_ID
     assert decision["results"]["constant-v1"]["probability"] == "0.5"
     assert decision["results"]["midpoint-v1"]["probability"] == "0.6450"
-    assert decision["contract_version"] == 2
+    assert decision["contract_version"] == 3
     assert decision["manifest"]["discovery"]["collector_config_hash"] != decision["config_hash"]
     assert store.verify_integrity() == []
 
@@ -178,14 +178,14 @@ def test_concurrent_due_ticks_do_not_duplicate(store, config, tmp_path):
     assert all(o in ("complete", "busy", "inconclusive") for o in outcomes)
 
 
-def test_tick_requires_schema_four(store, config):
+def test_tick_requires_schema_five(store, config):
     from vader_intelligence.settlement.schema import migrate as settlement_migrate
 
     settlement_migrate(store)
     from vader_intelligence.forecast.schema import migrate as forecast_migrate
 
     forecast_migrate(store.db)  # schema 3 only
-    with pytest.raises(ValueError, match="record contract 2"):
+    with pytest.raises(ValueError, match="record contract 3"):
         tick_at(store, PROTO, DUE)
 
 

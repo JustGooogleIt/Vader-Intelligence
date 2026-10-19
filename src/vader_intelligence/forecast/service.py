@@ -531,7 +531,7 @@ def decide_opportunity(
 
     envelope = {
         "schema_version": 1,
-        "contract_version": 2,
+        "contract_version": 3,
         "run_id": run_id,
         "created_at": created_at,
         "code_hash": code_hash,

@@ -453,7 +453,7 @@ def test_mixed_collector_cohorts_are_evaluated_separately(store, config, monkeyp
     ).fetchone()[0]
     abstention = {
         "schema_version": 1,
-        "contract_version": 2,
+        "contract_version": 3,
         "run_id": other_run,
         "created_at": at(19, 2).isoformat(),
         "code_hash": code_hash,
@@ -669,7 +669,7 @@ def test_evaluate_and_inspect_through_the_cli(tmp_path, monkeypatch):
     cli("db-init")
     cli("settlement", "migrate")
     cli("forecast", "migrate")
-    cli("forecast", "migrate", "--record-contract", "2")
+    cli("forecast", "migrate", "--record-contract", "3")
     store = Store(path, min_free_bytes=1)
     try:
         forward_slice(store, config)
@@ -695,4 +695,5 @@ def test_evaluate_and_inspect_through_the_cli(tmp_path, monkeypatch):
     assert cli("replay")["forecast_storage"]["record_contracts"]["evaluation_runs"] == {
         "1": 1,
         "2": 0,
+        "3": 0,
     }

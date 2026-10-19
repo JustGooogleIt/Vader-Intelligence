@@ -49,11 +49,13 @@ SHADOW_STATE="$SHADOW_DIR/state"
 mkdir -p "$SHADOW_DIR"
 printf '[research]\ndataset = "forward-shadow-20261014"\n' > "$SHADOW_DIR/research.toml"
 
-# Schema 4 archive, explicitly, before any cycle (no command migrates implicitly).
+# Schema 5 archive (record contract 3, decision D-001), explicitly, before any cycle
+# (no command migrates implicitly). An existing schema-4 shadow archive is migrated the
+# same way; its contract-2 rows are preserved and classified, never converted.
 "$VADER_PY" -m vader_intelligence.cli --db "$SHADOW_DB" db-init
 "$VADER_PY" -m vader_intelligence.cli --db "$SHADOW_DB" settlement migrate
 "$VADER_PY" -m vader_intelligence.cli --db "$SHADOW_DB" forecast migrate
-"$VADER_PY" -m vader_intelligence.cli --db "$SHADOW_DB" forecast migrate --record-contract 2
+"$VADER_PY" -m vader_intelligence.cli --db "$SHADOW_DB" forecast migrate --record-contract 3
 
 "$VADER_PY" "$VADER_OPS" configure \
   --checkout "$VADER_ROOT" --python "$VADER_PY" --database "$SHADOW_DB" \

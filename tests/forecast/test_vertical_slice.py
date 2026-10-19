@@ -39,7 +39,7 @@ def pass_receipt_observed(store, pass_id):
 def to_schema4(store):
     settlement_migrate(store)
     schema.migrate(store.db)
-    schema.migrate(store.db, record_contract=2)
+    schema.migrate(store.db, record_contract=3)
 
 
 def common_eligibility(store, game_cutoff, namespace_mode="synthetic"):
@@ -170,7 +170,8 @@ def test_replay_preserves_the_slice_and_reports_contract_counts(store, config, f
     assert outcome["forecast_storage"]["replay"] == "preserved_not_reconstructed"
     assert outcome["forecast_storage"]["record_contracts"]["forecast_receipts"] == {
         "1": 0,
-        "2": before,
+        "2": 0,
+        "3": before,
     }
     assert outcome["forecast_storage"]["latest_discovery"]["id"] == result["discovery_pass_id"]
     assert store.db.execute("SELECT COUNT(*) FROM forecast_receipts").fetchone()[0] == before

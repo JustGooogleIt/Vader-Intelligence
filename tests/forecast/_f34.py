@@ -23,7 +23,7 @@ GAME_ID = 824948
 def to_schema4(store):
     settlement_migrate(store)
     forecast_migrate(store.db)
-    forecast_migrate(store.db, record_contract=2)
+    forecast_migrate(store.db, record_contract=3)
 
 
 def fixture_data():

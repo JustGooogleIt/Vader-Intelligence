@@ -140,7 +140,7 @@ def main():
             ("db-init",),
             ("settlement", "migrate"),
             ("forecast", "migrate"),
-            ("forecast", "migrate", "--record-contract", "2"),
+            ("forecast", "migrate", "--record-contract", "3"),
         ):
             cli(*argv)
         store = Store(path, min_free_bytes=1)
