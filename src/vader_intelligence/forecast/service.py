@@ -48,6 +48,10 @@ IDENTITY_REASONS = frozenset(
         "unmapped_game",
         "ambiguous_game",
         "doubleheader_requires_game_number",
+        # rule v2 (decision D-002)
+        "ticker_unparsed",
+        "ticker_identity_mismatch",
+        "home_away_reversed",
     }
 )
 PREGAME_REASONS = frozenset(
@@ -59,6 +63,7 @@ PREGAME_REASONS = frozenset(
         "schedule_rule_time_mismatch",
         "unsupported_game_type",
         "past_pregame_cutoff",
+        "ticker_start_mismatch",  # rule v2 (decision D-002)
     }
 )
 CONTRACT_REASONS = frozenset(

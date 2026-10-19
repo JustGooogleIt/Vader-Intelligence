@@ -2,7 +2,6 @@ import json
 import sqlite3
 import time
 import uuid
-from dataclasses import asdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -124,7 +123,10 @@ class Collector:
             if row is None or row["kind"] != kind or row["status"] == "complete":
                 raise ValueError("resume requires an unfinished run of the same command")
             prov = json.loads(row["provenance_json"])
-            if prov["configuration"] != asdict(self.config) or prov["code_hash"] != source_hash():
+            if (
+                prov["configuration"] != self.config.provenance()
+                or prov["code_hash"] != source_hash()
+            ):
                 raise ValueError(
                     "resume requires the original configuration and code; start a new run"
                 )
@@ -157,7 +159,7 @@ class Collector:
                     run_id,
                     kind,
                     source_hash(),
-                    asdict(self.config),
+                    self.config.provenance(),
                     tool_configuration=tool_configuration,
                 ),
                 timestamp(self.reader.now()),

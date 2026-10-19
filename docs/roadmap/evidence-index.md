@@ -21,4 +21,20 @@ endpoints in isolated storage; nothing here is production evidence.
 | A contract-3 row on a lowered schema is refused before mutation by every migration | `test_record_contract.py::test_contract_three_row_in_a_lower_schema_archive_is_an_integrity_failure[3,4]`, `test_review_defects.py::test_invalid_contract_rejected_without_mutation` (10 cases) | synthetic |
 | Older binaries (main `ebb58df`, PR #16 `82665cd`) refuse schema 5 without mutation | `test_record_contract.py::test_older_binaries_refuse_a_schema_five_archive[2 revisions]` (git archive of each revision) | synthetic |
 | Installed wheel (outside the checkout) exercises schemas 1–5, contracts 1–3 and migrates the draft archive | `tests/integration/wheel_smoke.py --python <venv>`: 48 checks | synthetic |
-| Full regression | 836 passed, 2 deselected (pre-existing `tmux_jev`), ops unittest 42 OK, ruff clean, `git diff --check` clean | — |
+| Full regression | 835 passed, 2 deselected (pre-existing `tmux_jev`), ops unittest 42 OK, ruff clean, `git diff --check` clean | — |
+
+## A2 Eligibility/mapping rule v2 (`feat/eligibility-rule-v2`)
+
+| Claim | Evidence | Kind |
+|---|---|---|
+| Default configuration still rejects date-only rules (the 2026-10-14 live finding) | `tests/test_eligibility_rule_v2.py::test_default_rules_keep_rejecting_date_only_wording`, `tests/forecast/test_rule_v2_pipeline.py::test_default_configuration_finds_no_eligible_contract` | synthetic |
+| v2 identity + official start; timed rules unchanged with v2 on | `::test_rule_v2_establishes_identity_and_takes_the_start_from_the_official_schedule`, `::test_timed_rules_are_unchanged_when_rule_v2_is_enabled` | synthetic |
+| Close/expiration/occurrence times never substitute; every start ≠ ticker time refused (exhaustive ±600 min) | `::test_a_revised_start_fails_closed_and_close_times_never_substitute`, `::test_every_official_start_other_than_the_ticker_time_is_refused` | synthetic |
+| Ticker corroboration and identity ambiguity fail closed | `::test_ticker_corroboration_failures_fail_closed` (6), `::test_identity_ambiguity_and_home_away_reversal`, `::test_official_schedule_state_is_required` (6) | synthetic |
+| Default cohort hash unchanged; v2 is a separate cohort | `::test_rule_set_configuration_and_cohort_hash`, pipeline `::test_rule_v2_decides_and_publishes_from_evidence_available_at_cutoff` | synthetic |
+| Collection → witness → tick → decision/publication at C under v2 | pipeline test above (midpoint 0.6450, contract 3) | synthetic |
+| A start revised before C abstains with the v2 reason; unwitnessed revisions do not apply at C | `::test_start_revised_after_binding_abstains_at_cutoff_with_the_rule_v2_reason` | synthetic |
+| Mapping policy 2 labels outcomes; default settlement still quarantines; replay re-derives from recorded rules | `::test_rule_v2_outcome_is_labelled_through_mapping_policy_two`, `::test_a_default_settlement_run_still_quarantines_the_date_only_rule`, `::test_settlement_replay_derives_the_same_mapping_from_the_recorded_rules`, `tests/test_eligibility_rule_v2.py` mapping cases | synthetic |
+| On real archived postseason evidence v2 admits date-only markets, only with corroborated starts, and refuses moved/postponed games | `docs/evidence/rule-v2-archive-recheck-20261019.json` (read-only recheck of production bytes) | real archived bytes, historical recheck |
+| Ticker interpretation agrees with every archived rule (60 event/rule pairs; 38 timed rules' times equal ticker time) | D-002 facts | real archived bytes |
+| Full regression | 868 passed, 2 deselected (pre-existing), ops 42 OK, ruff clean | — |

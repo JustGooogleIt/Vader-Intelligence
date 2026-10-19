@@ -83,3 +83,30 @@ corroboration that must equal the official start in America/New_York (mismatch o
 absence fails closed). Close/expiration/occurrence times are never used. Enabled only by
 explicit collector configuration, which changes the collector configuration hash, so v2
 evidence forms its own cohort.
+
+Implementation facts (PR `feat/eligibility-rule-v2`):
+- `scope.RULE_V2` + `_eligible_v2`; rule v1's code path is unchanged. Ticker
+  interpretation `ticker-v1` (`scope.ticker_identity`): date, America/New_York time, team
+  codes from the reviewed upper-case aliases, away first; a game number suffix is refused
+  under v2. New reasons: identity `ticker_unparsed`, `ticker_identity_mismatch`,
+  `home_away_reversed`; pregame `ticker_start_mismatch` (forecast renewal and the
+  publication veto classify them). Identity requires exactly one official game between the
+  two teams on the date in either order; doubleheaders and reschedule markers fail closed.
+- `Config.eligibility_rules` (default `("rule-v1",)`); `Config.provenance()` omits the
+  default, so the default cohort hash equals the earlier code's and v2 runs hash
+  differently. Discovery manifests record `policy.eligibility_rules`.
+- Settlement mapping policy 2 (`mapping._resolve_v2`): the same identity proof, plus a
+  provider `rescheduledFromDate` link for a postponed game; no prior-mapping reuse. The
+  rule set comes from the settlement run's recorded configuration, so replay re-derives
+  the same mapping without any caller configuration.
+- Real archived evidence (read-only recheck of production's archived event and schedule
+  bytes at the original check times, `tests/integration/rule_v2_archive_recheck.py`,
+  output `docs/evidence/rule-v2-archive-recheck-20261019.json`): 650 sampled checks of 26
+  tickers; v1 alone 100 eligible (timed rules) / 550 unrecognized; v1+v2 488 eligible, 104
+  `ticker_start_mismatch` (official times that moved, e.g. `26OCT122000LADMIL`), 38
+  `not_scheduled_pregame`, 12 `unmapped_game` (the postponed `26OCT161800TBCLE`), 8
+  `start_time_unknown`; every v2 start equals its ticker time; timed-rule decisions are
+  identical with v2 enabled. This is a recheck of stored bytes, not forward evidence.
+- Alternative kept in reserve: Kalshi's public `/milestones` reports a `start_date` that
+  matched the ticker time in the docs research; it would be a new collected source with
+  its own retrieval semantics, not needed while the ticker corroborates.
