@@ -40,14 +40,18 @@ def parser():
     migrate.add_argument(
         "--record-contract",
         type=int,
-        choices=[2, 3],
-        help="3: explicit migration 005 (and 004 from schema 3) opening record contract 3;"
-        " 2 is frozen (no-op at schema 4/5, refused on schema 3)",
+        choices=[2, 3, 4],
+        help="3: migration 005 (record contract 3, schema 5); 4: migration 006 (decision"
+        " contract 4 with registered forecasters, schema 6); earlier markers first; 2 is"
+        " frozen (no-op at schema >= 4, refused on schema 3)",
     )
     tick = forecast_commands.add_parser("tick", help="finite forecast tick; no daemon")
     tick.add_argument("--research-config", help="research protocol TOML ([research] only)")
     tick.add_argument("--dataset", help="override the cohort dataset namespace")
     tick.add_argument("--budget", type=float, default=30.0, help="tick time budget in seconds")
+    tick.add_argument(
+        "--model-registry", help="research registry holding the protocol's forecasters"
+    )
     inspect = forecast_commands.add_parser("inspect", help="read-only recent forecast decisions")
     inspect.add_argument("--research-config")
     inspect.add_argument("--dataset", help="show only this dataset namespace")
@@ -65,6 +69,9 @@ def parser():
     reconstruct.add_argument("--through", required=True, help="last original date (max 31 days)")
     reconstruct.add_argument("--source-ceiling", type=int, help="fetch sequence ceiling")
     reconstruct.add_argument("--budget", type=float, default=30.0)
+    reconstruct.add_argument(
+        "--model-registry", help="research registry holding the protocol's forecasters"
+    )
     evaluate = commands.add_parser("evaluate", help="materialize one immutable evaluation")
     evaluate.add_argument("--research-config", help="research protocol TOML ([research] only)")
     evaluate.add_argument("--dataset", help="dataset namespace to evaluate (default: protocol)")
@@ -209,7 +216,7 @@ def execute(args):
             probe = sqlite3.connect(Path(config.database).resolve().as_uri() + "?mode=ro", uri=True)
             try:
                 version = probe.execute("PRAGMA user_version").fetchone()[0]
-                if version not in (2, 3, 4, 5):
+                if version not in (2, 3, 4, 5, 6):
                     raise ValueError(
                         "forecast migrate requires schema 2; run settlement migrate first"
                     )
@@ -232,7 +239,7 @@ def execute(args):
                 return {
                     "status": "complete",
                     "schema_version": store.schema_version(),
-                    "record_contract": {5: 3, 4: 2}.get(store.schema_version(), 1),
+                    "record_contract": {6: 4, 5: 3, 4: 2}.get(store.schema_version(), 1),
                     "migrated": changed,
                     "database": str(store.path),
                 }
@@ -326,6 +333,13 @@ def _forecast_research(args, config):
         args.research_config,
         dataset=args.forward_dataset if args.forecast_command == "reconstruct" else args.dataset,
     )
+    runner = None
+    if not read_only and protocol.forecasters:
+        from .forecast.forecasters import runner_from_registry
+
+        if not args.model_registry:
+            raise ValueError("the protocol registers forecasters: --model-registry is required")
+        runner = runner_from_registry(args.model_registry, protocol)
     with nullcontext() if read_only else writer_lock(config.database):
         store = Store(config.database, min_free_bytes=config.min_free_bytes, readonly=read_only)
         try:
@@ -350,8 +364,9 @@ def _forecast_research(args, config):
                     through_date=parse_date(args.through),
                     source_ceiling=args.source_ceiling,
                     budget=args.budget,
+                    runner=runner,
                 )
-            return tick(store, protocol, budget=args.budget)
+            return tick(store, protocol, budget=args.budget, runner=runner)
         finally:
             store.close()
 

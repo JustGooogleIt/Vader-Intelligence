@@ -7,6 +7,7 @@ provenance can be recomputed and configuration drift within a cohort is detectab
 """
 
 import math
+import re
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -36,8 +37,25 @@ class Protocol:
     selection_version: str = "selection-v1"
     policy_version: str = "t60-v1"
     publication_policy: str = "publication-v1"
+    # Registered forecasters (decision D-004): model artifact SHA-256 digests run at C
+    # beside the baseline pair. Part of the cohort identity when non-empty; the registry
+    # that holds the artifacts is operational input, not configuration.
+    forecasters: tuple = ()
 
     def __post_init__(self):
+        forecasters = self.forecasters
+        if isinstance(forecasters, list):
+            forecasters = tuple(forecasters)
+        if (
+            not isinstance(forecasters, tuple)
+            or len(forecasters) > 10
+            or any(
+                not isinstance(f, str) or not re.fullmatch(r"[0-9a-f]{64}", f) for f in forecasters
+            )
+            or len(set(forecasters)) != len(forecasters)
+        ):
+            raise ValueError("forecasters must be at most 10 distinct SHA-256 artifact digests")
+        object.__setattr__(self, "forecasters", tuple(sorted(forecasters)))
         if self.protocol_id != PROTOCOL_ID:
             raise ValueError("v1 supports only protocol mlb-t60-v1")
         if self.horizon_seconds != 3600:
@@ -71,16 +89,28 @@ class Protocol:
         # Nonfinite or negative numeric settings are rejected; all are explicit ints
         # or the fixed epsilon string, so there is no float to admit.
         for name, value in asdict(self).items():
+            if name == "forecasters":
+                continue
             if isinstance(value, float):
                 raise ValueError(f"{name} must not be a float")
             if isinstance(value, int) and not math.isfinite(value):
                 raise ValueError(f"{name} must be finite")
 
+    def configuration(self):
+        """The frozen protocol as hashed: `forecasters` appears only when non-empty, so a
+        protocol without forecasters keeps the hash earlier code gave it (D-004)."""
+        values = asdict(self)
+        if not self.forecasters:
+            del values["forecasters"]
+        else:
+            values["forecasters"] = list(self.forecasters)
+        return values
+
     @property
     def config_hash(self):
         """Canonical digest of the frozen protocol; the research configuration hash,
         distinct from any collector configuration hash (specification §5)."""
-        return digest(asdict(self))
+        return digest(self.configuration())
 
     @classmethod
     def load(cls, path=None, *, dataset=None):

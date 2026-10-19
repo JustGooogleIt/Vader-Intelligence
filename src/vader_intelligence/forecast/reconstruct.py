@@ -41,6 +41,7 @@ def reconstruct(
     clock=None,
     monotonic=None,
     budget=30.0,
+    runner=None,
 ):
     """Run one bounded reconstruction. Returns a summary dict (complete | inconclusive |
     partial); the CLI maps the status to an exit code."""
@@ -163,6 +164,7 @@ def reconstruct(
                     namespace=protocol.observer_namespace,
                     dataset=dataset,
                     source_ceiling=source_ceiling,
+                    runner=runner,
                 )
             except (ValueError, KeyError, TypeError) as exc:
                 summary["errors"].append(f"reconstruct {game_id}: {str(exc)[:200]}")

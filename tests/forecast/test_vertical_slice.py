@@ -172,6 +172,7 @@ def test_replay_preserves_the_slice_and_reports_contract_counts(store, config, f
         "1": 0,
         "2": 0,
         "3": before,
+        "4": 0,
     }
     assert outcome["forecast_storage"]["latest_discovery"]["id"] == result["discovery_pass_id"]
     assert store.db.execute("SELECT COUNT(*) FROM forecast_receipts").fetchone()[0] == before

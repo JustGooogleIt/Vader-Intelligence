@@ -31,6 +31,41 @@ CONTRACT_TABLES = frozenset({"forecast_receipts", "forecast_decisions"})
 CONTRACT_2_TABLES = CONTRACT_TABLES  # historical name, kept for callers
 VERSIONED_CONTRACTS = (2, 3)
 CURRENT_CONTRACT = 3
+# Explicit contract versions per table (D-001, D-004). Decision contract 4 adds registered
+# forecasters; evaluation contract 2 (runs and items) scores them. Every value not listed
+# for a table, including an explicit 1, is rejected.
+VERSIONS = {
+    "forecast_receipts": (2, 3),
+    "forecast_decisions": (2, 3, 4),
+    "evaluation_runs": (2,),
+    "evaluation_items": (2,),
+}
+BASELINES = ("constant-v1", "midpoint-v1")
+FORECASTER_FIELDS = {"id", "artifact_sha256", "family", "feature_set"}
+
+
+def forecaster_ids(forecasters):
+    return [f["id"] for f in forecasters]
+
+
+def check_forecasters(value):
+    """Registered forecasters: at most 10, each `model:<sha256[:16]>`, sorted, distinct."""
+    if not isinstance(value, list) or len(value) > 10:
+        raise ValueError("forecasters must be a list of at most 10")
+    for entry in value:
+        if not isinstance(entry, dict) or set(entry) != FORECASTER_FIELDS:
+            raise ValueError("forecaster entry fields")
+        sha(entry["artifact_sha256"])
+        if entry["id"] != "model:" + entry["artifact_sha256"][:16]:
+            raise ValueError("forecaster id must be model:<sha256[:16]>")
+        identifier(entry["family"])
+        identifier(entry["feature_set"])
+    ids = forecaster_ids(value)
+    if ids != sorted(set(ids)):
+        raise ValueError("forecasters must be sorted and distinct")
+    return ids
+
+
 PIN_FIELDS = {"id", "digest", "collector_config_hash"}
 
 
@@ -72,18 +107,27 @@ def version(table, p):
     if not isinstance(p, dict) or "contract_version" not in p:
         return 1
     value = p["contract_version"]
-    if table in CONTRACT_TABLES and type(value) is int and value in VERSIONED_CONTRACTS:
+    if type(value) is int and value in VERSIONS.get(table, ()):
         return value
     raise ValueError(f"unknown record contract version {value!r} for {table}")
+
+
+def has_forecasters(table, contract):
+    return (table, contract) in (("forecast_decisions", 4), ("evaluation_runs", 2))
 
 
 def validate(table, p):
     if table not in FIELDS or not isinstance(p, dict):
         raise ValueError("incomplete or unknown storage fields")
+    contract = version(table, p)
     expected = FIELDS[table] | ({"contract_version"} if "contract_version" in p else set())
+    if has_forecasters(table, contract):
+        expected = expected | {"forecasters"}
     if set(p) != expected:
         raise ValueError("incomplete or unknown storage fields")
-    contract = version(table, p)
+    names = list(BASELINES)
+    if has_forecasters(table, contract):
+        names += check_forecasters(p["forecasters"])
     if type(p["schema_version"]) is not int or p["schema_version"] != 1 or p["mode"] not in MODES:
         raise ValueError("unsupported record schema/mode")
     encoded = json_text(p)
@@ -201,13 +245,12 @@ def validate(table, p):
             identifier(p["unresolved_key"])
         elif p["unresolved_key"] is not None:
             raise ValueError("resolved decision cannot have unresolved key")
-        expected = {"constant-v1", "midpoint-v1"}
         if (
             p["baseline_versions"] != ["constant-v1", "midpoint-v1"]
             or not isinstance(p["results"], dict)
-            or set(p["results"]) != expected
+            or set(p["results"]) != set(names)
         ):
-            raise ValueError("fixed baseline pair required")
+            raise ValueError("fixed baseline pair (plus declared forecasters) required")
         for name, value in p["results"].items():
             if (
                 not isinstance(value, dict)
@@ -309,13 +352,16 @@ def validate(table, p):
             raise ValueError("binary label must be distinct from payout")
         if p["payout"] is not None:
             probability(p["payout"])
+        extra = set(p["scores"]) - set(BASELINES) if isinstance(p["scores"], dict) else set()
         if (
             not isinstance(p["scores"], dict)
-            or set(p["scores"]) != {"constant-v1", "midpoint-v1"}
+            or not set(BASELINES) <= set(p["scores"])
+            or (contract == 1 and extra)
+            or any(not re.fullmatch(r"model:[0-9a-f]{16}", k) for k in extra)
             or not isinstance(p["clipped"], dict)
             or set(p["clipped"]) != set(p["scores"])
         ):
-            raise ValueError("fixed score pair required")
+            raise ValueError("fixed score pair (plus forecaster scores) required")
         for name, score in p["scores"].items():
             if type(p["clipped"][name]) is not bool:
                 raise ValueError("explicit clipping flag required")

@@ -69,7 +69,7 @@ def _binding_for(db, protocol, mode, game_id):
     ).fetchone()
 
 
-def tick(store, protocol, *, clock=None, monotonic=None, budget=30.0):
+def tick(store, protocol, *, clock=None, monotonic=None, budget=30.0, runner=None):
     """Run one tick. Returns a summary dict; the CLI maps status to an exit code."""
     inject_clock, inject_monotonic = clock, monotonic  # forwarded to witness verbatim
     clock, monotonic, injected = _resolve(clock, monotonic)
@@ -83,6 +83,7 @@ def tick(store, protocol, *, clock=None, monotonic=None, budget=30.0):
         raise ValueError(
             "forecast tick requires record contract 3: vader forecast migrate --record-contract 3"
         )
+    service.decision_contract(store, protocol, runner)  # refuse before any write
     db = store.db
     deadline = monotonic() + budget
     run_id = str(uuid.uuid4())
@@ -173,6 +174,7 @@ def tick(store, protocol, *, clock=None, monotonic=None, budget=30.0):
                     mode=mode,
                     created_at=timestamp(clock()),
                     namespace=namespace,
+                    runner=runner,
                 )
             except (ValueError, KeyError, TypeError) as exc:
                 summary["errors"].append(f"decide {game_id}: {str(exc)[:200]}")
