@@ -91,7 +91,7 @@ the key:
 | Ledger | gates `ledger_live`, `ledger_consistent`; ledger empty or last reconciliation clean | pass |
 | Kill switch | gate `kill_switch_disengaged` (explicit operator record, not in the future) | pass |
 | Exchange status | public GET `/exchange/status` (`KalshiGateway.exchange_status()`) | `exchange_active`, `trading_active` and shard 3 `trading_active` true |
-| Clock skew | `Date` header of that response vs. the local clock (`Signer.observed_offset_ms`) | within `max_clock_skew_seconds` |
+| Clock skew | `Date` header of an authenticated, uncached response (e.g. `GET /portfolio/balance`) vs. the local clock (`Signer.observed_offset_ms`); public responses such as `/exchange/status` may be cached and are not observed | within `max_clock_skew_seconds` |
 
 Also check that the window is outside the weekly maintenance pause (Thursday 3:00-5:00 AM
 ET, facts §9) and before the canary market's close time.
@@ -145,7 +145,7 @@ before production.
 
 | # | Assumption | Facts | Module | If wrong |
 |---|---|---|---|---|
-| A1 | Clock-skew tolerance undocumented; we refuse to sign when the `Date` header proves skew > 5 s | §1 gap | `auth` | 401s; tighten/loosen the bound |
+| A1 | Clock-skew tolerance undocumented; we refuse to sign *order creation* when an authenticated, uncached `Date` header proves skew > 5 s (cancels and reads are still signed, so a skew never blocks a shutdown) | §1 gap | `auth` | 401s; tighten/loosen the bound |
 | A2 | The request body is not part of the signed text | §1 INF | `auth`, `dryrun` | 401 on every write (fail closed) |
 | A3 | `min_ts` on order and fill listings is Unix seconds on creation (or a later) time | §2.4/§2.5 | `gateway` | lookups/fills miss records: raise or flag mismatches |
 | A4 | REST reads lag by a short delay: "not found" only 30 s after creation; fills re-read with 1 h overlap | §9 | `gateway` | a lagging order is marked not found; caught later as a stray (blocks buys) |

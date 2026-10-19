@@ -274,3 +274,23 @@ def test_decisions_are_exclusive_per_intent(tmp_path):
                 "VALUES ('r',?,'t','d','{}')",
                 (intent.intent_id,),
             )
+
+
+def test_a_live_approval_must_cite_complete_recorded_limits(tmp_path):
+    from vader_intelligence.trading.risk import RiskLimits
+
+    incomplete = RiskLimits(max_order_contracts=D(1))
+    with open_ledger(tmp_path / "live.sqlite3", "live", limits=incomplete) as ledger:
+        with pytest.raises(LedgerConflict, match="incomplete limits"):
+            approve(ledger, make_intent(), "1")
+    with open_ledger(tmp_path / "paper.sqlite3", "paper", limits=incomplete) as ledger:
+        approve(ledger, make_intent(), "1")  # paper ledgers may simulate partial limits
+
+
+def test_a_fill_fee_above_the_order_bound_is_refused(tmp_path):
+    with open_ledger(tmp_path / "f.sqlite3") as ledger:
+        order = submitted_order(ledger, qty="10")
+        with pytest.raises(LedgerConflict, match="fee bound"):
+            ledger.append_fill(fill(order, 2, fee="0.05"))  # bound: 2 lots x 0.02
+        ledger.append_fill(fill(order, 2, fee="0.04"))
+        assert ledger.verify() == []

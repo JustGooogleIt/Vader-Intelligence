@@ -166,7 +166,7 @@ def test_clock_skew_bound_uses_date_header_resolution():
     assert signer.observed_offset_ms is not None
 
 
-def test_skew_refusal_through_the_client_sends_nothing_signed():
+def test_skew_refuses_only_order_creation_and_only_from_authenticated_dates():
     clock = FakeClock()
     key = ed25519.Ed25519PrivateKey.generate()
     double = KalshiDouble(clock, key.public_key())
@@ -178,16 +178,20 @@ def test_skew_refusal_through_the_client_sends_nothing_signed():
         sleep=clock.sleep,
         monotonic=clock.monotonic,
     )
-    client.request("GET", "/exchange/status")  # public: unsigned, observes the Date header
-    with pytest.raises(ClockSkewError):
-        client.request("GET", "/portfolio/balance")
-    with pytest.raises(ClockSkewError):
+    client.request("GET", "/exchange/status")  # public and cacheable: never observed
+    assert client.signer.observed_offset_ms is None
+    client.request("GET", "/portfolio/balance")  # signed; its Date proves the skew
+    assert client.signer.observed_offset_ms is not None
+    with pytest.raises(ClockSkewError):  # creation is refused before anything is sent
         client.request(
             "POST",
             "/portfolio/events/orders",
             body={"ticker": "SYN-X-Y", "side": "bid", "count": "1.00", "price": "0.5000"},
         )
-    assert [c[1] for c in double.calls] == ["/trade-api/v2/exchange/status"]
+    # Reads (and cancels) are still signed and sent: a skew never blocks a shutdown.
+    client.request("GET", "/portfolio/balance")
+    paths = [c[1] for c in double.calls]
+    assert paths == ["/trade-api/v2/exchange/status"] + ["/trade-api/v2/portfolio/balance"] * 2
 
 
 def test_signer_hides_key_and_refuses_unsupported_keys(rsa_key):

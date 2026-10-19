@@ -166,10 +166,15 @@ class Signer:
             hashes.SHA256(),
         )
 
-    def headers(self, method, path):
-        """The three authentication headers for one request (facts §1)."""
+    def headers(self, method, path, *, check_clock=True):
+        """The three authentication headers for one request (facts §1).
+
+        With `check_clock` (order creation) a proven skew refuses signing; cancels and
+        reads are signed regardless, so a skew observation can never stop a shutdown
+        from cancelling (the exchange rejects a request it considers stale)."""
         _validate(method, path)
-        self.check_clock()
+        if check_clock:
+            self.check_clock()
         timestamp = self.clock_ms()
         signature = self.sign(presign_text(timestamp, method, path))
         return {

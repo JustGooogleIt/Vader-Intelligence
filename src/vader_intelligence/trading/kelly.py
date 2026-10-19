@@ -129,6 +129,8 @@ def size(
                 scale = room / add
                 add = room
     quantity = floor_to(add / cost, step) if add > 0 and cost > 0 else ZERO
+    while quantity > 0 and quantity * cost > add:  # the division may round up at precision
+        quantity -= step
     if max_quantity is not None:
         cap = floor_to(positive(max_quantity, "max_quantity"), step)
         if quantity > cap:
