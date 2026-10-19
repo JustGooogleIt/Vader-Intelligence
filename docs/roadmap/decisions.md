@@ -298,3 +298,25 @@ Decision (#30, spec §9).
 - **Evaluation.** One candidate per pod (the best by development score) goes to the
   protected evaluator, which recomputes the validation metrics and records the
   snapshot's proposal count.
+
+## D-014 A dataset's final holdout is pinned once in the registry (2026-10-19)
+
+Context. An independent pre-review of #27 showed that the holdout was defined only by
+the split an operator typed. The holdout ledger was keyed by the full split key, so a
+later split could move final-holdout rows into validation, and a pod could score them,
+while the ledger still reported the holdout untouched. The real registry was never
+affected: it had no holdout entries, and every evaluation used validation ≤ 2026-08-31.
+Nothing enforced that, though.
+
+Decision (#31).
+- **The pin.** Each dataset's final holdout start is recorded once in an append-only
+  table (`holdout_pins`). It is set by `vader dataset pin-holdout`, or at the first
+  writable training or snapshot use.
+- **What it enforces.**
+  - Every split must end before the pin.
+  - A holdout evaluation must hold out exactly from the pin, and its ledger entry is
+    keyed by it, so every evaluation of the same rows shares one key.
+  - Pod snapshots (`vi-pod-dataset-v2`) carry the pin, and every reader refuses rows on
+    or after it.
+- **The real datasets.** The three real datasets that have models are pinned at
+  2026-09-02, the D-009 boundary, by operator action recorded in the registry.

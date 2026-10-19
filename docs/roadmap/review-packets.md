@@ -21,6 +21,7 @@ merged, deployed or activated; no credentials exist in this system.
 | #28 | `feat/integration-demos` | H demos, ops model registry, run docs | claims | reproduction |
 | #29 | `perf/ledger-row-cache` | ledger parsed-row reuse; read-only registry for non-holdout backtests (D-012) | append-only soundness | concurrency |
 | #30 | `feat/pod-autopilot` | G autonomy: development-only planners, bounded autopilot loop (D-013) | context leakage, selection | bounds, resume, provider refusal |
+| #31 | `fix/review-26-27` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | holdout pin, evidence binding | dry-run checks, quarantine |
 
 ## Codex Prime — evidence meaning, versioning, leakage, scoring, money correctness
 
@@ -85,6 +86,13 @@ Read first: `docs/roadmap/decisions.md` (D-001..), `docs/roadmap/evidence-index.
     - A pre-review by an Opus agent found nothing critical. Its findings on #30 were
       fixed in `d744766`: malformed provider values, a non-finite-JSON gap, the record
       ordering, the budget across runs and fold comparability.
+14. **Pinned holdout and pre-review fixes (#31).** Several checks:
+    - Can any path read or score rows on or after a dataset's pin without a ledger entry
+      keyed by the pin? Paths to check: training, symbolic search, backtest, pods
+      snapshot, `load`, candidate diagnostics.
+    - Can a worker still introduce an input artifact?
+    - Is paper evidence always the candidate's own coordinator backtest?
+    - Is the dry run's report of what it checks now accurate?
 
 Commands:
 

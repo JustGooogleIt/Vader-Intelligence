@@ -29,6 +29,7 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #28 | `feat/integration-demos` | final head in §11 | H demos, ops model registry, run documents | 1275 passed |
 | #29 | `perf/ledger-row-cache` | `26dceed2f8fad8b22320845b40d6d3b755265057` | ledger parsed-row reuse (D-012); read-only registry for non-holdout backtests | 1279 passed |
 | #30 | `feat/pod-autopilot` | `d744766d96ebb869a9e8ab6ab1fc1c40e9ca5262` | G pod autopilot: development-only planners, bounded loop (D-013) | 1294 passed |
+| #31 | `fix/review-26-27` | `9f06a3df76325a65775f3d08f676be8e858c3d1b` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | 1303 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -47,7 +48,7 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
 | **Pending tonight (bounded jobs running)** | live rule-v2 forward decision at C = 23:08Z for `KXMLBGAME-26OCT192008CLETB`; live forward shadow with the three 2026 pod models as registered forecasters |
 | **Untested** | the live canary (`docs/live-canary-runbook.md`, never executed); exchange acceptance of any request; fee schedules against real fills |
 | **Blocked** | A5 NBA/NFL (D-005: no authorized official free schedule source) |
-| **Not done by decision** | one-time holdout of a final candidate (D-009: no candidate validated; the 2026 holdout is untouched) |
+| **Not done by decision** | one-time holdout of a final candidate (D-009: no candidate validated; the 2026 holdout is untouched, and since #31 it is enforced: the real datasets are pinned at 2026-09-02, D-014) |
 
 ## 3. Real-data findings (historical retrieval; not forward evidence; not edge)
 
@@ -87,6 +88,25 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
   - The near-market symbolic model traded once.
 
 Details: `docs/evidence/real-data-demo-20261019.md`.
+
+## 3b. Independent pre-review (before Codex)
+
+Three read-only Opus reviewers examined the newest code (#26, #27, #29, #30) and probed
+each finding in temp directories.
+
+- **#29 (ledger cache):** judged sound.
+- **#30 (autopilot):** the confirmed findings were fixed in `d744766`: malformed provider
+  values, a non-finite-JSON gap, the record ordering, the budget across runs and fold
+  comparability.
+- **#26 and #27:** one critical gap, the unpinned holdout, and several major ones:
+  - forgeable pod inputs and diagnostics run on another snapshot;
+  - a silent constant baseline;
+  - unbound paper evidence;
+  - holdout ledgers that were not crash-safe;
+  - holdout results written before their ledger entry;
+  - phantom dry-run exposure and an overstated dry-run claim.
+
+  All confirmed findings are fixed in #31. Codex review remains the user's step.
 
 ## 4. Reproduction
 
@@ -132,6 +152,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #28 | 1275 passed, 2 deselected; wheel smoke complete (schemas 1–6); ops 43 passed |
 | #29 | 1279 passed, 2 deselected; the real 2026 scenario gives the same report apart from `code_hash`, with CPU time down from 78 s to 16 s |
 | #30 | 1294 passed, 2 deselected (15 new autopilot tests); wheel built at this head imports `pods.planner` and `pods.autopilot`, and its smoke test is complete (schemas 1–6). A read-only Opus review of #29 and #30 found nothing critical; its confirmed findings on #30 were fixed in `d744766` |
+| #31 | 1303 passed, 2 deselected (9 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 
 ## 6. Data and model limitations
 
@@ -145,6 +166,12 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
   collect regular-season books.
 - Fee schedules are unverified (higher-fee default); Kalshi API facts marked unverified
   are listed in `docs/live-canary-runbook.md` §6 (A1–A20).
+- Holdout-period data that was read:
+  - The candle-vs-book check (§3) read market *features* (mid, spread) at C for 16
+    postseason games dated after the 2026-09-02 holdout pin. It read no outcome and
+    scored no model.
+  - Tonight's forward shadow scores live games in that date range. Those games are
+    forward evidence, not dataset rows.
 - Backtest execution: candles cannot resolve sub-minute latency. Slippage is a worse fill
   price that must stay within the limit; with take-at-ask limits, one tick means no
   fill rather than a worse price. Paper runs cost time quadratic in the input count

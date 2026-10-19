@@ -27,7 +27,8 @@ recorded output), **simulated** (only against synthetic data or doubles), **unte
 | H2 | Real-data demo | #28 | demonstrated (pods, evaluator, autopilot, candle-vs-book, real-candle backtests on 2026 and two seasons) | `docs/evidence/real-data-demo-20261019.md` |
 | H3 | Recovery demos | #28 | demonstrated, asserted in the suite | `tests/integration/test_recovery_demo.py` |
 | H4 | Live-adapter dry-run path | #26, #28 | implemented, simulated (synthetic forward decision); real forward decision tonight | D-011; never sends |
-| H5 | One-time holdout evaluation of the final candidate | — | **not done by decision** | D-009: no candidate validated; holdout untouched; path demonstrated on synthetic data |
+| H5 | One-time holdout evaluation of the final candidate | — | **not done by decision** | D-009: no candidate validated; holdout untouched and pinned at 2026-09-02 (D-014, #31); path demonstrated on synthetic data |
 | X1 | No merges, deployment, production mutation, orders, paid calls, secrets | all | held | production read-only queries only; no credentials exist |
 | X2 | Stacked draft PRs, no force-push under review | #17–#28 | held | the only rewrite was of unpushed branches |
+| X4 | Independent review before Codex | #29–#31 | done (pre-review only) | read-only Opus reviews of #26, #27, #29 and #30; confirmed findings fixed in #30 (`d744766`) and #31; Codex Prime/Secondary review not yet done |
 | X3 | Persistent run documents | #28 | implemented | continuation, backlog, decisions, evidence index, review packets, this matrix, final handoff |
