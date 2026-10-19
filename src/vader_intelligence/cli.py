@@ -208,6 +208,23 @@ def parser():
     ssearch.add_argument("--max-depth", type=int, default=5)
     ssearch.add_argument("--max-nodes", type=int, default=25)
     ssearch.add_argument("--seed", type=int, default=0)
+    ledger = commands.add_parser("ledger", help="trading ledger operator commands (no orders)")
+    ledger_commands = ledger.add_subparsers(dest="ledger_command", required=True)
+    for name in ("init", "show", "verify", "kill-switch", "limits"):
+        sub = ledger_commands.add_parser(name)
+        sub.add_argument("--ledger", required=True, help="ledger SQLite path (its own file)")
+        sub.add_argument("--environment", required=True, choices=("paper", "live"))
+        if name == "init":
+            sub.add_argument("--deposit", help="paper only: initial simulated cash (dollars)")
+        if name == "kill-switch":
+            state = sub.add_mutually_exclusive_group(required=True)
+            state.add_argument("--engage", action="store_true")
+            state.add_argument("--release", action="store_true")
+            sub.add_argument("--reason", required=True)
+            sub.add_argument("--actor", required=True)
+        if name == "limits":
+            sub.add_argument("--file", required=True, help="TOML with a [limits] table")
+            sub.add_argument("--actor", required=True)
     minspect = model_commands.add_parser("inspect")
     minspect.add_argument("--registry", required=True)
     minspect.add_argument("--id", help="one model; omit to list")
@@ -276,6 +293,8 @@ def execute(args):
         return _model(args)
     if args.command == "symbolic":
         return _symbolic(args)
+    if args.command == "ledger":
+        return _ledger(args)
     with nullcontext() if args.command == "health" else writer_lock(config.database):
         store = Store(
             config.database, min_free_bytes=config.min_free_bytes, readonly=args.command == "health"
@@ -709,6 +728,76 @@ def _symbolic(args):
         )
     finally:
         registry.close()
+
+
+def _ledger(args):
+    """Operator paths of the trading ledger. Nothing here submits an order or reads a
+    credential; a live ledger starts with its kill switch engaged."""
+    import tomllib
+    from datetime import datetime, timezone
+
+    from .trading.ledger import Ledger
+    from .trading.portfolio import CashEvent
+    from .trading.risk import limits_from_dict
+
+    now = datetime.now(timezone.utc)
+    create = args.ledger_command == "init"
+    if not create and not Path(args.ledger).is_file():
+        raise ValueError(f"ledger not found: {args.ledger}")
+    readonly = args.ledger_command in ("show", "verify")
+    ledger = Ledger(args.ledger, args.environment, create=create, readonly=readonly)
+    try:
+        if args.ledger_command == "init":
+            if args.deposit is not None:
+                if args.environment != "paper":
+                    raise ValueError("deposits exist only in paper ledgers")
+                ledger.append_cash_event(
+                    CashEvent(f"deposit-{now.isoformat()}", "deposit", args.deposit, now, "init")
+                )
+        if args.ledger_command == "kill-switch":
+            ledger.set_kill_switch(bool(args.engage), args.reason, args.actor, now)
+        if args.ledger_command == "limits":
+            with open(args.file, "rb") as handle:
+                data = tomllib.load(handle)
+            if set(data) != {"limits"}:
+                raise ValueError("limits file must contain exactly a [limits] table")
+            limits = limits_from_dict(data["limits"])
+            version = ledger.record_limits(limits, args.actor, now)
+            return {
+                "status": "complete",
+                "limits_hash": version,
+                "unset": list(limits.missing()),
+                "live_ready": not limits.missing(),
+            }
+        if args.ledger_command == "verify":
+            failures = ledger.verify()
+            return {"status": "complete" if not failures else "failed", "failures": failures}
+        projection = ledger.projection()
+        portfolio = projection.portfolio
+        kill = ledger.kill_switch()
+        limits, limits_hash = ledger.current_limits()
+        return {
+            "status": "complete",
+            "environment": ledger.environment,
+            "cash": format(portfolio.cash, "f"),
+            "reserved_cash": format(portfolio.reserved_cash, "f"),
+            "realized": format(portfolio.realized, "f"),
+            "holdings": {
+                t: {"yes": format(h.yes_qty, "f"), "no": format(h.no_qty, "f")}
+                for t, h in sorted(portfolio.holdings.items())
+            },
+            "active_orders": [s.order.client_order_id for s in projection.active_orders],
+            "unknown_state": list(projection.unknown_flags()),
+            "kill_switch": {
+                "engaged": kill.engaged,
+                "reason": kill.reason,
+                "default": kill.default,
+            },
+            "limits_hash": limits_hash,
+            "limits_unset": None if limits is None else list(limits.missing()),
+        }
+    finally:
+        ledger.close()
 
 
 def main():
