@@ -1,0 +1,154 @@
+# Roadmap run handoff (2026-10-18/19)
+
+Final handoff for the research-to-trading roadmap run (Opus 5.5 throughout, including
+subagents). Everything is a stacked **draft** PR; nothing is merged, deployed or
+activated. No order was placed, no credential exists in this system, no paid call was
+made, and production was only read with short read-only queries (never copied).
+
+A functional pipeline is not evidence of edge, and nothing here shows profitability:
+on real historical data **no model beats the market midpoint**, and every simulated
+profit in this document is synthetic or scenario-labelled.
+
+## 1. Draft PRs (stack order; each targets the previous)
+
+Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c31`.
+
+| PR | Branch | Head (full SHA) | Scope | Suite at head |
+|---|---|---|---|---|
+| #17 | `fix/record-contract-3` | `f8642bf34fefc229470b4417a97acf818c3a9986` | A1 contract versioning (D-001), foundation repair | 881 passed |
+| #18 | `feat/eligibility-rule-v2` | `622caadd47d2047139c7c994b3c831abf1f57dca` | A2 rule v2 for date-only postseason rules (D-002) | see PR |
+| #19 | `feat/schedule-revisions` | `74a60a8057467bd4a6f34082925cfa9389d481c0` | A3 post-C schedule changes unscored (D-003) | see PR |
+| #20 | `feat/historical-acquisition` | `2f99f6101d429cf41fc2bf4e2df1e27d6b588bf5` | A4 public historical acquisition | see PR |
+| #21 | `feat/datasets-models` | `09ecb35522bb8781a8fa22b5eadbb79a7785e936` | B features, datasets, registry, models, training | see PR |
+| #22 | `feat/registered-forecasters` | `007a9d3a983497c534306e214817eb47dbaf5459` | B4 decision contract 4, evaluation contract 2 (D-004) | see PR |
+| #23 | `feat/symbolic-search` | `00eb7376c1af21b6d8a23267b8f4cb04d8e09442` | C bounded symbolic regression | 1022 passed |
+| #24 | `feat/paper-execution-risk` | `e70da2b6ba6ea14a67054ce460d7273ed4f8fdc4` | D/E ledger, simulator, risk, Kelly (D-006) | see PR |
+| #25 | `feat/kalshi-live-adapter` | `25a4a8d38b51219e57d1f9451f0587853bd70193` | F live adapter, disabled by default (D-007) | 1209 passed |
+| #26 | `feat/history-backtest` | `1e02613ef1ce79f2bc473c3fb5537f3b1d7072b4` | D/H candle backtest, live dry run (D-010, D-011) | 1217 passed |
+| #27 | `feat/research-pods` | `145735cf6ba04820870e181a5ac02bff5050ffe7` | G orchestration, operations, protected evaluator (D-008) | 1272 passed |
+| #28 | `feat/integration-demos` | see §10 | H demos, ops model registry, run documents | 1275 passed |
+
+"Suite" = `pytest -q` with the two pre-existing `tmux_jev` observer tests deselected
+(the optional tool is not installed; they fail on `main` too).
+
+## 2. Status by requirement
+
+Full matrix: `docs/roadmap/requirements-matrix.md`.
+
+| Status | Items |
+|---|---|
+| **Demonstrated on real data** | rule v2 on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts, 2026-10-19); historical acquisition (2025 + 2026); datasets; training of logistic, gradient boosting and symbolic models; research pods and the protected evaluator on 2026 and on 2025→2026; candle vs collected book at C |
+| **Demonstrated on synthetic data (asserted in the suite)** | full chain proposed → validated → shadow_tested → paper_approved with hand-checked numbers; one-time holdout in both ledgers; dry-run order request; recovery from worker and coordinator SIGKILL, backtest crashes, live create timeout |
+| **Implemented, simulated only** | paper simulator, risk engine, Kelly; Kalshi live adapter against a deterministic exchange double; dry-run gateway |
+| **Pending tonight (bounded jobs running)** | live rule-v2 forward decision at C = 23:08Z for `KXMLBGAME-26OCT192008CLETB`; live forward shadow with the three 2026 pod models as registered forecasters; real-candle validation backtest (needs the running 2026 execution-window acquisition) |
+| **Untested** | the live canary (`docs/live-canary-runbook.md`, never executed); exchange acceptance of any request; fee schedules against real fills |
+| **Blocked** | A5 NBA/NFL (D-005: no authorized official free schedule source) |
+| **Not done by decision** | one-time holdout of a final candidate (D-009: no candidate validated; the 2026 holdout is untouched) |
+
+## 3. Real-data findings (historical retrieval; not forward evidence; not edge)
+
+- **2026 only** (develop ≤ 2026-07-31, validate August, 401 rows): logistic +0.0051,
+  gradient boosting +0.0143, symbolic (`pair_mid_c`) +0.0023 log loss vs market mid.
+  All rejected.
+- **Two seasons** (develop on 2025, validate on 2,027 rows of 2026): logistic +0.0004
+  (CI −0.0031, +0.0039), gradient boosting +0.0095 (CI +0.0035, +0.0158), symbolic
+  (`logit_mid_c`) −0.0004 (CI −0.0017, +0.0010, halves disagree). All rejected.
+- The symbolic search's best expressions are the market's own midpoint or log-odds.
+- Candle vs collected book at C (12 postseason games): mid and spread identical; book
+  best-level sizes 11k–5.9M (archive units).
+
+Details: `docs/evidence/real-data-demo-20261019.md`.
+
+## 4. Reproduction
+
+```sh
+cd /Users/ashwin/Documents/github-repos/Vader-Intelligence-roadmap   # or any checkout of the PR head
+/Users/ashwin/Documents/github-repos/Vader-Intelligence/.venv/bin/uv sync --locked
+.venv/bin/ruff check src tests ops && .venv/bin/ruff format --check src tests ops
+.venv/bin/python -m pytest -q \
+  --deselect tests/worker_observer/test_observer.py::test_upstream_pin_guard_and_cli_help \
+  --deselect tests/worker_observer/test_observer.py::test_bridge_assessment_uses_frozen_input_with_mock_provider
+.venv/bin/python tests/integration/e2e_demo.py         # synthetic, ~22 s, prints hand-checks
+.venv/bin/python tests/integration/recovery_demo.py    # synthetic, ~14 s
+# wheel (venv outside the checkout)
+UV=/Users/ashwin/Documents/github-repos/Vader-Intelligence/.venv/bin/uv
+$UV build --wheel -o /tmp/vi-dist && $UV venv -p 3.11 /tmp/vi-wheel && \
+  VIRTUAL_ENV=/tmp/vi-wheel $UV pip install /tmp/vi-dist/*.whl && \
+  /tmp/vi-wheel/bin/python tests/integration/wheel_smoke.py --python /tmp/vi-wheel/bin/python
+```
+
+Real data (needs the research data directories; production opened read-only):
+
+```sh
+R=/Users/ashwin/Documents/Vader-Intelligence-research
+.venv/bin/python -m vader_intelligence.cli dataset build --registry $R/registry --source history \
+  --history-db $R/history/history.sqlite3 --feature-set fs-market-v1 --from 2025-03-27 \
+  --through 2026-10-31 --name mlb-2025-2026-history-fs-market-v1 --identity-rules default,history-date-only
+.venv/bin/python tests/integration/real_data_demo.py pods --registry $R/registry \
+  --dataset 8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f \
+  --root $R/pods-2025-2026 --out $R/demo/real-data-pods-2025-2026.json \
+  --development-through 2025-12-31 --validation-through 2026-08-31
+.venv/bin/python tests/integration/candle_vs_book_check.py \
+  --production ~/Documents/Vader-Intelligence-operations/20260930-first-deployment/production.sqlite3 \
+  --history-db $R/history/history.sqlite3 --from 2026-09-28 --through 2026-10-31 --out /tmp/check.json
+```
+
+## 5. Test results (recorded)
+
+| Head | Result |
+|---|---|
+| #26 | 1217 passed, 2 deselected |
+| #27 | 1272 passed, 2 deselected |
+| #28 | 1275 passed, 2 deselected; wheel smoke complete (schemas 1–6); ops 43 passed |
+
+## 6. Data and model limitations
+
+- Historical retrieval happened after the fact; candles are one-minute summaries without
+  sizes; execution at arrival is unverified (D-010).
+- All 2025 rows rely on date-only identity: the start is the official schedule's, not
+  corroborated by contract text (`start_corroborated = false`).
+- Validation is selection-biased: several proposals per snapshot (recorded in every
+  evaluator record); the CI-and-halves rule is the only multiplicity guard.
+- Candle-vs-book agreement is shown on 12 postseason games only; production did not
+  collect regular-season books.
+- Fee schedules are unverified (higher-fee default); Kalshi API facts marked unverified
+  are listed in `docs/live-canary-runbook.md` §6 (A1–A20).
+
+## 7. Live-activation gates (all must pass; activation is the user's decision)
+
+`trading/kalshi/activation.activate_live` requires: acknowledged SHA-256 of the
+activation file; `enabled = true`; environment demo|production; key id; secret reference
+(file 0600 or Keychain) with no key material in the file; per-order and daily notional
+caps; market rules with price ranges; a live, consistent ledger; complete risk limits
+whose hash matches the file; an explicit operator kill-switch disengage not in the
+future; then the credential is read last. No CLI path activates; `vader live readiness`
+checks every local gate without the key. Runbook: demo first, one far-from-touch
+post-only order, cancel, reconcile, shutdown (never executed).
+
+## 8. Outstanding review decisions for the user
+
+1. Review order: #17 (foundation) first; each PR is independent enough for Codex Prime
+   and Codex Secondary per `docs/roadmap/review-packets.md`.
+2. D-005: accept ESPN or provide an authorized source to unblock NBA/NFL.
+3. D-009: whether a two-season split should define a new holdout before further model
+   work; the current 2026 holdout stays untouched.
+4. D-008 default criteria (CI below zero and both halves) — stricter or looser?
+5. Live activation (demo canary) — only after review; requires the user's own key.
+
+## 9. Cleanup (not done automatically)
+
+- Background jobs: live rule-v2 driver (`/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2`), model shadow driver (`.../20261019-models`), follow-up acquisition (`/Users/ashwin/Documents/Vader-Intelligence-research/history/run-acquisition-2.sh`); all end by themselves (last ≈05:20 UTC 2026-10-20).
+- Worktrees (with their venvs): `Vader-Intelligence-wt-{deps,execution-risk,symbolic-engine,research-pods-core,models-library,live-adapter}` (finished subagent work, integrated), `-live-v2`, `-live-models`, `-history-run`, `-history-run2` (pinned run code). Local branches `wip/deps`, `feat/execution-risk`, `feat/symbolic-engine`, `feat/research-pods-core`, `feat/models-library`, `feat/live-adapter` are superseded by the stack.
+- Data directories (outside the repo): `/Users/ashwin/Documents/Vader-Intelligence-research/{history (≈0.3 GB),registry,pods-2026,pods-2025-2026,demo}`, `/Users/ashwin/Documents/Vader-Intelligence-shadow/{20261019-rule-v2,20261019-models}`, the session scratchpad.
+
+## 10. Next highest-value work
+
+1. Review and merge decisions for #17–#20 (the evidence foundation).
+2. Forward evidence: keep forward shadows with registered forecasters running through the
+   rest of the postseason and next season; forward data is the only unbiased test.
+3. Features beyond the market: the market-only feature set cannot beat its own midpoint by
+   construction; team/pitcher/lineup features with forward availability are the next
+   research question (the `fs-full-v1` team features exist but are research-only).
+4. Execution realism: collect order books (not candles) for the trading window to
+   measure depth at arrival before any canary.
+5. Only after forward evidence of edge: the demo canary per the runbook.
