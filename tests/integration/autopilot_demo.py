@@ -11,7 +11,7 @@ still not be evidence of edge: validation compares several proposals on one snap
 
 Usage:
   .venv/bin/python tests/integration/autopilot_demo.py --root ORCH --registry R \
-      --snapshot SHA --out OUT.json [--prefix auto]
+      --snapshot SHA --out OUT.json [--prefix auto] [--plan-only]
 """
 
 import argparse
@@ -34,6 +34,11 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--prefix", default="auto")
     p.add_argument("--deadline-seconds", default="5400")
+    p.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="no candidate is accepted (does not add to the snapshot's proposal count)",
+    )
     args = p.parse_args()
     out = Path(args.out)
     log = json.loads(out.read_text()) if out.exists() else {"steps": []}
@@ -83,7 +88,7 @@ def main():
             max_tasks,
             "--deadline-seconds",
             args.deadline_seconds,
-            "--accept-best",
+            *(() if args.plan_only else ("--accept-best",)),
         )
 
 

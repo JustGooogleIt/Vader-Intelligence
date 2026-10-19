@@ -261,3 +261,30 @@ def test_cli_autopilot_with_a_vendor_planner_makes_no_call(research, pods, tmp_p
                 + ["--snapshot", snapshot_sha, "--accept-best"]
             )
         )
+
+
+def test_heuristic_refinement_brackets_over_every_tried_value():
+    refine = planner.HeuristicPlanner._refine
+    tried = {"C": {0.00033, 0.001, 0.0033, 0.01, 0.1, 1.0}}
+    best = {"selected_config": {"C": 0.0033}}
+    (low, mid, high) = refine("logistic", best, tried)["C"]
+    assert mid == 0.0033 and 0.001 < low < mid < high < 0.01  # between tried neighbours
+    assert refine("logistic", {"selected_config": {"C": 0.00033}}, tried)["C"] == [
+        1.1e-05,
+        3.3e-05,
+        0.00011,
+    ]
+    assert refine("logistic", {"selected_config": {"C": 1.0}}, tried)["C"] == [3.0, 10.0, 30.0]
+    gbm = {
+        "selected_config": {
+            "learning_rate": 0.05,
+            "max_iter": 100,
+            "max_leaf_nodes": 7,
+            "min_samples_leaf": 40,
+            "l2_regularization": 1.0,
+        }
+    }
+    grid = refine("gradient_boosting", gbm, {})
+    assert grid["learning_rate"] == [0.025, 0.05] and grid["max_leaf_nodes"] == [3, 7, 14]
+    ctx = {"role": "diagnostics", "history": []}
+    assert planner.HeuristicPlanner().plan(ctx).stop == "role diagnostics is not planned"

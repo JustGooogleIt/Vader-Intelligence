@@ -244,7 +244,11 @@ class HeuristicPlanner:
             if None in scored or not self._improving(scored):
                 continue
             best = min(mine, key=lambda h: score(h["result"], "train_model"))
-            grid = self._refine(pod_family, best["result"])
+            tried = {}  # every value this family has tried, per grid key
+            for h in mine:
+                for key, values in (h["result"].get("grid") or {}).items():
+                    tried.setdefault(key, set()).update(float(v) for v in values)
+            grid = self._refine(pod_family, best["result"], tried)
             if grid is not None:
                 out.append(self._train(pod_family, hyper | {"grid": grid}, "refine around best"))
         return out
@@ -257,18 +261,19 @@ class HeuristicPlanner:
         )
 
     @staticmethod
-    def _refine(pod_family, result):
-        config, tried = result["selected_config"], result.get("grid") or {}
+    def _refine(pod_family, result, tried):
+        config = result["selected_config"]
         if pod_family == "logistic":
             c = float(config["C"])
-            values = sorted(float(v) for v in tried.get("C", [c]))
-            if c <= values[0]:
+            values = sorted(tried.get("C", set()) | {c})
+            i = values.index(c)
+            if i == 0:  # the best is the smallest tried: extend downwards
                 grid = [c / 30, c / 10, c / 3]
-            elif c >= values[-1]:
+            elif i == len(values) - 1:
                 grid = [c * 3, c * 10, c * 30]
-            else:
-                grid = [c / 3, c, c * 3]
-            grid = [round(v, 10) for v in grid if 1e-6 <= v <= 1e6]
+            else:  # bracket between the tried neighbours (geometric midpoints)
+                grid = [math.sqrt(values[i - 1] * c), c, math.sqrt(c * values[i + 1])]
+            grid = sorted({float(f"{v:.6g}") for v in grid if 1e-6 <= v <= 1e6})
             return {"C": grid} if grid else None
         lr = float(config["learning_rate"])
         iters = int(config["max_iter"])
