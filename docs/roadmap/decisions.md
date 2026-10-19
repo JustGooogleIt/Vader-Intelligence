@@ -270,7 +270,8 @@ transaction are never kept, and `verify()` recomputes from disk. The projection 
 stays a full fold over the records, now about 15 of 42 profiled seconds. An incremental
 projection would change how state is derived in the authoritative ledger; it is left as
 a separately reviewed follow-up. Result on the real scenario: the same report, with CPU
-time down from 78 s to 16 s.
+time down from 78 s to 16 s. At season scale (2,027 forecasts, 547 fills) the report is
+again identical, and wall time falls from about 21 min to 4.3 min.
 
 ## D-013 Pod autonomy: planners propose approved operations from development scores (2026-10-19)
 

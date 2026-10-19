@@ -41,10 +41,10 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
 
 | Status | Items |
 |---|---|
-| **Demonstrated on real data** | rule v2 on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts, 2026-10-19); historical acquisition (2025 + 2026, with 2026 execution windows); datasets; training of logistic, gradient boosting and symbolic models; research pods and the protected evaluator on 2026 and on 2025→2026; the pod autopilot (heuristic planner) on the 2026 snapshot; candle vs collected book at C; paper backtest (simulated execution) on real 2026 validation candles through pods and the coordinator, which agree exactly |
+| **Demonstrated on real data** | rule v2 on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts, 2026-10-19); historical acquisition (2025 + 2026, with 2026 execution windows); datasets; training of logistic, gradient boosting and symbolic models; research pods and the protected evaluator on 2026 and on 2025→2026; the pod autopilot (heuristic planner) on the 2026 snapshot; candle vs collected book at C; paper backtest (simulated execution) on real 2026 validation candles through pods and the coordinator, which agree exactly, and on the two-season validation set |
 | **Demonstrated on synthetic data (asserted in the suite)** | full chain proposed → validated → shadow_tested → paper_approved with hand-checked numbers; one-time holdout in both ledgers; dry-run order request; recovery from worker and coordinator SIGKILL, backtest crashes, live create timeout |
 | **Implemented, simulated only** | paper simulator, risk engine, Kelly; Kalshi live adapter against a deterministic exchange double; dry-run gateway |
-| **Pending tonight (bounded jobs running)** | live rule-v2 forward decision at C = 23:08Z for `KXMLBGAME-26OCT192008CLETB`; live forward shadow with the three 2026 pod models as registered forecasters; two-season real-candle backtest (2,027 validation rows) |
+| **Pending tonight (bounded jobs running)** | live rule-v2 forward decision at C = 23:08Z for `KXMLBGAME-26OCT192008CLETB`; live forward shadow with the three 2026 pod models as registered forecasters |
 | **Untested** | the live canary (`docs/live-canary-runbook.md`, never executed); exchange acceptance of any request; fee schedules against real fills |
 | **Blocked** | A5 NBA/NFL (D-005: no authorized official free schedule source) |
 | **Not done by decision** | one-time holdout of a final candidate (D-009: no candidate validated; the 2026 holdout is untouched) |
@@ -67,15 +67,24 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
 - Paper backtest on real 2026 validation candles. This is a simulation, and selection
   biased.
   - Without assumed depth nothing fills, because candles have no sizes.
-  - Under assumed depth 5 or 25, every scenario with fills loses money, both after and
-    before fees. For example, gradient boosting at depth 25 on the general schedule
-    loses 67.50 after fees (43.45 of fees) on a $1,000 bankroll.
+  - Under assumed depth 5 or 25, every scenario with fills has a negative point
+    estimate, both after and before fees. For example, gradient boosting at depth 25 on
+    the general schedule loses 67.50 after fees (43.45 of fees) on a $1,000 bankroll.
+    Every 95% interval, from a bootstrap over markets, contains zero.
   - One extra slippage tick means no fill (the limit is the decision-time ask), and
     latency below one minute changes nothing.
   - In one run, the risk engine's daily loss stop engaged the kill switch, and that
     stopped the run.
   - The pods (verified input copies, no archive access) and the coordinator produced
     identical numbers in all 36 shared scenarios.
+- Paper backtest on the two-season validation set (2,027 games, one ledger per candidate
+  and depth). The signs are mixed:
+  - logistic at depth 5: +2.28 after fees (CI −41.52, +48.96);
+  - gradient boosting at depth 25: −36.90 after fees (CI −361.18, +319.65), but +146.18
+    before them.
+  - Every interval contains zero, and fees are the largest systematic cost.
+  - The 15% drawdown stop engaged the kill switch in both depth-25 runs.
+  - The near-market symbolic model traded once.
 
 Details: `docs/evidence/real-data-demo-20261019.md`.
 
@@ -122,7 +131,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #27 | 1272 passed, 2 deselected |
 | #28 | 1275 passed, 2 deselected; wheel smoke complete (schemas 1–6); ops 43 passed |
 | #29 | 1279 passed, 2 deselected; the real 2026 scenario gives the same report apart from `code_hash`, with CPU time down from 78 s to 16 s |
-| #30 | 1288 passed, 2 deselected (9 new autopilot tests) |
+| #30 | 1288 passed, 2 deselected (9 new autopilot tests); wheel built at this head imports `pods.planner` and `pods.autopilot`, and its smoke test is complete (schemas 1–6) |
 
 ## 6. Data and model limitations
 
@@ -167,9 +176,10 @@ post-only order, cancel, reconcile, shutdown (never executed).
 
 ## 9. Cleanup (not done automatically)
 
-- Background jobs: live rule-v2 driver (`/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2`), model shadow driver (`.../20261019-models`), follow-up acquisition (`/Users/ashwin/Documents/Vader-Intelligence-research/history/run-acquisition-2.sh`); all end by themselves (last ≈05:20 UTC 2026-10-20).
-- Worktrees (with their venvs): `Vader-Intelligence-wt-{deps,execution-risk,symbolic-engine,research-pods-core,models-library,live-adapter}` (finished subagent work, integrated), `-live-v2`, `-live-models`, `-history-run`, `-history-run2` (pinned run code). Local branches `wip/deps`, `feat/execution-risk`, `feat/symbolic-engine`, `feat/research-pods-core`, `feat/models-library`, `feat/live-adapter` are superseded by the stack.
-- Data directories (outside the repo): `/Users/ashwin/Documents/Vader-Intelligence-research/{history (≈0.3 GB),registry,pods-2026,pods-2025-2026 (with backtest-ledgers/),demo}`, `/Users/ashwin/Documents/Vader-Intelligence-shadow/{20261019-rule-v2,20261019-models}`, the session scratchpad.
+- Background jobs: live rule-v2 driver (`/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2`), model shadow driver (`.../20261019-models`); both end by themselves (last ≈05:20 UTC 2026-10-20). The acquisitions and backtests have finished.
+- Worktrees (with their venvs): `Vader-Intelligence-wt-{deps,execution-risk,symbolic-engine,research-pods-core,models-library,live-adapter}` (finished subagent work, integrated), `-live-v2`, `-live-models`, `-history-run`, `-history-run2` (pinned run code), `-verify` (holds `feat/pod-autopilot`, #30; also used for head verification). Local branches `wip/deps`, `feat/execution-risk`, `feat/symbolic-engine`, `feat/research-pods-core`, `feat/models-library`, `feat/live-adapter` are superseded by the stack.
+- Data directories (outside the repo): `/Users/ashwin/Documents/Vader-Intelligence-research/{history (≈0.3 GB),registry,pods-2026,pods-2025-2026 (with backtest-ledgers/),demo}`, `/Users/ashwin/Documents/Vader-Intelligence-shadow/{20261019-rule-v2,20261019-models}`, the session scratchpad (profiles, single-run ledgers, the wheel venv).
+- Research pods added in `pods-2026` by the autopilot demos: `auto-baseline`, `auto-symbolic` (2 rejected candidates) and `auto2-*` (planning only). The orchestration store is append-only, so they stay as history.
 
 ## 10. Next highest-value work
 

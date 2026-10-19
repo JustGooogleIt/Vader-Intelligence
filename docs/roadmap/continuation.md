@@ -44,17 +44,14 @@ Full SHAs are in the final handoff (`docs/handoffs/roadmap-handoff.md`).
 |---|---|---|
 | Live forward-shadow driver (rule v2, test label, no launchd) | `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/driver.sh`; decision at C = 23:08:00Z for `KXMLBGAME-26OCT192008CLETB`, `shadow-evaluate` at 05:00 UTC 2026-10-20 | ≈05:05 UTC 2026-10-20 |
 | Model shadow driver (three 2026 pod models as registered forecasters) | `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/driver.sh`; evaluation 05:15 UTC | ≈05:20 UTC 2026-10-20 |
-| Two-season real-candle backtest (6 single ledgers, parallel) | `real_data_demo.py backtest --coordinator single` → `/Users/ashwin/Documents/Vader-Intelligence-research/demo/real-data-backtest-2025-2026.json` | when the six runs finish |
 
 The acquisitions are complete (2025 date-only identities; 2026 execution windows, 4,810
-post-cutoff windows, none failed). The 2026 real-candle backtest is recorded in
-`docs/evidence/real-data-demo-20261019.md` §3.
+post-cutoff windows, none failed). The real-candle backtests are recorded in `docs/evidence/real-data-demo-20261019.md`
+§3 (2026) and §3b (two seasons); the autopilot is in §4.
 
 ## Next action
 
-1. When the two-season backtest finishes: record §3b of the real-data evidence, copy the
-   JSON into `docs/evidence/`, push `feat/integration-demos` (no force) and update the
-   PR #28 body and the handoff.
+1. Done: two-season backtest recorded (§3b) and pushed.
 2. After 05:20 UTC 2026-10-20: read `driver-log.jsonl`, `cycle-*.json` and the
    `shadow-evaluate` reports in both shadow directories and record the live evidence
    (rule v2 decision; registered forecasters' forward decisions). Then run `vader live
