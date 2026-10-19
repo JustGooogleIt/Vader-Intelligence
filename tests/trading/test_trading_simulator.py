@@ -397,3 +397,43 @@ def test_archive_reader_is_read_only_and_time_ordered(tmp_path):
     assert hashlib.sha256(path.read_bytes()).hexdigest() == before
     with pytest.raises(LedgerError):
         Ledger(path, "paper")  # an evidence archive is never used as a ledger
+
+
+def quote_only(t, yes_bid="0.44", no_bid="0.54"):
+    """A depth-unknown snapshot, like a historical candle (prices without sizes)."""
+    from vader_intelligence.trading.marketdata import BookSnapshot
+
+    return BookSnapshot(
+        TICKER, at(t), ((D(yes_bid), D(0)),), ((D(no_bid), D(0)),), "quote", f"q{t}", False
+    )
+
+
+def test_depth_unknown_snapshots_fill_nothing_unless_a_depth_scenario_is_assumed(tmp_path):
+    snaps = [quote_only(t) for t in range(0, 601, 30)]
+    plain_run = run_paper(PaperConfig(), inputs(snaps, [fc("f1", 60)]), tmp_path / "a.sqlite3")
+    assert plain_run.fills == []
+    assert any("supply no depth" in a for a in plain_run.manifest["assumptions"])
+    assumed = run_paper(
+        PaperConfig(assumed_depth=10), inputs(snaps, [fc("f1", 60)]), tmp_path / "b.sqlite3"
+    )
+    (f,) = assumed.fills
+    # Best NO bid 0.54 → YES ask 0.46; 10 assumed contracts x 0.5 haircut = 5.
+    assert (f["price"], f["quantity"]) == ("0.46", "5")
+    assert any("SCENARIO" in a for a in assumed.manifest["assumptions"])
+    assert assumed.verification == []
+
+
+def test_sensitivity_sweeps_assumed_depth_as_an_explicit_axis(tmp_path):
+    snaps = [quote_only(t) for t in range(0, 601, 30)]
+    base = PaperConfig()
+    grid = {
+        "fee_schedules": PROVISIONAL_SCHEDULES[:1],
+        "extra_slippage_ticks": (0,),
+        "latency": (base.latency,),
+        "maker_fill_model": ("none",),
+        "assumed_depth": (None, D(10), D(100)),
+    }
+    report = sensitivity(base, inputs(snaps, [fc("f1", 60)]), grid, directory=tmp_path)
+    fills = [row["fills"] for row in report.rows]
+    depths = [row["scenario"]["assumed_depth"] for row in report.rows]
+    assert depths == [None, "10", "100"] and fills[0] == 0 and fills[1] == 1 and fills[2] == 1

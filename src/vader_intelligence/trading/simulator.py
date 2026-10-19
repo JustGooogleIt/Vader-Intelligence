@@ -39,7 +39,7 @@ from .fees import DEFAULT_FEE_SCHEDULE, PROVISIONAL_SCHEDULES, FeeSchedule
 from .gateway import CancelResult, GatewayEvent, OrderStatus, SubmitResult
 from .instruments import Market, identifier
 from .ledger import Ledger
-from .marketdata import BookSnapshot
+from .marketdata import BookSnapshot, assume_depth
 from .money import (
     ONE,
     ZERO,
@@ -186,6 +186,9 @@ class PaperConfig:
     depth_haircut: object = dec("0.5")
     extra_slippage_ticks: int = 0
     maker_fill_model: str = "none"
+    # SCENARIO for depth-unknown snapshots (candles/quotes without sizes): contracts assumed
+    # at the best level only. None (default): such snapshots never supply depth.
+    assumed_depth: object = None
     clip_to_limits: bool = False
     probability_haircut: object = ZERO
     z: object = ZERO
@@ -216,6 +219,8 @@ class PaperConfig:
             nonnegative(self.probability_haircut, "probability_haircut"),
         )
         object.__setattr__(self, "z", nonnegative(self.z, "z"))
+        if self.assumed_depth is not None:
+            object.__setattr__(self, "assumed_depth", positive(self.assumed_depth, "assumed_depth"))
 
     def effective_limits(self):
         return self.limits if self.limits is not None else simulation_defaults(self.initial_cash)
@@ -262,6 +267,11 @@ def assumptions(config):
         *config.fee_schedule.assumptions,
         "Markets without settlement evidence at run end are reported open at conservative "
         "best-bid marks.",
+        "Depth-unknown snapshots (candles or quotes without sizes) supply no depth."
+        if config.assumed_depth is None
+        else f"SCENARIO: depth-unknown snapshots are assumed to show "
+        f"{text(config.assumed_depth)} contracts at the best level only; this is an "
+        "assumption, not evidence of executable size.",
     ]
     if config.limits is None:
         out.extend(SIMULATION_ASSUMPTIONS)
@@ -460,6 +470,8 @@ class PaperExchange:
         the raw snapshot(s) the book was built from."""
         snaps, times = self.books.get(ticker, []), self.times.get(ticker, [])
         i, j = bisect_right(times, ts) - 1, bisect_left(times, ts)
+        if self.config.assumed_depth is not None:
+            snaps = [assume_depth(s, self.config.assumed_depth) for s in snaps]
         prior = snaps[i] if i >= 0 else None
         gap = self.config.max_snapshot_gap_seconds
         if self.config.book_state_rule == "prior_snapshot":
@@ -820,20 +832,23 @@ def sensitivity(config, inputs, grid=None, *, directory=None):
     """
     grid = dict(grid or default_grid(config))
     axes = ("fee_schedules", "extra_slippage_ticks", "latency", "maker_fill_model")
-    if set(grid) != set(axes):
-        raise ValueError(f"grid must define exactly {axes}")
+    if not set(axes) <= set(grid) <= set(axes) | {"assumed_depth"}:
+        raise ValueError(f"grid must define exactly {axes} (and optionally assumed_depth)")
+    grid.setdefault("assumed_depth", (config.assumed_depth,))
+    axes = axes + ("assumed_depth",)
     scenarios = list(product(*(tuple(grid[a]) for a in axes)))
     if not scenarios or len(scenarios) > MAX_SCENARIOS:
         raise ValueError(f"grid must define 1..{MAX_SCENARIOS} scenarios")
     rows = []
     with tempfile.TemporaryDirectory(dir=directory) as tmp:
-        for index, (fees, ticks, latency, maker) in enumerate(scenarios):
+        for index, (fees, ticks, latency, maker, depth) in enumerate(scenarios):
             scenario = replace(
                 config,
                 fee_schedule=fees,
                 extra_slippage_ticks=ticks,
                 latency=latency,
                 maker_fill_model=maker,
+                assumed_depth=depth,
             )
             report = run_paper(scenario, inputs, Path(tmp) / f"scenario-{index:03d}.sqlite3")
             rows.append(
@@ -844,6 +859,7 @@ def sensitivity(config, inputs, grid=None, *, directory=None):
                         "extra_slippage_ticks": ticks,
                         "latency": plain(latency),
                         "maker_fill_model": maker,
+                        "assumed_depth": None if depth is None else plain(depth),
                     },
                     "config_digest": scenario.digest(),
                     "pnl": report.pnl,

@@ -133,6 +133,23 @@ def snapshot_from_quote(ticker, as_of, data, *, ref=""):
     return BookSnapshot(ticker, as_of, yes, no, "quote", ref, depth_known)
 
 
+def assume_depth(snapshot, quantity):
+    """SCENARIO, not evidence: a depth-unknown snapshot (quote or candle without sizes)
+    treated as showing `quantity` contracts at its best level of each side only."""
+    q = nonnegative(quantity, "assumed depth")
+    if snapshot.depth_known or q <= 0:
+        return snapshot
+    return BookSnapshot(
+        snapshot.ticker,
+        snapshot.as_of,
+        tuple((p, q) for p, _ in snapshot.yes_bids[:1]),
+        tuple((p, q) for p, _ in snapshot.no_bids[:1]),
+        snapshot.source,
+        f"assumed:{snapshot.ref}",
+        True,
+    )
+
+
 def open_archive(path):
     """Read-only connection to an evidence archive (`mode=ro`, `query_only`)."""
     db = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
