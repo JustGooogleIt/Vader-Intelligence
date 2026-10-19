@@ -139,3 +139,23 @@ Decision.
 Alternative (configurable later if wanted): score such opportunities in a separately
 labelled bucket as long-horizon forecasts of the same contract. Not done: it changes the
 meaning of a T-60 score.
+
+## D-004 Registered forecasters in the forward path: decision contract 4 (2026-10-19, planned)
+
+Context. Forward-shadow decisions (contracts 1–3) carry exactly the baseline pair. A
+candidate model can only be shadow-tested if the tick computes its forecast at C from the
+same witnessed evidence, under the same publication and evaluation semantics.
+
+Decision (to implement after the B/C/D/E/F/G cores are stacked): a new record contract,
+not an amendment.
+- Decision contract 4 = contract 3 fields plus `forecasters` (sorted list of
+  `{id: "model:<sha256[:16]>", artifact_sha256, family, feature_set}`); `results` keys are
+  the baseline pair plus those ids. Only forward-capable feature sets are admitted.
+- The research protocol lists artifact digests (they enter the protocol hash, so a
+  different model set is a different cohort); the registry path is operational only.
+- At C the tick builds quote series only from fetches witnessed by C (the projection's
+  rule), computes the features, runs the artifact; any missing/incompatible artifact or
+  unavailable `forbid` feature is an explicit abstention reason, never a fallback.
+- Evaluation item contract 2 scores every forecaster of the cohort on the same population
+  with the same publication and outcome dispositions; reports pair each with midpoint.
+- Opened by an explicit no-DDL migration (schema 6), following D-001's pattern.
