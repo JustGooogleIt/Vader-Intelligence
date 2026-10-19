@@ -28,7 +28,7 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #27 | `feat/research-pods` | `145735cf6ba04820870e181a5ac02bff5050ffe7` | G orchestration, operations, protected evaluator (D-008) | 1272 passed |
 | #28 | `feat/integration-demos` | final head in §11 | H demos, ops model registry, run documents | 1275 passed |
 | #29 | `perf/ledger-row-cache` | `26dceed2f8fad8b22320845b40d6d3b755265057` | ledger parsed-row reuse (D-012); read-only registry for non-holdout backtests | 1279 passed |
-| #30 | `feat/pod-autopilot` | `4c9cf730cff19b96814f6c0cf51a851c6d0f6ecb` | G pod autopilot: development-only planners, bounded loop (D-013) | 1288 passed |
+| #30 | `feat/pod-autopilot` | `d744766d96ebb869a9e8ab6ab1fc1c40e9ca5262` | G pod autopilot: development-only planners, bounded loop (D-013) | 1294 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -131,7 +131,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #27 | 1272 passed, 2 deselected |
 | #28 | 1275 passed, 2 deselected; wheel smoke complete (schemas 1–6); ops 43 passed |
 | #29 | 1279 passed, 2 deselected; the real 2026 scenario gives the same report apart from `code_hash`, with CPU time down from 78 s to 16 s |
-| #30 | 1288 passed, 2 deselected (9 new autopilot tests); wheel built at this head imports `pods.planner` and `pods.autopilot`, and its smoke test is complete (schemas 1–6) |
+| #30 | 1294 passed, 2 deselected (15 new autopilot tests); wheel built at this head imports `pods.planner` and `pods.autopilot`, and its smoke test is complete (schemas 1–6). A read-only Opus review of #29 and #30 found nothing critical; its confirmed findings on #30 were fixed in `d744766` |
 
 ## 6. Data and model limitations
 

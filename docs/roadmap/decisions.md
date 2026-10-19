@@ -290,9 +290,11 @@ Decision (#30, spec §9).
   nothing a planner returns is executed as code. A provider planner (LLM) exists behind
   the `ModelProvider` interface. It runs only against the scripted double; a real vendor
   raises `PaidCallsDisabled`.
-- **The loop.** The loop is bounded by rounds, tasks and wall time, and the bounds are
-  checked before submission. It resumes from the store after a crash, and records every
-  round as a chained artifact.
+- **The loop.** The loop is bounded by rounds, a total task budget per pod and snapshot,
+  and wall time; the bounds are checked before submission. It records each round as a
+  chained artifact *before* submitting the round's tasks, and resumes from the store
+  after a crash. Malformed provider output is a recorded rejection, never an exception
+  (fixes from an independent review, #30 `d744766`).
 - **Evaluation.** One candidate per pod (the best by development score) goes to the
   protected evaluator, which recomputes the validation metrics and records the
   snapshot's proposal count.

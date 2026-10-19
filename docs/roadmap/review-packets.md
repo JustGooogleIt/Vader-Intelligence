@@ -82,6 +82,9 @@ Read first: `docs/roadmap/decisions.md` (D-001..), `docs/roadmap/evidence-index.
     - Can the loop submit beyond its bounds?
     - Is one accepted candidate per pod the right multiplicity control? The evaluator
       records the snapshot's proposal count.
+    - A pre-review by an Opus agent found nothing critical. Its findings on #30 were
+      fixed in `d744766`: malformed provider values, a non-finite-JSON gap, the record
+      ordering, the budget across runs and fold comparability.
 
 Commands:
 
