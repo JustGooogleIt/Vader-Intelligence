@@ -288,3 +288,160 @@ def test_heuristic_refinement_brackets_over_every_tried_value():
     assert grid["learning_rate"] == [0.025, 0.05] and grid["max_leaf_nodes"] == [3, 7, 14]
     ctx = {"role": "diagnostics", "history": []}
     assert planner.HeuristicPlanner().plan(ctx).stop == "role diagnostics is not planned"
+
+
+class Counting:
+    """Test planner: one new logistic task per round (a distinct C each time)."""
+
+    name = "counting-test"
+
+    def plan(self, ctx):
+        c = 0.1 * (len(ctx["history"]) + 1)
+        params = {"model_family": "logistic", "seed": 0}
+        params["hyperparameters"] = {"grid": {"C": [round(c, 6)]}, "n_folds": 3}
+        return planner.Plan((planner.Proposal("train_model", params),))
+
+
+class IdleCoordinator:
+    def run(self, *args, **kwargs):
+        return {"stopped": "idle", "steps": 0}
+
+
+def test_malformed_provider_output_is_rejected_and_recorded(research, pods):  # noqa: F811
+    registry, dataset_id, _, _ = research
+    snapshot_sha, pod = setup(pods, registry, dataset_id)
+    ctx = planner.context(pods.store, pod, snapshot_sha, tasks_remaining=12, rounds_remaining=1)
+    good = {"model_family": "logistic", "seed": 0, "hyperparameters": {"grid": {"C": [1.0]}}}
+    bad = [
+        good | {"hyperparameters": [1]},
+        good | {"hyperparameters": "x"},
+        good | {"hyperparameters": {"grid": ["C"]}},
+        good | {"hyperparameters": {"grid": {"C": 5}}},
+        good | {"hyperparameters": {"grid": {"C": [True]}}},
+        good | {"model_family": {"nested": 1}},
+        good | {"seed": "zero"},
+    ]
+    response = {
+        "proposals": [{"operation": "train_model", "params": good}]
+        + [{"operation": "train_model", "params": params} for params in bad]
+    }
+    prompt = planner.ProviderPlanner(None).prompt(ctx)
+    provider = ScriptedProvider({prompt: json.dumps(response)})
+    summary = autopilot.run(
+        pods.store,
+        registry,
+        pod_id=pod,
+        snapshot_sha=snapshot_sha,
+        planner=planner.ProviderPlanner(provider),
+        coordinator=IdleCoordinator(),
+        rounds=1,
+    )
+    (record,) = rounds(pods, summary)
+    assert len(summary["submitted"]) == 1 and len(record["rejected"]) == len(bad)
+    for entry in record["rejected"]:  # hashes and reasons, never the provider's values
+        assert set(entry) == {"proposal_sha256", "operation", "reason"}
+    assert "nested" not in json.dumps(record)
+
+
+def test_non_finite_json_and_provider_errors_end_planning(research, pods):  # noqa: F811
+    registry, dataset_id, _, _ = research
+    snapshot_sha, pod = setup(pods, registry, dataset_id)
+    ctx = planner.context(pods.store, pod, snapshot_sha, tasks_remaining=12, rounds_remaining=1)
+    prompt = planner.ProviderPlanner(None).prompt(ctx)
+    text = '{"proposals": [{"operation": "train_model", "params": {"seed": NaN}}]}'
+    options = dict(pod_id=pod, snapshot_sha=snapshot_sha, coordinator=IdleCoordinator(), rounds=1)
+    nan = autopilot.run(
+        pods.store,
+        registry,
+        planner=planner.ProviderPlanner(ScriptedProvider({prompt: text})),
+        **options,
+    )
+    assert nan["stop"] == "response_not_json" and nan["submitted"] == []
+    unscripted = autopilot.run(
+        pods.store, registry, planner=planner.ProviderPlanner(ScriptedProvider({})), **options
+    )
+    assert unscripted["stop"] == "provider_error"
+    (record,) = rounds(pods, unscripted)
+    assert record["provider"]["error"] == "UnscriptedRequest"
+
+
+def test_a_round_is_recorded_before_its_tasks_are_submitted(research, pods, monkeypatch):  # noqa: F811
+    registry, dataset_id, _, _ = research
+    snapshot_sha, pod = setup(pods, registry, dataset_id)
+    options = dict(pod_id=pod, snapshot_sha=snapshot_sha, planner=Counting(), rounds=1)
+
+    def crash(task, now=None):
+        raise Crash
+
+    monkeypatch.setattr(pods.store, "submit", crash)
+    with pytest.raises(Crash):
+        autopilot.run(pods.store, registry, coordinator=IdleCoordinator(), **options)
+    monkeypatch.undo()
+    (sha,) = [
+        r[0]
+        for r in pods.store.db.execute(
+            "SELECT sha256 FROM artifacts WHERE kind=?", (autopilot.ROUND_KIND,)
+        )
+    ]
+    first = json.loads(pods.store.artifacts.get_bytes(sha))
+    assert pods.store.db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
+    resumed = autopilot.run(pods.store, registry, coordinator=IdleCoordinator(), **options)
+    assert resumed["submitted"] == first["new_task_ids"]  # the planned task, now submitted
+    (second,) = rounds(pods, resumed)
+    assert second["previous"] == sha and second["round"] == 2
+
+
+def test_the_task_budget_and_round_chain_span_runs(research, pods):  # noqa: F811
+    registry, dataset_id, _, _ = research
+    snapshot_sha, pod = setup(pods, registry, dataset_id)
+    coordinator = pods.coordinator()
+    options = dict(pod_id=pod, snapshot_sha=snapshot_sha, planner=Counting(), deadline_seconds=240)
+    first = autopilot.run(
+        pods.store, registry, coordinator=coordinator, rounds=5, max_tasks=2, **options
+    )
+    assert len(first["submitted"]) == 2 and first["stop"] == "task_budget_exhausted"
+    again = autopilot.run(
+        pods.store, registry, coordinator=coordinator, rounds=5, max_tasks=2, **options
+    )
+    assert again["submitted"] == [] and again["stop"] == "task_budget_exhausted"
+    more = autopilot.run(
+        pods.store, registry, coordinator=coordinator, rounds=1, max_tasks=3, **options
+    )
+    (record,) = rounds(pods, more)
+    assert len(more["submitted"]) == 1 and record["round"] == 3
+    assert record["previous"] == first["rounds"][-1]["sha256"]
+    assert more["best"]["compared_tasks"] == 3
+
+
+def test_tasks_blocked_in_the_queue_stop_the_loop(research, pods):  # noqa: F811
+    registry, dataset_id, _, _ = research
+    snapshot_sha, pod = setup(pods, registry, dataset_id)
+    options = dict(pod_id=pod, snapshot_sha=snapshot_sha, planner=Counting(), rounds=3)
+    with pytest.raises(Crash):
+        autopilot.run(pods.store, registry, coordinator=CrashingCoordinator(), **options)
+    blocked = autopilot.run(pods.store, registry, coordinator=IdleCoordinator(), **options)
+    assert blocked["stop"] == "tasks_blocked" and blocked["submitted"] == []
+
+
+def test_symbolic_planning_context_is_development_only(research, pods):  # noqa: F811
+    registry, dataset_id, _, _ = research
+    snapshot_sha, pod = setup(pods, registry, dataset_id, role="symbolic_search")
+    small = {"population": 50, "max_generations": 4, "max_candidates": 1000, "max_seconds": 60.0}
+    summary = autopilot.run(
+        pods.store,
+        registry,
+        pod_id=pod,
+        snapshot_sha=snapshot_sha,
+        planner=planner.HeuristicPlanner(symbolic=small),
+        coordinator=pods.coordinator(),
+        rounds=1,
+        deadline_seconds=120,
+    )
+    assert summary["score_field"] == "development_inner_log_loss"
+    ctx = planner.context(pods.store, pod, snapshot_sha, tasks_remaining=1, rounds_remaining=1)
+    (task,) = ctx["history"]
+    output = pods.store.result(task["task_id"])["result"]["output"]
+    assert "diagnostic_validation_log_loss" in output
+    text = json.dumps(ctx)
+    assert "validation" not in text and repr(output["diagnostic_validation_log_loss"]) not in text
+    assert task["result"]["development_inner_log_loss"] == output["development_inner_log_loss"]

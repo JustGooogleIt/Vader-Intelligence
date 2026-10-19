@@ -16,6 +16,7 @@ judge of a proposal (`pods.evaluator`), and every accepted proposal is counted t
 only against the scripted double, and a real vendor raises `PaidCallsDisabled`.
 """
 
+import hashlib
 import json
 import math
 from dataclasses import dataclass, field
@@ -64,6 +65,11 @@ VISIBLE_FIELDS = {
 POD_FAMILIES = {"logistic": "logistic", "gradient_boosting": "gbm"}
 MAX_RESPONSE_BYTES = 65536
 MAX_RATIONALE = 500
+MAX_REASON = 300
+
+
+def _refuse_constant(name):
+    raise ValueError(f"non-finite JSON constant {name}")
 
 
 @dataclass(frozen=True)
@@ -76,7 +82,7 @@ class Proposal:
 @dataclass(frozen=True)
 class Plan:
     proposals: tuple
-    rejected: tuple = ()  # ({"proposal": ..., "reason": ...}, ...)
+    rejected: tuple = ()  # (rejection(item, reason), ...): hashes and reasons only
     provider: dict = field(default_factory=dict)  # request/response hashes, never text
     stop: str | None = None  # why the planner proposes nothing further
 
@@ -138,6 +144,7 @@ def _fixed_fields(ctx, operation):
 
 
 def _check_grid(params):
+    """Family grid keys and values; `params` already satisfy the operation contract."""
     family = POD_FAMILIES.get(params.get("model_family"))
     grid = (params.get("hyperparameters") or {}).get("grid")
     if family is None or not grid:
@@ -148,7 +155,11 @@ def _check_grid(params):
     if unknown or missing:
         raise ContractError(f"grid keys: unknown {unknown}, missing {missing}")
     for name, values in grid.items():
-        if not all(isinstance(v, int | float) and math.isfinite(v) and v > 0 for v in values):
+        numbers = all(
+            isinstance(v, int | float) and not isinstance(v, bool) and math.isfinite(v) and v > 0
+            for v in values
+        )
+        if not numbers:
             raise ContractError(f"grid {name}: values must be positive finite numbers")
         if len(values) > 8:
             raise ContractError(f"grid {name}: at most 8 values")
@@ -169,8 +180,26 @@ def validate(ctx, proposal):
         if name in proposal.params and proposal.params[name] != value:
             raise ContractError(f"{name} is fixed by the snapshot")
     params = {**proposal.params, **fixed}
-    _check_grid(params)
-    return normalized_params(proposal.operation, params)
+    try:  # untrusted values: every failure is a recorded rejection, never a crash
+        normalized = normalized_params(proposal.operation, params)
+        _check_grid(normalized)
+    except ContractError:
+        raise
+    except (TypeError, ValueError, AttributeError, KeyError) as exc:
+        raise ContractError(f"invalid params: {type(exc).__name__}") from None
+    return normalized
+
+
+def rejection(item, reason):
+    """A rejected proposal as recorded: its hash, the operation name and the reason."""
+    operation = item.get("operation") if isinstance(item, dict) else None
+    return {
+        "proposal_sha256": hashlib.sha256(
+            json.dumps(item, sort_keys=True, default=repr).encode()
+        ).hexdigest(),
+        "operation": operation[:64] if isinstance(operation, str) else None,
+        "reason": reason[:MAX_REASON],
+    }
 
 
 class HeuristicPlanner:
@@ -367,6 +396,9 @@ class ProviderPlanner:
             response = self.provider.complete(request)
         except PaidCallsDisabled as exc:
             return Plan((), provider=provider | {"error": str(exc)}, stop="paid_calls_disabled")
+        except Exception as exc:  # a provider failure ends planning; it is not retried
+            error = type(exc).__name__
+            return Plan((), provider=provider | {"error": error}, stop="provider_error")
         provider |= {
             "response_hash": content_hash({"text": response.text}),
             "cost_usd": response.cost_usd,
@@ -376,8 +408,8 @@ class ProviderPlanner:
         if len(response.text.encode()) > MAX_RESPONSE_BYTES:
             return Plan((), provider=provider, stop="response_too_large")
         try:
-            payload = json.loads(response.text)
-        except ValueError:
+            payload = json.loads(response.text, parse_constant=_refuse_constant)
+        except (ValueError, RecursionError):
             return Plan((), provider=provider, stop="response_not_json")
         items = payload.get("proposals") if isinstance(payload, dict) else None
         if not isinstance(items, list) or set(payload) != {"proposals"}:
@@ -385,7 +417,7 @@ class ProviderPlanner:
         proposals, rejected = [], []
         for item in items:
             if not isinstance(item, dict) or not set(item) <= {"operation", "params", "rationale"}:
-                rejected.append({"proposal": item, "reason": "proposal shape"})
+                rejected.append(rejection(item, "proposal shape"))
                 continue
             rationale = item.get("rationale", "")
             proposal = Proposal(
@@ -396,7 +428,7 @@ class ProviderPlanner:
             try:
                 validate(ctx, proposal)
             except ContractError as exc:
-                rejected.append({"proposal": item, "reason": str(exc)})
+                rejected.append(rejection(item, str(exc)))
                 continue
             proposals.append(proposal)
         stop = None if proposals else "no_valid_proposal"

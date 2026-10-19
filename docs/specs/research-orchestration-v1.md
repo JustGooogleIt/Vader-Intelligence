@@ -227,9 +227,14 @@ form `(operation, params)`.
 **`ProviderPlanner` (`provider-v1`).** It asks a `ModelProvider` for one JSON object,
 `{"proposals": [{"operation", "params", "rationale"}]}`.
 
-- **Recorded:** request and response hashes are recorded, never the text.
-- **Rejected responses:** text that is not JSON, the wrong shape, more than 64 KB, or a
-  non-zero reported cost.
+- **Recorded:** request and response hashes, never the text. Each rejected proposal is
+  recorded as its hash, its operation name (if a string) and the reason, truncated.
+  Reasons can quote short contract messages.
+- **Rejected responses:** text that is not JSON (including the non-finite constants
+  `NaN` and `Infinity`), the wrong shape, more than 64 KB, or a non-zero reported cost.
+  Any provider exception ends planning with stop `provider_error`.
+- **Malformed values:** a malformed parameter value (wrong type, non-numeric or boolean
+  grid value) is a recorded rejection, never an exception.
 - **Rejected proposals:** a proposal that names an operation not planned for the role,
   carries extra keys, sets a snapshot field to another value, has grid keys outside the
   family's, or fails the operation's typed contract. Each rejection is recorded with its
@@ -239,26 +244,42 @@ form `(operation, params)`.
 
 **Loop (`pods.autopilot.run`).** Each round:
 
-1. drains the pod's unfinished tasks on the snapshot (this is how a crashed loop
-   resumes);
-2. builds the context and asks the planner;
-3. checks the bounds *before* submitting (per-round and total task limits; a submitted
-   task will run);
-4. validates and submits through `submit_operation`, the same path as `vader pods
-   submit`;
-5. stores the round as a content-addressed `planner_round` artifact, chained by
-   `previous`, holding the context hash, accepted and rejected proposals, provider
-   hashes, new task ids and the planner's stop;
-6. runs the coordinator until idle.
+1. **Drains** the pod's unfinished tasks on the snapshot. The coordinator runs every
+   pod's queue. If the pod's tasks are still queued afterwards (a pod budget), the loop
+   stops with `tasks_blocked`.
+2. **Plans:** builds the context and asks the planner.
+3. **Validates** each proposal and prepares its task: it stores the experiment manifest
+   and computes the content task id, without submitting. The per-round and total limits
+   are applied to *new* task ids before anything is submitted.
+4. **Records** the round as a content-addressed `planner_round` artifact, chained by
+   `previous` to the pod's last round on the snapshot (numbering continues across runs).
+   The record holds the context hash, accepted task ids, rejections by hash and reason,
+   provider hashes, new task ids and the planner's stop.
+5. **Submits** the planned tasks only after their round is stored (the same path as
+   `vader pods submit`), so no task exists that no round names.
+6. **Runs** the coordinator until idle.
 
-**Bounds and resume.** The loop ends when nothing new is proposed, or at the round
-(≤ 50), task (≤ 200) or wall-time bound. Tasks are idempotent by content, so a rerun
-re-proposes identical work and gets the existing ids.
+**Bounds and resume.**
+- The loop ends when nothing new is proposed, or at the round bound (≤ 50 per run), the
+  task bound (`max_tasks`, the pod's *total* tasks on the snapshot across runs, ≤ 200) or
+  the wall-time bound.
+- **Crash recovery:** a crash is recovered by running the loop again. Unfinished tasks
+  are drained first. Planned but unsubmitted work is proposed again: identical for a
+  deterministic planner, and its content id is the same, so nothing runs twice.
 
-**`accept_best`.** The pod's best finished model on the snapshot, by its development
-score, is accepted as one candidate and decided by the protected evaluator (§8). On a
-resumed loop, an already-decided candidate is reported, not re-evaluated. The holdout is
-never touched.
+**`accept_best`.**
+- **Which model:** the pod's best finished model on the snapshot by development score.
+  Scores are compared only within the fold setting of its most recent scored task
+  (`train_model` by `n_folds`; symbolic by kind), and the summary records how many tasks
+  were compared.
+- **Decision:** that model is accepted as one candidate and decided by the protected
+  evaluator (§8). On a rerun, an already-decided candidate is reported, not
+  re-evaluated; a rerun that finds a new best proposes and evaluates another candidate,
+  and the evaluator counts it.
+- **Known limitation:** a symbolic search selects on its inner split, so larger searches
+  look slightly better there partly through selection. Validation by the evaluator stays
+  the only judge.
+- The holdout is never touched.
 
 **CLI.** `vader pods autopilot --root R --pod P --snapshot SHA [--planner heuristic|vendor]
 [--rounds N --max-tasks M --max-tasks-per-round K --deadline-seconds S]
