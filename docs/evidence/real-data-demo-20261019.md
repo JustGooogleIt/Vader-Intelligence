@@ -9,7 +9,10 @@ nothing is evidence of edge. The final holdout (official dates after 2026-09-01)
 ## 1. Research pods on the 2026 dataset
 
 Dataset `a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435`
-(`mlb-2026-history-fs-market-v1`, forward-capable market features). Split: development
+(`mlb-2026-history-fs-market-v1`, forward-capable market features). Task parameters, pod
+outputs, symbolic search summaries and robustness reports for §1 and §1b:
+`docs/evidence/real-data-pods-details-20261019.json`, a read-only extract of the
+orchestration stores. Split: development
 ≤ 2026-07-31, validation 2026-08-02..2026-08-31 (1-day embargo). Snapshot
 `77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a`: 1,611
 development rows, 401 validation rows. Commands and outputs:
@@ -95,7 +98,7 @@ Inputs:
   markets, plus the archived settlements;
 - strategy: take at the decision-time ask when the edge after fees is at least 0.02.
   The order is IOC.
-- paper risk engine: simulation-default limits, clipped to limits, $1,000 bankroll.
+- paper risk engine: simulation-default limits, not clipped (an intent beyond a limit is refused, `clip_to_limits: false`), $1,000 bankroll.
 
 Two paths ran over the same rows:
 
@@ -144,10 +147,12 @@ What the grid shows:
 - **Latency has no effect.** The 250 ms and 1,250 ms rows are identical, because both
   arrivals fall inside the same one-minute candle. Candles cannot resolve sub-minute
   latency.
-- **Every row with fills has a negative point estimate, both after and before fees, but
-  none is distinguishable from zero.** Realized P&L plus fees is negative in every row;
-  for example, gradient boosting at depth 25 on the general schedule loses 67.50 after
-  fees and 24.05 before them. Losses grow with assumed depth, and the lower assumed fee
+- **Every row with fills has a negative point estimate after fees; all but one are
+  negative before fees too; none is distinguishable from zero.**
+  - The exception is gradient boosting at depth 5 under the assumed 0.5× schedule:
+    −1.76 after fees, +3.32 before them (corrected after review).
+  - For example, gradient boosting at depth 25 on the general schedule loses 67.50 after
+    fees and 24.05 before them. Losses grow with assumed depth, and the lower assumed fee
   schedule lets more forecasts clear the edge threshold; they lose as well.
   - **Uncertainty.** P&L was recomputed per market from rerun single ledgers, which
     matched the grid exactly in all 12 rows, and bootstrapped over markets. Every 95%
@@ -188,8 +193,15 @@ ledger per candidate and assumed depth:
 - output: `docs/evidence/real-data-backtest-2025-2026-20261019.json`.
 
 §3 had shown that the dropped axes give no fills (one slippage tick, no depth) or change
-nothing (latency). Each run took 20–41 min on the old code while sharing the CPU. The
-logistic depth-5 run, repeated on #29's code, gave an identical report in 4.3 min.
+nothing (latency).
+
+**Run times.**
+- The original runs took 20–41 min each on the old code while sharing the CPU. These
+  come from the process elapsed times; they are not in the JSON.
+- The JSON's `wall_seconds` (68–71 s) are from the rerun that resumed the finished
+  ledgers to record all six results.
+- The logistic depth-5 run, repeated on #29's code into a fresh ledger, gave an
+  identical report in 4.3 min.
 
 The uncertainty is computed as in §3: per-market net P&L from each ledger, with a
 bootstrap over markets.
@@ -205,9 +217,11 @@ bootstrap over markets.
 
 Reading:
 
-- **Signs are mixed and every interval contains zero.** Logistic at depth 5 is slightly
-  positive after fees, and several rows are positive before fees but negative after.
-  None of this is distinguishable from zero.
+- **Signs are mixed, and every interval for rows with more than one trade contains
+  zero.** Logistic at depth 5 is slightly positive after fees, and several rows are
+  positive before fees but negative after. None of this is distinguishable from zero.
+  The symbolic rows have a single trade each, so their intervals are degenerate and
+  meaningless.
 - **Fees.** They are the largest systematic cost: 21.58–183.08 against before-fee totals
   of 6.98–146.18.
 - **The risk engine stopped both depth-25 runs.** The 15% drawdown stop on conservative
@@ -234,6 +248,8 @@ development and 401 validation rows) in the existing orchestration root. Two run
 - **Run B** (#30 at `4c9cf73`, after the logistic refinement fix): pods `auto2-*`, with
   `--plan-only`, which accepts no candidate. Output:
   `docs/evidence/real-data-autopilot-2026-planonly-20261019.json`.
+- Every task's parameters and development-only scores, for both runs:
+  `docs/evidence/real-data-autopilot-2026-tasks-20261019.json`.
 
 **The paid-call boundary.** A vendor-planner round on `auto-baseline` stopped with
 `paid_calls_disabled` and submitted no task.

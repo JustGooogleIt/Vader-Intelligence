@@ -70,7 +70,8 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
   biased.
   - Without assumed depth nothing fills, because candles have no sizes.
   - Under assumed depth 5 or 25, every scenario with fills has a negative point
-    estimate, both after and before fees. For example, gradient boosting at depth 25 on
+    estimate after fees. Before fees all but one are negative too: gradient boosting at
+    depth 5 under the 0.5× schedule is +3.32. For example, gradient boosting at depth 25 on
     the general schedule loses 67.50 after fees (43.45 of fees) on a $1,000 bankroll.
     Every 95% interval, from a bootstrap over markets, contains zero.
   - One extra slippage tick means no fill (the limit is the decision-time ask), and
@@ -84,7 +85,9 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
   - logistic at depth 5: +2.28 after fees (CI −41.52, +48.96);
   - gradient boosting at depth 25: −36.90 after fees (CI −361.18, +319.65), but +146.18
     before them.
-  - Every interval contains zero, and fees are the largest systematic cost.
+  - Every interval for rows with more than one trade contains zero; the symbolic model
+    traded once, so its rows have no meaningful interval. Fees are the largest systematic
+    cost.
   - The 15% drawdown stop engaged the kill switch in both depth-25 runs.
   - The near-market symbolic model traded once.
 
