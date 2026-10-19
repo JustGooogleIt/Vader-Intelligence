@@ -116,6 +116,7 @@ endpoints in isolated storage; nothing here is production evidence.
 | Every activation gate refused individually; credential read last; only activation builds a network transport (AST check) | `tests/trading/kalshi/test_kalshi_activation.py` | synthetic |
 | Readiness CLI checks every local gate without the key | `tests/trading/kalshi/test_kalshi_cli.py` | synthetic |
 | Dry-run gateway sends nothing | `tests/trading/kalshi/test_kalshi_dryrun.py` | synthetic |
+| Venue settlements (#34) recorded only on an exact match with the ledger (orders resolved, counts, payout, no fee), once and idempotently across restarts; foreign, conflicting, unreadable or lagging records record nothing and block buys; a fill after a recorded settlement stays refused | `tests/trading/kalshi/test_kalshi_settlements.py` | synthetic double (record semantics unverified, runbook A21–A23) |
 | Canary runbook | `docs/live-canary-runbook.md` — **not executed** | document |
 
 ## D/H Historical backtest and live-adapter dry run (`feat/history-backtest`, #26)

@@ -24,6 +24,7 @@ merged, deployed or activated; no credentials exist in this system.
 | #31 | `fix/review-26-27` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | holdout pin, evidence binding | dry-run checks, quarantine |
 | #32 | `fix/review-24-25` | repairs from the #24/#25 pre-review: skew latch, TLS trust store, ambiguous write answers, uncapped exits, ingest idempotency, Kelly rounding | ingest identity, fee bound | live adapter safety |
 | #33 | `fix/review-17-23-28` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping (#19), forecast-tick abstention (#22), synthetic label (#20), ops guard | outcome join, abstention | ops guard |
+| #34 | `feat/live-settlements` | F live settlement recording (venue settlements recorded only on an exact match with the ledger) | payout and counts identity | allowlist, cursor, fail-closed reasons |
 
 ## Codex Prime — evidence meaning, versioning, leakage, scoring, money correctness
 
@@ -101,6 +102,11 @@ Read first: `docs/roadmap/decisions.md` (D-001..), `docs/roadmap/evidence-index.
     - **#33:** can the outcome join still pair a Kalshi result with a mapping from another
       run? Can a malformed artifact still stop a tick? Can a case or alias variant of a
       production path pass the ops guard?
+16. **Live settlements (#34).** Can a venue settlement be recorded while the ledger's
+    holding, payout or orders on that market disagree with it? Can a record for a market
+    this ledger never traded, or a second record for a settled market, change the
+    ledger? Can the settlements cursor advance past a record that was not recorded? Can
+    a fill after a recorded settlement change cash? (`tests/trading/kalshi/test_kalshi_settlements.py`)
 
 Commands:
 

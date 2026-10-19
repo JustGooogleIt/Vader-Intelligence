@@ -32,6 +32,7 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #31 | `fix/review-26-27` | `e4b6770baf7332697720819bd86a0a8a7e13ea6c` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | 1303 passed |
 | #32 | `fix/review-24-25` | `3827df2adea441b33bdef56d0a48c226d5e89aa7` | repairs from the #24/#25 pre-review: skew latch, TLS trust, ambiguous writes, exits, ingest idempotency, Kelly rounding | 1317 passed |
 | #33 | `fix/review-17-23-28` | `4e44ef5877b2a3311e64a1081639ed0950017a12` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping, forecast tick abstention, synthetic label, case-insensitive ops guard | 1321 passed |
+| #34 | `feat/live-settlements` | `9cca4739c74fbaa30dfd6297bba8154b94746843` | F live settlement recording: venue settlements recorded only when they match the ledger exactly; late fills stay refused by construction | 1331 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -125,9 +126,11 @@ each finding in temp directories.
     - non-idempotent resent venue events;
     - fees above their bound;
     - a Kelly rounding edge case.
+  - Implemented afterwards in #34 (a new capability, kept out of #32):
+    - live settlement recording;
+    - late fills on settled tickers (they stay refused; with #34 such a fill
+      contradicts the venue's own settled counts).
   - Documented, not changed:
-    - live settlement recording does not exist yet;
-    - late fills on settled tickers;
     - fractional quantity steps over-reserving fees;
     - reduce-only sells under unknown state (by design; guarded by venue coverage).
 
@@ -193,6 +196,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #31 | 1303 passed, 2 deselected (9 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 | #32 | 1317 passed, 2 deselected (14 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 | #33 | 1321 passed, 2 deselected (4 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
+| #34 | 1331 passed, 2 deselected (10 new tests); ruff clean; the synthetic e2e and recovery demos complete (no packaging or schema change) |
 
 ## 6. Data and model limitations
 
@@ -251,7 +255,7 @@ post-only order, cancel, reconcile, shutdown (never executed).
 ## 9. Cleanup (not done automatically)
 
 - Background jobs: live rule-v2 driver (`/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2`), model shadow driver (`.../20261019-models`); both end by themselves (last ≈05:20 UTC 2026-10-20). The acquisitions and backtests have finished.
-- Worktrees (with their venvs): `Vader-Intelligence-wt-{deps,execution-risk,symbolic-engine,research-pods-core,models-library,live-adapter}` (finished subagent work, integrated), `-live-v2`, `-live-models`, `-history-run`, `-history-run2` (pinned run code), `-verify` (holds `feat/pod-autopilot`, #30; also used for head verification). Local branches `wip/deps`, `feat/execution-risk`, `feat/symbolic-engine`, `feat/research-pods-core`, `feat/models-library`, `feat/live-adapter` are superseded by the stack.
+- Worktrees (with their venvs): `Vader-Intelligence-wt-{deps,execution-risk,symbolic-engine,research-pods-core,models-library,live-adapter}` (finished subagent work, integrated), `-live-v2`, `-live-models`, `-history-run`, `-history-run2` (pinned run code), `-verify` (holds `feat/live-settlements`, #34; also used for head verification). Local branches `wip/deps`, `feat/execution-risk`, `feat/symbolic-engine`, `feat/research-pods-core`, `feat/models-library`, `feat/live-adapter` are superseded by the stack.
 - Data directories (outside the repo): `/Users/ashwin/Documents/Vader-Intelligence-research/{history (≈0.3 GB),registry,pods-2026,pods-2025-2026 (with backtest-ledgers/),demo}`, `/Users/ashwin/Documents/Vader-Intelligence-shadow/{20261019-rule-v2,20261019-models}`, the session scratchpad (profiles, single-run ledgers, the wheel venv).
 - Research pods added in `pods-2026` by the autopilot demos: `auto-baseline`, `auto-symbolic` (2 rejected candidates) and `auto2-*` (planning only). The orchestration store is append-only, so they stay as history.
 
@@ -272,8 +276,8 @@ post-only order, cancel, reconcile, shutdown (never executed).
      seconds), so a paper run is still quadratic, with a much smaller constant.
    - An incremental projection is the remaining step. It changes how the authoritative
      ledger derives state, so it needs its own review.
-6. Before any live use: record settlements in the live ledger, and accept late fills
-   timestamped before a settlement. #24/#25 pre-review, documented but not changed.
+6. Before any live use: verify the settlement-record assumptions of #34 (runbook
+   A21–A23) on demo; they are unverified and fail closed.
 7. Only after forward evidence of edge: the demo canary per the runbook.
 
 ## 11. Final head of #28
