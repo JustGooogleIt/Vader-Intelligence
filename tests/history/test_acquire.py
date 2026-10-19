@@ -309,3 +309,32 @@ def test_cli_refuses_an_archive_that_holds_other_evidence(tmp_path, fixture_data
     summary = execute(parser().parse_args(["--db", str(path), "history", "summary"]))
     assert summary["status"] == "complete" and summary["markets"] == 0
     Store(path, min_free_bytes=0, readonly=True).close()
+
+
+def test_execution_candles_are_a_separate_stage_features_never_read(store, config):
+    calls = []
+    reader = history_reader(store, config, handler_factory(calls))
+    try:
+        result = Acquisition(store, reader).run(
+            start_date=date(2026, 9, 20), through_date=date(2026, 9, 20), post_cutoff_seconds=900
+        )
+    finally:
+        reader.close()
+    assert result["status"] == "complete" and result["candle_requests"]["ok"] == 8
+    assert result["configuration"]["post_cutoff_seconds"] == 900
+    post = [r for r in calls if r.url.path.endswith("/candlesticks") and "PHINYM-PHI" in r.url.path]
+    windows = sorted(
+        (
+            int(parse_qs(r.url.query.decode())["start_ts"][0]),
+            int(parse_qs(r.url.query.decode())["end_ts"][0]),
+        )
+        for r in post
+    )
+    cutoff = int(datetime(2026, 9, 20, 16, 10, tzinfo=timezone.utc).timestamp())
+    assert windows == [(cutoff - 3600, cutoff), (cutoff + 60, cutoff + 900)]
+    feature = interpret.candles(store.db, "KXMLBGAME-26SEP201310PHINYM-PHI")
+    execution = interpret.execution_candles(store.db, "KXMLBGAME-26SEP201310PHINYM-PHI")
+    limit = datetime.fromtimestamp(cutoff, timezone.utc)
+    assert feature and all(c["end"] <= limit for c in feature)
+    assert any(c["end"] > limit for c in execution)
+    assert [c for c in execution if c["end"] <= limit] == feature

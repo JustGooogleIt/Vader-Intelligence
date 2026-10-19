@@ -130,8 +130,24 @@ def parser():
     hacquire.add_argument("--max-requests", type=int, default=8000)
     hacquire.add_argument("--budget", type=float, default=7200.0, help="seconds")
     hacquire.add_argument("--window-seconds", type=int, default=3600)
+    hacquire.add_argument(
+        "--identity-rules",
+        default="default",
+        help="comma list; add history-date-only to admit 2025-era contracts with no stated"
+        " start (rows are marked start_corroborated=false)",
+    )
+    hacquire.add_argument(
+        "--no-pre-cutoff", action="store_true", help="skip the feature window ending at C"
+    )
+    hacquire.add_argument(
+        "--post-cutoff-seconds",
+        type=int,
+        default=0,
+        help="also fetch execution-only candles for (C, C + N] (never read by features)",
+    )
     hsummary = history_commands.add_parser("summary", help="read-only interpretation counts")
     hsummary.add_argument("--run-id", help="one acquisition run; omit for the whole archive")
+    hsummary.add_argument("--identity-rules", default="default")
     return p
 
 
@@ -418,7 +434,7 @@ def _history(args, config):
     if args.history_command == "summary":
         store = Store(config.database, min_free_bytes=config.min_free_bytes, readonly=True)
         try:
-            result = interpret.summary(store.db, args.run_id)
+            result = interpret.summary(store.db, args.run_id, tuple(args.identity_rules.split(",")))
         finally:
             store.close()
         return {"status": "complete", **result}
@@ -440,6 +456,9 @@ def _history(args, config):
                     through_date=parse_date(args.through),
                     resume=args.resume,
                     window_seconds=args.window_seconds,
+                    identity_rules=tuple(args.identity_rules.split(",")),
+                    pre_cutoff=not args.no_pre_cutoff,
+                    post_cutoff_seconds=args.post_cutoff_seconds,
                 )
             finally:
                 reader.close()
