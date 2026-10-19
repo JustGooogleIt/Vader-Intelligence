@@ -124,3 +124,56 @@ cancellation with process-group kill; scrubbed environment (no credential variab
 visible to a worker; a worker cannot see the live-secret path); bounded loops and no
 orphan processes after shutdown; malformed result manifests; provider double never makes
 network calls.
+
+## 8. Integration: real operations, inputs and the protected evaluator (2026-10-19)
+
+The research operations are wired (`pods/research_ops.py`); nothing raises
+`OperationNotWired` any more. The trust boundary is enforced as follows.
+
+**Inputs.** An operation declares the artifacts it reads (`register_operation(...,
+inputs=...)`). Submission refuses a task whose inputs are not stored with the declared
+kind. Before spawning, the coordinator copies verified, read-only copies into the
+attempt's `in/` directory with an `inputs.json` listing; the worker reads them only via
+`OperationContext.read_input`, which re-verifies the digest and refuses links. No
+registry, archive, ledger or holdout path is ever passed to a worker.
+
+| Input kind | Built by | Content |
+|---|---|---|
+| `dataset_snapshot` (`vi-pod-dataset-v1`) | `evaluator.snapshot_dataset` | development + validation rows of one registry dataset under one split, plus the feature-set description; `snapshot.load` re-derives each row's segment and refuses any row outside it (a holdout row cannot be smuggled in) |
+| `model_artifact` | an accepted pod result | the candidate's JSON model artifact (no pickle) |
+| `execution_inputs` (`vi-execution-inputs-v1`) | `evaluator.execution_snapshot` | candle quotes around each validation cutoff, market metadata and archived settlements (`research/backtest.py`) |
+
+**Operations.** `train_model` (logistic or gradient boosting via `training.fit` on the
+development rows; validation diagnostics only), `symbolic_search` (`symbolic_search.fit`),
+`evaluate_candidate` (diagnostics on development or validation; development is labelled
+in-sample), `robustness_analysis` (validation slices: by month, regular/postseason,
+tight/wide spread, single-feature dropout; paired delta vs market mid per slice) and
+`paper_backtest` (validation forecasts executed against candle quotes; a small labelled
+scenario grid over slippage, latency and assumed depth). Every output carries "pod
+diagnostic: not promotion evidence".
+
+**Protected evaluator** (`pods/evaluator.py`, coordinator process only):
+
+- `accept_model` parses the result's model artifact, checks dataset, split and feature
+  set against the snapshot the task named, registers it in the research registry (model
+  id = content digest) and proposes a `model` candidate.
+- `evaluate` recomputes the validation comparison from the registry's own rows and the
+  registered artifact. Default criteria (`Criteria`): baseline `market:mid_c`, metric
+  log loss, paired N ≥ 100, paired bootstrap 95% CI of (candidate − baseline) entirely
+  below zero, and a negative paired estimate in each chronological half. The record
+  attaches the producing task's search budget and the number of candidates proposed on
+  the same snapshot (`candidate_history_hash`). Pass → `validated`; fail → `rejected`
+  with the evaluator's reason. Each candidate is decided once.
+- `record_shadow` builds `ShadowEvaluationRecord` from a stored forecast evaluation that
+  scores the candidate's artifact as a registered forecaster (contract 4); mode is
+  `forward_shadow` or `reconstruction` from the evaluation view.
+- `paper_evidence` builds `PaperReportRecord` only from a coordinator-run
+  `research.backtest.run` summary (maker model none, worst-of-bracketing book), never
+  from pod output; `record_paper` also requires an `OperatorApprovalRecord`.
+- `evaluate_holdout` requires a validated (or later) candidate, runs
+  `training.evaluate_holdout` (registry holdout ledger: first use consumes, later uses
+  are reuses) and records the candidate's one entry in the pod store's holdout ledger.
+
+**CLI.** `vader pods init|register|snapshot|execution-snapshot|submit|run|status|accept|
+evaluate|candidate|holdout` (holdout requires `--acknowledge-final`), and `vader backtest
+run` (holdout segment requires `--acknowledge-holdout` and is ledger-recorded).

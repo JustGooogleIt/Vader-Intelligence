@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from vader_intelligence.pods.contracts import parse_result_manifest
+from vader_intelligence.pods.contracts import ContractError, parse_result_manifest
 from vader_intelligence.pods.coordinator import (
     ENV_ALLOWLIST,
     CoordinatorLocked,
@@ -147,11 +147,14 @@ def test_deterministic_failures_are_not_retried(pods):
         "model_family": "logistic",
         "seed": 0,
     }
-    unwired = pods.submit("train_model", params, pod="baseline", max_attempts=5)
+    with pytest.raises(ContractError, match="not stored"):
+        pods.submit("train_model", params, pod="baseline")  # its input snapshot is missing
+    params["dataset_manifest_hash"] = pods.store.put_input(b"not a snapshot", "dataset_snapshot")
+    refused = pods.submit("train_model", params, pod="baseline", max_attempts=5)
     pods.coordinator().run(max_steps=500, deadline_seconds=15)
     assert outcomes(pods, failing) == [("failed", "DeterministicFailure")]
-    assert outcomes(pods, unwired) == [("failed", "OperationNotWired")]
-    assert pods.state(failing) == pods.state(unwired) == "failed"
+    assert outcomes(pods, refused) == [("failed", "DeterministicFailure")]
+    assert pods.state(failing) == pods.state(refused) == "failed"
 
 
 def test_concurrency_budget(pods):

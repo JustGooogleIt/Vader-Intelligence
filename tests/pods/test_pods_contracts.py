@@ -24,7 +24,7 @@ from vader_intelligence.pods.contracts import (
     task_identity,
 )
 from vader_intelligence.pods.operations import (
-    OperationNotWired,
+    DeterministicFailure,
     UnknownOperation,
     get_operation,
     normalized_params,
@@ -134,7 +134,7 @@ def test_result_manifest_parsing_is_strict_and_hash_ignores_runtime():
             parse_result_manifest(item)
 
 
-def test_registry_is_extensible_and_placeholders_are_not_wired(tmp_path):
+def test_registry_is_extensible_and_research_operations_read_staged_inputs(tmp_path):
     from dataclasses import dataclass
 
     @dataclass(frozen=True)
@@ -155,11 +155,35 @@ def test_registry_is_extensible_and_placeholders_are_not_wired(tmp_path):
     finally:
         operations.REGISTRY.pop("integrator_probe", None)
     ctx = operations.OperationContext(TASK, TASK + "-1", 1, tmp_path, 0.0)
-    for name in ("train_model", "symbolic_search", "evaluate_candidate"):
+    research = ("train_model", "symbolic_search", "evaluate_candidate")
+    research += ("robustness_analysis", "paper_backtest")
+    for name in research:
         spec = get_operation(name)
         assert spec.params.__name__.endswith("Params")
-        with pytest.raises(OperationNotWired):
-            spec.run(None, ctx)
+        assert spec.inputs is not operations.no_inputs  # every research op reads staged inputs
+    params = get_operation("symbolic_search").parse(
+        {
+            "dataset_manifest_hash": "0" * 64,
+            "seed": 0,
+            "max_candidates": 10,
+            "max_generations": 1,
+            "max_seconds": 1.0,
+        }
+    )
+    with pytest.raises(DeterministicFailure, match="not staged"):
+        get_operation("symbolic_search").run(params, ctx)  # nothing staged: refused
+    with pytest.raises(ContractError):
+        normalized_params(
+            "train_model",
+            {
+                "dataset_manifest_hash": "0" * 64,
+                "feature_set": "fs-market-v1",
+                "feature_set_version": "x",
+                "model_family": "logistic",
+                "seed": 0,
+                "split": "validation",
+            },
+        )
     with pytest.raises(ContractError):
         normalized_params(
             "evaluate_candidate",

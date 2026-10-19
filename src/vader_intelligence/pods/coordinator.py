@@ -36,6 +36,7 @@ is enforced only by the coordinator's deadline kill.
 
 import fcntl
 import hmac
+import json
 import math
 import os
 import resource
@@ -47,8 +48,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .artifacts import ArtifactCorrupted
+from .artifacts import ArtifactCorrupted, ArtifactMissing
 from .contracts import MAX_RESULT_MANIFEST_BYTES, ContractError, parse_result_manifest, to_plain
+from .operations import INPUT_DIR, INPUT_MANIFEST
 from .store import SHUTDOWN_REASON, OrchestrationStore, StaleAttempt
 from .worker import EXIT_CLAIM_REFUSED, EXIT_LEASE_LOST, MANIFEST_NAME
 
@@ -408,6 +410,20 @@ class Coordinator:
         try:
             workdir.mkdir(mode=0o700)
             (workdir / "out").mkdir(mode=0o700)
+            self._stage_inputs(task_id, workdir / INPUT_DIR)
+        except (ContractError, ArtifactCorrupted, ArtifactMissing) as exc:
+            detail = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+            report["finalized"].append(
+                self._finish(attempt, at, "failed", "input_unavailable", False, detail)
+            )
+            return
+        except OSError as exc:
+            detail = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+            report["finalized"].append(
+                self._finish(attempt, at, "lost", "spawn_failed", True, detail)
+            )
+            return
+        try:
             with open(attempt["log_path"], "ab") as log:
                 child = subprocess.Popen(
                     [self.config.python, "-s", "-P", "-m", WORKER_MODULE, "--attempt", attempt_id],
@@ -428,6 +444,21 @@ class Coordinator:
             return
         self._children[attempt_id] = child
         report["spawned"].append(attempt_id)
+
+    def _stage_inputs(self, task_id, in_dir: Path) -> None:
+        """Copy the task's declared input artifacts, verified, read-only, into `in/`."""
+        task = self.store.task(task_id)
+        declared = self.store.task_inputs(task["type"], json.loads(task["params_json"]))
+        in_dir.mkdir(mode=0o700)
+        for sha, _ in declared:
+            data = self.store.artifacts.get_bytes(sha)  # raises unless the bytes verify
+            fd = os.open(in_dir / sha, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o444)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+        listing = [{"sha256": sha, "kind": kind} for sha, kind in declared]
+        fd = os.open(in_dir / INPUT_MANIFEST, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o444)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(json.dumps(listing, sort_keys=True).encode())
 
     # Process state ---------------------------------------------------------------------
 

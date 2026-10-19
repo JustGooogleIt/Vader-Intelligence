@@ -390,6 +390,32 @@ class OrchestrationStore:
             )
         return sha
 
+    def put_input(self, data: bytes, kind: str, now=None) -> str:
+        """Store a coordinator-built input artifact (e.g. a dataset snapshot); its sha256."""
+        require(kind != "experiment_manifest", "use put_experiment_manifest")
+        sha = self.artifacts.put_bytes(data)
+        with self.transaction():
+            row = self.db.execute("SELECT kind FROM artifacts WHERE sha256=?", (sha,)).fetchone()
+            require(row is None or row[0] == kind, f"artifact {sha} is stored as {row and row[0]}")
+            self.db.execute(
+                "INSERT INTO artifacts VALUES (?,?,?,?,NULL) ON CONFLICT(sha256) DO NOTHING",
+                (sha, kind, len(data), epoch_seconds(now)),
+            )
+        return sha
+
+    def task_inputs(self, task_type: str, params) -> tuple:
+        """The input artifacts an operation declares, each stored with the declared kind."""
+        spec = get_operation(task_type)
+        try:
+            declared = tuple(spec.inputs(spec.parse(params), self))
+        except (KeyError, ValueError) as exc:
+            raise ContractError(f"inputs unavailable: {exc}") from None
+        for sha, kind in declared:
+            row = self.db.execute("SELECT kind FROM artifacts WHERE sha256=?", (sha,)).fetchone()
+            require(row is not None, f"input artifact {sha} is not stored")
+            require(row[0] == kind, f"input artifact {sha} is a {row[0]}, not a {kind}")
+        return declared
+
     def experiment_manifest(self, sha256: str) -> ExperimentManifest:
         row = self.db.execute("SELECT kind FROM artifacts WHERE sha256=?", (sha256,)).fetchone()
         require(row is not None and row[0] == "experiment_manifest", "unknown experiment manifest")
@@ -418,6 +444,7 @@ class OrchestrationStore:
             normalized_params(manifest.operation, manifest.params) == params,
             "experiment manifest parameters differ from the task parameters",
         )
+        self.task_inputs(task.type, params)
         task_id = task_identity(task.type, params, task.experiment_manifest_hash)
         at = epoch_seconds(now)
         with self.transaction():

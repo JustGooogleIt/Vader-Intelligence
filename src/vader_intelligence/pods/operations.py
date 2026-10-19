@@ -6,13 +6,22 @@ agent-generated code is ever executed. Workers import only this module to resolv
 operations, so an integrator wires a real implementation by registering it here (or in a
 module imported from here) with `@register_operation(..., replace=True)`.
 
-Research placeholders define their parameter contracts now and raise `OperationNotWired`
-until wired. Test operations (`noop`, `sleep`, `fail`, `crash`, `emit_artifact`) are
-fully implemented and permitted only for the `diagnostics` role.
+An operation may declare input artifacts (`inputs=`): the coordinator checks at submission
+that they are stored with the declared kind and copies verified, read-only copies into
+the attempt's `in/` directory before spawning; the operation reads them only through
+`OperationContext.read_input`, which re-verifies the digest. Inputs are the only data a
+worker receives: no registry, archive or holdout path is ever passed.
+
+The research operations' parameter contracts are defined here and their implementations
+are registered by `pods.research_ops` (imported at the end of this module). Test
+operations (`noop`, `sleep`, `fail`, `crash`, `emit_artifact`) are fully implemented and
+permitted only for the `diagnostics` role.
 """
 
 import hashlib
+import json
 import os
+import stat
 import subprocess
 import sys
 import time
@@ -25,6 +34,7 @@ from .contracts import (
     ALLOWED_SPLITS,
     ARTIFACT_KIND,
     ARTIFACT_NAME,
+    HEX32,
     HEX64,
     OPERATION_NAME,
     ROLES,
@@ -54,6 +64,9 @@ class TransientFailure(RuntimeError):
 
 
 NOT_RETRYABLE = (ContractError, UnknownOperation, OperationNotWired, DeterministicFailure)
+MAX_INPUT_BYTES = 256 * 1024 * 1024
+INPUT_DIR = "in"
+INPUT_MANIFEST = "inputs.json"
 
 
 @dataclass(frozen=True)
@@ -72,6 +85,7 @@ class OperationContext:
         self.attempt_n = attempt_n
         self.workdir = Path(workdir)
         self.out_dir = self.workdir / "out"
+        self.in_dir = self.workdir / INPUT_DIR
         self.deadline_at = deadline_at
         self.artifacts: list[ArtifactRef] = []
 
@@ -91,6 +105,39 @@ class OperationContext:
         self.artifacts.append(ref)
         return ref
 
+    def read_input(self, sha256: str) -> bytes:
+        """Bytes of a staged input artifact (no links), re-verified against its digest."""
+        require(isinstance(sha256, str) and bool(HEX64.match(sha256)), "input id must be sha256")
+        try:
+            fd = os.open(self.in_dir / sha256, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError as exc:
+            raise DeterministicFailure(
+                f"input {sha256} not staged ({type(exc).__name__})"
+            ) from None
+        with os.fdopen(fd, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_INPUT_BYTES:
+                raise DeterministicFailure(f"input {sha256} is not a bounded regular file")
+            data = handle.read(MAX_INPUT_BYTES + 1)
+        if hashlib.sha256(data).hexdigest() != sha256:
+            raise DeterministicFailure(f"input {sha256} fails verification")
+        return data
+
+    def staged_inputs(self) -> dict[str, list[str]]:
+        """Artifact kind → staged input digests, as declared by the coordinator."""
+        try:
+            declared = json.loads((self.in_dir / INPUT_MANIFEST).read_bytes())
+        except (OSError, ValueError):
+            return {}
+        out: dict[str, list[str]] = {}
+        for item in declared:
+            out.setdefault(item["kind"], []).append(item["sha256"])
+        return out
+
+
+def no_inputs(params, store) -> tuple:
+    return ()
+
 
 @dataclass(frozen=True)
 class OperationSpec:
@@ -98,6 +145,8 @@ class OperationSpec:
     params: type
     roles: tuple[str, ...]
     run: Callable[[Any, OperationContext], Any]
+    # (params, store) -> ((sha256, artifact kind), ...) the coordinator stages for the worker
+    inputs: Callable[[Any, Any], tuple] = no_inputs
 
     def parse(self, params: Any):
         """Typed parameter instance; raises ContractError for anything else."""
@@ -107,8 +156,9 @@ class OperationSpec:
 REGISTRY: dict[str, OperationSpec] = {}
 
 
-def register_operation(name: str, params: type, *, roles, replace: bool = False):
-    """Decorator registering an approved operation with its parameter contract and roles."""
+def register_operation(name: str, params: type, *, roles, replace: bool = False, inputs=None):
+    """Decorator registering an approved operation with its parameter contract, roles and
+    (optionally) the input artifacts it reads."""
     if not OPERATION_NAME.match(name):
         raise ValueError(f"invalid operation name {name!r}")
     roles = tuple(roles)
@@ -118,7 +168,7 @@ def register_operation(name: str, params: type, *, roles, replace: bool = False)
         raise ValueError(f"operation {name!r} is already registered")
 
     def decorate(function):
-        REGISTRY[name] = OperationSpec(name, params, roles, function)
+        REGISTRY[name] = OperationSpec(name, params, roles, function, inputs or no_inputs)
         return function
 
     return decorate
@@ -253,18 +303,35 @@ def emit_artifact(params: EmitArtifactParams, ctx: OperationContext):
     return {"name": ref.name, "sha256": ref.sha256, "bytes": ref.bytes}
 
 
-# Research operations: typed contracts now, implementations wired by the integrator -------
+# Research operation contracts (implementations: `pods.research_ops`) --------------------
+
+TRAIN_HYPERPARAMETERS = ("grid", "calibration", "n_folds", "max_configs")
+CALIBRATIONS = ("platt", "isotonic", "none")
+DIAGNOSTIC_METRICS = ("log_loss", "brier", "ece")
+PERTURBATIONS = (
+    "by_month",
+    "regular_season_only",
+    "postseason_only",
+    "tight_spread",
+    "wide_spread",
+)
+FEATURE_DROP_PREFIX = "drop_feature:"
+FEE_SCHEDULE_VERSIONS = ("kalshi-2026-02-general", "kalshi-2026-02-mlb-multiplier-0.5-assumed")
 
 
-def _not_wired(name: str):
-    def run(params, ctx):
-        raise OperationNotWired(f"operation {name!r} has a contract but no implementation yet")
-
-    return run
+def _decimal_text(value: str, what: str, low: float, high: float) -> None:
+    try:
+        number = float(value)
+    except ValueError:
+        raise ContractError(f"{what} must be a decimal string") from None
+    require(low <= number <= high and value.strip() == value, f"{what} out of range")
 
 
 @dataclass(frozen=True)
 class TrainModelParams:
+    """Fit on the snapshot's development rows (the only fit set); validation is reported
+    by the pod as a diagnostic and recomputed by the protected evaluator."""
+
     dataset_manifest_hash: str
     feature_set: str
     feature_set_version: str
@@ -279,7 +346,16 @@ class TrainModelParams:
         require(bool(self.feature_set and self.feature_set_version), "feature set required")
         require(self.model_family in ("logistic", "gradient_boosting"), "unknown model_family")
         require(self.seed >= 0, "seed must be non-negative")
-        _development_split(self.split)
+        require(self.split == "development", "models are fit on development rows only")
+        unknown = sorted(set(self.hyperparameters) - set(TRAIN_HYPERPARAMETERS))
+        require(not unknown, f"unknown hyperparameters {unknown}")
+        h = self.hyperparameters
+        require(h.get("calibration", "platt") in CALIBRATIONS, "unknown calibration")
+        require(2 <= h.get("n_folds", 4) <= 10, "n_folds must be in 2..10")
+        require(1 <= h.get("max_configs", 24) <= 256, "max_configs must be in 1..256")
+        grid = h.get("grid", {})
+        require(isinstance(grid, dict), "grid must be an object of lists")
+        require(all(isinstance(v, list) and v for v in grid.values()), "grid values: lists")
 
 
 @dataclass(frozen=True)
@@ -290,6 +366,7 @@ class SymbolicSearchParams:
     max_generations: int
     max_seconds: float
     operator_set: str = "ops-v1"
+    population: int = 200
 
     def __post_init__(self):
         normalize_fields(self)
@@ -299,6 +376,7 @@ class SymbolicSearchParams:
         require(1 <= self.max_generations <= 10_000, "max_generations out of range")
         require(0 < self.max_seconds <= 86400, "max_seconds out of range")
         require(self.operator_set == "ops-v1", "operator_set must be ops-v1")
+        require(10 <= self.population <= 10_000, "population out of range")
 
 
 @dataclass(frozen=True)
@@ -312,14 +390,17 @@ class EvaluateCandidateParams:
 
     def __post_init__(self):
         normalize_fields(self)
-        require(len(self.candidate_id) == 32, "candidate_id must be 32 characters")
+        require(bool(HEX32.match(self.candidate_id)), "candidate_id must be 32 hex characters")
         _hex64(self.dataset_manifest_hash, "dataset_manifest_hash")
         _development_split(self.split)
         require(bool(self.metrics), "at least one metric required")
+        require(set(self.metrics) <= set(DIAGNOSTIC_METRICS), "unknown metric")
 
 
 @dataclass(frozen=True)
 class RobustnessAnalysisParams:
+    """Slices of the validation rows on which the candidate is compared with the market."""
+
     candidate_id: str
     dataset_manifest_hash: str
     perturbations: tuple[str, ...]
@@ -327,34 +408,43 @@ class RobustnessAnalysisParams:
 
     def __post_init__(self):
         normalize_fields(self)
-        require(len(self.candidate_id) == 32, "candidate_id must be 32 characters")
+        require(bool(HEX32.match(self.candidate_id)), "candidate_id must be 32 hex characters")
         _hex64(self.dataset_manifest_hash, "dataset_manifest_hash")
         require(bool(self.perturbations), "at least one perturbation required")
+        require(len(set(self.perturbations)) == len(self.perturbations), "duplicate perturbation")
+        for name in self.perturbations:
+            ok = name in PERTURBATIONS or (
+                name.startswith(FEATURE_DROP_PREFIX)
+                and bool(ARTIFACT_KIND.match(name[len(FEATURE_DROP_PREFIX) :].replace("@", "_")))
+            )
+            require(ok, f"unknown perturbation {name!r}")
         require(self.seed >= 0, "seed must be non-negative")
 
 
 @dataclass(frozen=True)
 class PaperBacktestParams:
+    """Historical paper backtest of a candidate on the validation rows: candle execution
+    inputs built by the coordinator, conservative execution, labelled depth scenarios."""
+
     candidate_id: str
     dataset_manifest_hash: str
     fee_schedule_version: str
+    execution_inputs_hash: str
     execution_assumptions: str = "conservative"
+    min_edge: str = "0.02"
+    assumed_depths: tuple[str, ...] = ("10",)
 
     def __post_init__(self):
         normalize_fields(self)
-        require(len(self.candidate_id) == 32, "candidate_id must be 32 characters")
+        require(bool(HEX32.match(self.candidate_id)), "candidate_id must be 32 hex characters")
         _hex64(self.dataset_manifest_hash, "dataset_manifest_hash")
-        require(bool(self.fee_schedule_version), "fee_schedule_version required")
+        _hex64(self.execution_inputs_hash, "execution_inputs_hash")
+        require(self.fee_schedule_version in FEE_SCHEDULE_VERSIONS, "unknown fee schedule")
         require(self.execution_assumptions == "conservative", "only conservative execution")
+        _decimal_text(self.min_edge, "min_edge", 0.0, 0.5)
+        require(len(self.assumed_depths) <= 4, "at most four depth scenarios")
+        for depth in self.assumed_depths:
+            _decimal_text(depth, "assumed depth", 0.01, 100000.0)
 
 
-RESEARCH_OPERATIONS = (
-    ("train_model", TrainModelParams, ("baseline_models",)),
-    ("symbolic_search", SymbolicSearchParams, ("symbolic_search",)),
-    ("evaluate_candidate", EvaluateCandidateParams, ("baseline_models", "symbolic_search")),
-    ("robustness_analysis", RobustnessAnalysisParams, ("robustness_execution",)),
-    ("paper_backtest", PaperBacktestParams, ("robustness_execution",)),
-)
-for _name, _params, _roles in RESEARCH_OPERATIONS:
-    register_operation(_name, _params, roles=_roles)(_not_wired(_name))
-del _name, _params, _roles
+from . import research_ops  # noqa: E402,F401  (registers the research operations)
