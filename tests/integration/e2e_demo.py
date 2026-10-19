@@ -388,7 +388,7 @@ def run(workdir):
                     segment="validation",
                     ledger_path=workdir / "paper-validation.sqlite3",
                 )
-                paper = evaluator.paper_evidence(candidate, summary)
+                paper = evaluator.paper_evidence(store, candidate, summary)
                 approval = OperatorApprovalRecord(
                     candidate,
                     "synthetic-demo-operator",

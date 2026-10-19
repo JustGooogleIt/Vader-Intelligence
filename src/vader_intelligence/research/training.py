@@ -232,6 +232,7 @@ def train(
     if calibration not in CALIBRATIONS:
         raise ValueError(f"calibration must be one of {CALIBRATIONS}")
     manifest = registry.dataset(dataset_id)
+    pin = splits.guard(registry, dataset_id, split, pin_if_missing=True)
     rows = registry.dataset_rows(dataset_id)
     development, validation = splits.development_and_validation(rows, split)
     if len(development) < MIN_DEVELOPMENT_ROWS or len(validation) < MIN_EVALUATION_ROWS:
@@ -291,7 +292,7 @@ def train(
         "configs_tried": len(result.results),
         "development_rows": len(development),
         "validation": metrics_,
-        "holdout": registry.holdout_status(dataset_id, split.key),
+        "holdout": registry.holdout_status(dataset_id, f"from={pin}"),
     }
 
 
@@ -307,10 +308,13 @@ def evaluate_holdout(registry, dataset_id, model_id, split, *, seed=0):
         raise ValueError("model was trained on another dataset")
     if artifact.training.get("split", {}).get("key") != split.key:
         raise ValueError("holdout split differs from the model's training split")
+    key = splits.holdout_key(registry, dataset_id, split)
+    if registry.holdout_evaluation(model_id, dataset_id, key) is not None:
+        raise ValueError("this model was already evaluated on this holdout")
     rows = splits.holdout_rows(registry.dataset_rows(dataset_id), split)
     if len(rows) < MIN_EVALUATION_ROWS:
         raise ValueError(f"insufficient holdout rows: {len(rows)}")
     X, y, _, groups = matrices(rows, names)
     holdout_metrics = compare(predict_proba(artifact, X), rows, names, y, groups, seed=seed)
-    status = registry.evaluate_holdout(model_id, dataset_id, split.key, holdout_metrics)
+    status = registry.evaluate_holdout(model_id, dataset_id, key, holdout_metrics)
     return {"status": "complete", "ledger": status, "holdout": holdout_metrics}

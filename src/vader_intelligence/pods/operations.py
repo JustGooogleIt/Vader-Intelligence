@@ -20,6 +20,7 @@ permitted only for the `diagnostics` role.
 
 import hashlib
 import json
+import math
 import os
 import stat
 import subprocess
@@ -130,8 +131,11 @@ class OperationContext:
         except (OSError, ValueError):
             return {}
         out: dict[str, list[str]] = {}
-        for item in declared:
-            out.setdefault(item["kind"], []).append(item["sha256"])
+        try:
+            for item in declared:
+                out.setdefault(item["kind"], []).append(item["sha256"])
+        except (KeyError, TypeError) as exc:
+            raise DeterministicFailure(f"malformed input listing: {type(exc).__name__}") from None
         return out
 
 
@@ -356,11 +360,22 @@ class TrainModelParams:
         require(1 <= h.get("max_configs", 24) <= 256, "max_configs must be in 1..256")
         seconds = h.get("search_seconds", DEFAULT_SEARCH_SECONDS)
         require(
-            isinstance(seconds, int | float) and 0 < seconds <= 86400, "search_seconds out of range"
+            isinstance(seconds, int | float)
+            and not isinstance(seconds, bool)
+            and 0 < seconds <= 86400,
+            "search_seconds out of range",
         )
         grid = h.get("grid", {})
         require(isinstance(grid, dict), "grid must be an object of lists")
         require(all(isinstance(v, list) and v for v in grid.values()), "grid values: lists")
+        require(
+            all(
+                isinstance(x, int | float) and not isinstance(x, bool) and math.isfinite(x)
+                for v in grid.values()
+                for x in v
+            ),
+            "grid values must be finite numbers",
+        )
 
 
 @dataclass(frozen=True)

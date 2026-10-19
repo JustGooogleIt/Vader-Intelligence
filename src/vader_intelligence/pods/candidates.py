@@ -268,6 +268,7 @@ class HoldoutEvaluationRecord:
     metric: str
     value: float
     n: int
+    holdout_use: str = "consumed"  # the registry ledger's kind: consumed (first) or reused
 
     def __post_init__(self):
         normalize_fields(self)
@@ -277,6 +278,7 @@ class HoldoutEvaluationRecord:
         require(bool(HEX64.match(self.dataset_manifest_hash)), "dataset_manifest_hash must be hex")
         _nonempty(self.metric, "metric")
         require(self.n >= 1, "n must be positive")
+        require(self.holdout_use in ("consumed", "reused"), "holdout_use: consumed or reused")
 
 
 EVIDENCE_TYPES = (
@@ -333,12 +335,16 @@ def propose_candidate(store: OrchestrationStore, spec: CandidateSpec, now=None) 
     return candidate_id
 
 
-def promote(store: OrchestrationStore, candidate_id, to_state, evidence, now=None) -> str:
+def promote(
+    store: OrchestrationStore, candidate_id, to_state, evidence, now=None, *, expected=None
+) -> str:
     """The only way a candidate changes state.
 
     Requires the current state to have an edge to `to_state` (no skipping), exactly one
     typed record of each kind that edge requires (nothing else is accepted), every
-    record naming this candidate, and every record's criteria to pass.
+    record naming this candidate, and every record's criteria to pass. With `expected`,
+    the current state must still be that state inside the transaction (a decision made
+    on a state another caller has since changed is refused).
     """
     evidence = tuple(evidence)
     for item in evidence:
@@ -352,6 +358,8 @@ def promote(store: OrchestrationStore, candidate_id, to_state, evidence, now=Non
         if row is None:
             raise KeyError(candidate_id)
         current = row["state"]
+        if expected is not None and current != expected:
+            raise PromotionRefused(f"candidate is {current}, not {expected}")
         if to_state in EXITS:
             if current not in EXITS[to_state]:
                 raise PromotionRefused(f"{current} cannot exit to {to_state}")

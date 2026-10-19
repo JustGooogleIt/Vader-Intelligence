@@ -39,7 +39,7 @@ def test_end_to_end_chain_with_hand_checked_numbers(tmp_path):
     assert out["holdout"]["registry_ledger"]["evaluations"] == 1
     assert out["holdout"]["second_attempt"].startswith("refused")
 
-    assert out["dry_run"]["outcomes"] == ["submitted_dry"] and out["dry_run"]["requests"] == 1
+    assert out["dry_run"]["outcomes"] == ["submitted_dry"] and out["dry_run"]["requests"] == 2
     assert out["dry_run"]["url"].startswith("https://external-api.demo.kalshi.co/")
     assert out["dry_run"]["body"]["price"] == "0.6500"  # YES ask = 1 - NO bid 0.35
 

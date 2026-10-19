@@ -226,7 +226,7 @@ def test_accept_best_is_judged_by_the_protected_evaluator_once(research, pods): 
         max_tasks=2,
         deadline_seconds=240,
         accept_best=True,
-        criteria=evaluator.Criteria(min_n=10),
+        criteria=evaluator.Criteria(min_n=10, allow_weaker=True),
     )
     coordinator = pods.coordinator()
     summary = autopilot.run(pods.store, registry, coordinator=coordinator, **options)

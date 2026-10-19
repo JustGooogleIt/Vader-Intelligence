@@ -8,9 +8,16 @@ with a throwaway key, signs it) and sends nothing. The ledger is a paper ledger,
 run can never touch a live ledger.
 
 What this demonstrates: the path from a forward-shadow forecast to a well-formed Kalshi
-order request under every local risk and adapter check. What it does not demonstrate:
-that the exchange would accept the request, that the order would fill, or any profit.
-The archive is opened read-only and no network transport exists on this path.
+order request, sized by the paper risk engine under the labelled simulation limits
+(`risk.simulation_defaults` for the given cash, clipped to them) and checked by the live
+adapter's market rules and request construction, plus the live gateway's notional caps
+when they are given. Each dry order is canceled right after it is recorded (a canary
+cancels too), so no phantom exposure distorts later decisions.
+
+What it does not check: the canary's recorded risk limits, the activation gates (kill
+switch disengage, startup reconciliation, live order prefix, credential), exchange
+acceptance, fills or profit. The archive is opened read-only, no network transport
+exists on this path, and the ledger must be a new paper ledger.
 """
 
 import json
@@ -23,7 +30,7 @@ from .kalshi.gateway import MarketRule
 from .kalshi.mapping import price_ranges
 from .ledger import Ledger
 from .marketdata import read_archive_markets, read_archive_snapshots
-from .money import dec, text
+from .money import dec, plain, text
 from .risk import ForecastStatus, RiskEngine, simulation_defaults
 from .simulator import ForecastInput, StrategyConfig, propose
 
@@ -64,6 +71,8 @@ def run(
     fee_schedule=DEFAULT_FEE_SCHEDULE,
     signer=None,
     clip_to_limits=True,
+    max_order_notional=None,
+    max_daily_notional=None,
 ):
     """Dry-run every scored decision; returns the would-be requests and every refusal.
 
@@ -80,10 +89,19 @@ def run(
         by_ticker.setdefault(snap.ticker, []).append(snap)
     cash = dec(cash, "cash")
     rule = MarketRule(SERIES, price_ranges(LINEAR_CENT), exchange_index=3)
-    gateway = DryRunGateway(kalshi_environment, markets=(rule,), cash=cash, signer=signer)
+    gateway = DryRunGateway(
+        kalshi_environment,
+        markets=(rule,),
+        cash=cash,
+        signer=signer,
+        max_order_notional=max_order_notional,
+        max_daily_notional=max_daily_notional,
+    )
     ledger = Ledger(ledger_path, "paper")
     outcomes = []
     try:
+        if ledger.intents() or ledger.cash_events():
+            raise ValueError("a dry run needs a new paper ledger (this one has records)")
         if not ledger.cash_events():
             from .portfolio import CashEvent
 
@@ -140,14 +158,21 @@ def run(
                 checkpoint={"intent": intent.intent_id},
             )
             submit = placement.submit
+            submitted = submit is not None and submit.status == "submitted"
+            canceled = None
+            if submitted:  # release the reservation, as a canary would cancel
+                result = executor.cancel(placement.order.client_order_id, now=at)
+                canceled = None if result is None else result.status
+            approval = placement.decision if hasattr(placement.decision, "quantity") else None
             outcomes.append(
                 record
                 | {
-                    "outcome": "submitted_dry"
-                    if submit and submit.status == "submitted"
-                    else "refused",
+                    "outcome": "submitted_dry" if submitted else "refused",
                     "decision": type(placement.decision).__name__,
                     "risk_reasons": list(getattr(placement.decision, "reasons", ())),
+                    "approved_quantity": None if approval is None else text(approval.quantity),
+                    "sizing": None if approval is None else plain(approval.sizing),
+                    "canceled_after_dry_run": canceled,
                     "submit_status": None if submit is None else submit.status,
                     "submit_reason": None if submit is None else submit.reason,
                     "side": intent.side,
@@ -166,6 +191,21 @@ def run(
             "requests": gateway.records(),
             "refusals": [{"client_order_id": c, "reason": r} for c, r in gateway.refusals],
             "archive_skipped": {} if books is None else books.skipped,
+            "checks": {
+                "risk_limits": "simulation_defaults(cash) (labelled simulation assumption)",
+                "clip_to_limits": clip_to_limits,
+                "max_order_notional": None
+                if max_order_notional is None
+                else str(max_order_notional),
+                "max_daily_notional": None
+                if max_daily_notional is None
+                else str(max_daily_notional),
+                "not_checked": [
+                    "canary risk limits",
+                    "activation gates",
+                    "exchange acceptance",
+                ],
+            },
             "ledger_verification": ledger.verify(),
         }
     finally:
