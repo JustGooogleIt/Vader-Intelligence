@@ -12,7 +12,7 @@ always names the exact next action.
 |---|---|
 | Main worktree | `/Users/ashwin/Documents/github-repos/Vader-Intelligence-roadmap` (`uv sync --locked`, uv 0.12.19 at `../Vader-Intelligence/.venv/bin/uv`, Python 3.11.6) |
 | Stack base | PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c31` |
-| Pinned run worktrees | `-live-v2` (detached `622caad`, live rule-v2 shadow driver), `-live-models` (model shadow driver), `-history-run` / `-history-run2` (pinned acquisition code), `-verify` (detached, head verification) |
+| Pinned run worktrees | `-live-v2` (detached `622caad`, live rule-v2 shadow driver), `-live-models` (model shadow driver), `-history-run` / `-history-run2` (pinned acquisition code), `-verify` (now on `perf/ledger-row-cache`, #29) |
 | Finished subagent worktrees (cleanup) | `-wt-deps`, `-wt-execution-risk`, `-wt-symbolic-engine`, `-wt-research-pods-core`, `-wt-models-library`, `-wt-live-adapter` |
 | Research data (outside the repo) | `/Users/ashwin/Documents/Vader-Intelligence-research/{history,registry,pods-2026,pods-2025-2026,demo}` |
 | Production | `~/Documents/Vader-Intelligence-operations/20260930-first-deployment/production.sqlite3`: read-only queries only; never copied (disk ~10 GiB free) |
@@ -33,6 +33,7 @@ always names the exact next action.
 | #26 | `feat/history-backtest` | D/H historical paper backtest, live-adapter dry run |
 | #27 | `feat/research-pods` | G orchestration, real operations, protected evaluator |
 | #28 | `feat/integration-demos` | H demos (E2E, recovery, real data, candle-vs-book) and run docs |
+| #29 | `perf/ledger-row-cache` | D-012 ledger parsed-row reuse (5× less CPU per paper run); read-only registry for non-holdout backtests |
 
 Full SHAs are in the final handoff (`docs/handoffs/roadmap-handoff.md`).
 

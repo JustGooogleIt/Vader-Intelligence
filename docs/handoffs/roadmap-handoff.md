@@ -27,6 +27,7 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #26 | `feat/history-backtest` | `1e02613ef1ce79f2bc473c3fb5537f3b1d7072b4` | D/H candle backtest, live dry run (D-010, D-011) | 1217 passed |
 | #27 | `feat/research-pods` | `145735cf6ba04820870e181a5ac02bff5050ffe7` | G orchestration, operations, protected evaluator (D-008) | 1272 passed |
 | #28 | `feat/integration-demos` | final head in §11 | H demos, ops model registry, run documents | 1275 passed |
+| #29 | `perf/ledger-row-cache` | `26dceed2f8fad8b22320845b40d6d3b755265057` | ledger parsed-row reuse (D-012); read-only registry for non-holdout backtests | 1279 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -115,6 +116,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #26 | 1217 passed, 2 deselected |
 | #27 | 1272 passed, 2 deselected |
 | #28 | 1275 passed, 2 deselected; wheel smoke complete (schemas 1–6); ops 43 passed |
+| #29 | 1279 passed, 2 deselected; the real 2026 scenario gives the same report apart from `code_hash`, with CPU time down from 78 s to 16 s |
 
 ## 6. Data and model limitations
 
@@ -173,11 +175,13 @@ post-only order, cancel, reconcile, shutdown (never executed).
    research question (the `fs-full-v1` team features exist but are research-only).
 4. Execution realism: collect order books (not candles) for the trading window to
    measure depth at arrival before any canary.
-5. Simulator cost: make `Ledger.projection()` incremental (apply rows written since the
-   cached projection). Today it re-reads and re-parses the whole ledger after every
-   write, which makes a paper run quadratic. One 401-row scenario takes 80–95 s, and 185
-   of 207 profiled seconds are in the projection. This touches the authoritative ledger,
-   so it belongs in its own reviewed PR.
+5. Simulator cost.
+   - #29 (D-012) removes the re-parsing: committed ledger rows are parsed once. On a
+     401-row scenario, CPU time falls from 78 s to 16 s.
+   - The projection is still recomputed in full after every write (15 of 42 profiled
+     seconds), so a paper run is still quadratic, with a much smaller constant.
+   - An incremental projection is the remaining step. It changes how the authoritative
+     ledger derives state, so it needs its own review.
 6. Only after forward evidence of edge: the demo canary per the runbook.
 
 ## 11. Final head of #28

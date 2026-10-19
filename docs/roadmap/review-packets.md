@@ -19,6 +19,7 @@ merged, deployed or activated; no credentials exist in this system.
 | #26 | `feat/history-backtest` | D/H candle backtest, dry run (D-010, D-011) | execution realism, holdout ledger | no network, paper-only |
 | #27 | `feat/research-pods` | G orchestration, operations, protected evaluator (D-008) | protected state, criteria | process bounds, determinism |
 | #28 | `feat/integration-demos` | H demos, ops model registry, run docs | claims | reproduction |
+| #29 | `perf/ledger-row-cache` | ledger parsed-row reuse; read-only registry for non-holdout backtests (D-012) | append-only soundness | concurrency |
 
 ## Codex Prime — evidence meaning, versioning, leakage, scoring, money correctness
 

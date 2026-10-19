@@ -256,3 +256,18 @@ Decision (#26). `vader live dry-run` sizes with the paper risk engine and clips 
 limits instead of refusing: a canary sizes down, and a refused order would hide whether
 the request itself is well formed. The dry run writes only a paper ledger, signs only with
 an in-memory throwaway key on request, and has no HTTP client.
+
+## D-012 Reuse parsed committed ledger rows; keep the projection a full recomputation (2026-10-19)
+
+Context. Paper runs cost time quadratic in the input count. The profile of a real 401-row
+backtest put 185 of 207 seconds in `Ledger.projection()`, almost all of it re-reading
+and re-parsing rows (#28 evidence §3).
+
+Decision (#29). Full reads of the eight append-only record tables reuse rows parsed
+outside any transaction, and read only rows with a larger rowid. This is sound because
+triggers refuse UPDATE and DELETE and one writer commits at a time. Rows read inside a
+transaction are never kept, and `verify()` recomputes from disk. The projection itself
+stays a full fold over the records, now about 15 of 42 profiled seconds. An incremental
+projection would change how state is derived in the authoritative ledger; it is left as
+a separately reviewed follow-up. Result on the real scenario: the same report, with CPU
+time down from 78 s to 16 s.
