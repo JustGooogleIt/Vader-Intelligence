@@ -62,6 +62,16 @@ Read first: `docs/roadmap/decisions.md` (D-001..), `docs/roadmap/evidence-index.
 11. **Claims (#28).** Every number in `docs/evidence/real-data-demo-20261019.md` and the
     E2E demo must trace to a recorded output; no profitable simulation is described as
     edge; D-009 (holdout preserved) is the right call.
+12. **Real-candle backtest (#26, #28).** Several checks:
+    - The 2026 grid shows no fills without assumed depth and none with one slippage tick
+      (`simulator._executable`: the fill price plus slippage must stay within a
+      take-at-ask limit). Is that the intended meaning of the slippage axis?
+    - Are pod and coordinator results equal because the inputs are equal (same execution
+      payload hash), not by coincidence?
+    - Is the kill-switch stop in the depth-25 run the risk engine's documented behaviour
+      (auto-engaged on `daily_loss_stop`, never auto-disengaged)?
+    - `Ledger.projection()` is rebuilt after every write (quadratic paper runs). Is an
+      incremental projection safe to add in its own PR?
 
 Commands:
 
@@ -89,7 +99,9 @@ cd <worktree>; .venv/bin/python -m pytest -q tests/forecast_storage tests/foreca
    no orphan processes; scrubbed environment; declared search budgets.
 7. Demos: `.venv/bin/python tests/integration/e2e_demo.py` and `recovery_demo.py` run
    offline in about 20 s each; `real_data_demo.py` and `candle_vs_book_check.py` need the
-   research data directories (read-only for production).
+   research data directories (read-only for production). `real_data_demo.py backtest
+   --coordinator single --jobs N` runs one ledger per candidate and depth as parallel
+   processes (the 2026 full grid took 1 h 40 min).
 8. Ops: optional `model_registry` in the shadow block (validated against forbidden paths).
 
 ## Interfaces (both reviewers)

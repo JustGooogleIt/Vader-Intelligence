@@ -8,7 +8,11 @@ Phase `pods`: snapshot -> research pods (logistic, gradient boosting, symbolic s
 -> accept -> protected evaluator under the default criteria -> robustness pod on every
 candidate. Phase `backtest` (needs the execution-only `hist-candles-post` stage for the
 validation rows): execution snapshot -> paper-backtest pods, and a coordinator-run
-validation backtest grid per candidate.
+validation backtest grid per candidate. `--coordinator single` replaces the grid with
+one ledger per candidate and assumed depth (default fee schedule, latency and slippage),
+run as parallel processes, and `--skip-pod-backtest` skips the pods: a paper run rebuilds
+the ledger projection after every write, so its cost grows with the square of the
+validation rows and the full grid is impractical on a two-season validation set.
 
 Every command is recorded with its arguments and a summary of its output. A validated
 candidate would still not be evidence of edge: validation compares several proposals.
@@ -17,12 +21,16 @@ Usage:
   .venv/bin/python tests/integration/real_data_demo.py pods --registry R --dataset D \
       --root ORCH --out OUT.json
   .venv/bin/python tests/integration/real_data_demo.py backtest --registry R --dataset D \
-      --root ORCH --history-db H --out OUT.json
+      --root ORCH --history-db H --out OUT.json [--coordinator single --skip-pod-backtest]
 """
 
 import argparse
 import json
+import os
+import subprocess
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -48,6 +56,29 @@ class Recorder:
         self.log["steps"].append({"argv": ["vader", *argv], "result": brief})
         self.out.write_text(json.dumps(self.log, indent=2, sort_keys=True, default=str) + "\n")
         return result
+
+    def parallel(self, argvs, *, keep, jobs):
+        """Run CLI commands as separate processes (the simulator is CPU-bound); record
+        them in the given order with their wall time."""
+
+        def one(argv):
+            started = time.monotonic()
+            done = subprocess.run(
+                [sys.executable, "-m", "vader_intelligence.cli", *argv],
+                capture_output=True,
+                text=True,
+                env=os.environ | {"PYTHONPATH": str(ROOT / "src")},
+                check=False,
+            )
+            if done.returncode:
+                raise RuntimeError(f"{argv[:2]} failed: {done.stderr[-2000:]}")
+            return json.loads(done.stdout), round(time.monotonic() - started, 1)
+
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            for argv, (result, seconds) in zip(argvs, pool.map(one, argvs), strict=True):
+                brief = keep(result) | {"wall_seconds": seconds}
+                self.log["steps"].append({"argv": ["vader", *argv], "result": brief})
+        self.out.write_text(json.dumps(self.log, indent=2, sort_keys=True, default=str) + "\n")
 
 
 def pods_phase(args, run):
@@ -190,6 +221,19 @@ def backtest_phase(args, run):
         *SPLIT,
     )
     rows = json.loads(Path(args.root, "candidates.json").read_text())
+    if not args.skip_pod_backtest:
+        pod_backtests(args, run, rows, snap, execution)
+    if args.coordinator == "single":
+        single_backtests(args, run, rows)
+    else:
+        grid_backtests(args, run, rows)
+
+
+ENVELOPE = ("segment", "selection_biased", "rows", "forecasts", "period", "skipped")
+
+
+def pod_backtests(args, run, rows, snap, execution):
+    root = ["--root", args.root]
     for name, candidate in rows.items():
         run(
             "pods",
@@ -222,6 +266,9 @@ def backtest_phase(args, run):
             "recent_failures": r["pods"]["recent_failures"],
         },
     )
+
+
+def grid_backtests(args, run, rows):
     for name, candidate in rows.items():
         run(
             "backtest",
@@ -242,17 +289,7 @@ def backtest_phase(args, run):
             "--assumed-depth",
             "25",
             keep=lambda r: (
-                {
-                    k: r[k]
-                    for k in (
-                        "segment",
-                        "selection_biased",
-                        "rows",
-                        "forecasts",
-                        "period",
-                        "skipped",
-                    )
-                }
+                {k: r[k] for k in ENVELOPE}
                 | {
                     "markets_with_execution_data": r["markets_with_execution_data"],
                     "scenarios": [
@@ -261,13 +298,69 @@ def backtest_phase(args, run):
                             "orders": s["orders"],
                             "fills": s["fills"],
                             "pnl": s["pnl"],
+                            "rejections_by_reason": s["rejections_by_reason"],
                             "unidentifiable": s["unidentifiable"],
+                            "verification_failures": s["verification_failures"],
                         }
                         for s in r["report"]["rows"]
                     ],
                 }
             ),
         )
+
+
+def single_backtests(args, run, rows):
+    ledgers = Path(args.root, "backtest-ledgers")
+    ledgers.mkdir(exist_ok=True)
+    argvs = [
+        [
+            "backtest",
+            "run",
+            "--registry",
+            args.registry,
+            "--history-db",
+            args.history_db,
+            "--dataset",
+            args.dataset,
+            "--model",
+            candidate["model_sha256"],
+            *SPLIT,
+            "--segment",
+            "validation",
+            "--assumed-depth",
+            depth,
+            "--ledger",
+            str(ledgers / f"{name}-depth-{depth}.sqlite3"),
+        ]
+        for name, candidate in rows.items()
+        for depth in ("5", "25")
+    ]
+
+    def keep(r):
+        report = r["report"]
+        return (
+            {k: r[k] for k in ENVELOPE}
+            | {"markets_with_execution_data": r["markets_with_execution_data"]}
+            | {
+                "model_id": r["model_id"],
+                "scenario": {
+                    "fee_schedule": report["manifest"]["fee_schedule"]["version"],
+                    "fee_verified": report["manifest"]["fee_schedule"]["verified"],
+                    "assumed_depth": report["manifest"]["config"]["assumed_depth"],
+                    "extra_slippage_ticks": report["manifest"]["config"]["extra_slippage_ticks"],
+                    "latency": report["manifest"]["config"]["latency"],
+                },
+                "orders": len(report["orders"]),
+                "fills": len(report["fills"]),
+                "pnl": report["pnl"],
+                "rejections_by_reason": report["rejections_by_reason"],
+                "forecasts_without_intent": report["forecasts_without_intent"],
+                "unidentifiable": report["unidentifiable"],
+                "verification": report["verification"],
+            }
+        )
+
+    run.parallel(argvs, keep=keep, jobs=args.jobs)
 
 
 def main():
@@ -280,6 +373,9 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--development-through", default="2026-07-31")
     p.add_argument("--validation-through", default="2026-08-31")
+    p.add_argument("--coordinator", choices=("grid", "single"), default="grid")
+    p.add_argument("--skip-pod-backtest", action="store_true")
+    p.add_argument("--jobs", type=int, default=6)
     args = p.parse_args()
     set_split(args.development_through, args.validation_through)
     run = Recorder(args.out)

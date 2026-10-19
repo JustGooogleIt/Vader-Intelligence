@@ -80,9 +80,96 @@ Interpretation: on these 12 postseason games the history assumption (a candle's 
 bid/ask is the book's best bid/ask at the candle's end) holds exactly at C. The sample is
 small and postseason-only; regular-season games were not collected by production.
 
-## 3. Paper backtest on real validation candles
+## 3. Paper backtest on real validation candles (2026)
 
-Pending: needs the execution-only `hist-candles-post` stage for the 2026 validation rows
-(follow-up acquisition running). Command when it is in:
-`tests/integration/real_data_demo.py backtest --registry ... --dataset ... --root ...
---history-db ... --out ...`.
+A **simulation on historical candles**, on the same 401 validation rows as §1 (selection
+biased: these candidates were proposed on this split). It is not evidence of edge and
+says nothing about live profitability; its use is to check the execution path on real
+quotes and to see whether the rejected candidates would at least have survived costs.
+
+Inputs:
+
+- execution inputs `6d5a616e194a2f14a49425e85afc346f5d37d8116f9d78a0b790c1ee7ed01d70`
+  (`vi-execution-inputs-v1`): 3,171 candle quotes in [C − 120 s, C + 300 s] from the
+  `hist-candles` and execution-only `hist-candles-post` stages, covering all 401
+  markets, plus the archived settlements;
+- strategy: take at the decision-time ask when the edge after fees is at least 0.02.
+  The order is IOC.
+- paper risk engine: simulation-default limits, clipped to limits, $1,000 bankroll.
+
+Two paths ran over the same rows:
+
+- **Paper-backtest pods.** One per candidate, reading verified copies of the snapshot,
+  model and execution inputs, with no archive access. 12 scenarios each: general fee
+  schedule × 0 or 1 extra slippage tick × submit latency 250 or 1,250 ms × assumed depth
+  none, 5 or 25.
+- **`vader backtest run` from the coordinator.** Execution inputs are built from the
+  archive. 24 scenarios each: both fee schedules × the same axes.
+
+**All 36 pod scenarios equal the coordinator's matching scenarios exactly** (orders,
+fills, realized P&L, fees). Every pod row records no risk rejections and 0 ledger
+verification failures. Wall time for all 108 scenario runs was 1 h 40 min (cost: see
+the end of this section).
+
+Outputs:
+
+- `docs/evidence/real-data-backtest-2026-20261019.json`: commands and summaries;
+- `real-data-backtest-2026-pods-20261019.json`: the three pod reports, content-addressed;
+- `real-data-backtest-2026-refusal-check-20261019.json`: the refusal check below.
+
+Results at 0 extra slippage. Realized P&L is net of fees, and every one of the 401
+markets settled (no open positions). With 50% of displayed depth usable, assumed depth 5
+allows at most 2 contracts per fill and depth 25 at most 12.
+
+| Candidate | Fee schedule (unverified) | Orders | Depth 5: fills, realized, fees | Depth 25: fills, realized, fees |
+|---|---|---|---|---|
+| logistic `d316e849…` | general | 51 | 51, −3.58, 1.90 | 51, −17.33, 8.79 |
+| | MLB 0.5× (assumed) | 94 | 94, −2.74, 1.88 | 94, −15.52, 8.76 |
+| gradient boosting `a6d69da1…` | general | 220 | 220, −13.36, 8.66 | 220, −67.50, 43.45 |
+| | MLB 0.5× (assumed) | 254 | 254, −1.76, 5.08 | 169 †, −48.31, 17.29 |
+| symbolic `06891d03…` | general | 100 | 100, −6.99, 3.91 | 100, −38.88, 18.45 |
+| | MLB 0.5× (assumed) | 145 | 145, −6.70, 2.90 | 145, −43.60, 14.12 |
+
+What the grid shows:
+
+- **No assumed depth, no fills.** All 24 no-depth rows of the coordinator grid, and the
+  12 matching pod rows, have 0 fills. Candles carry no size (D-010), so an IOC order at
+  the ask finds nothing to take and cancels.
+- **One extra slippage tick, no fills.** This holds in all 36 one-tick rows of the
+  coordinator grid, and in the 18 matching pod rows. The
+  simulator applies slippage as a worse fill price that must stay within the order's
+  limit. The limit here is the decision-time ask, so one tick of adverse movement leaves
+  the order unfilled. This axis therefore answers "does the order still fill if the
+  price moves one tick against it?" (no). It does not measure a worse price.
+- **Latency has no effect.** The 250 ms and 1,250 ms rows are identical, because both
+  arrivals fall inside the same one-minute candle. Candles cannot resolve sub-minute
+  latency.
+- **Every row with fills loses money, both after and before fees.** Realized P&L plus
+  fees is negative in every row; for example, gradient boosting at depth 25 on the
+  general schedule loses 67.50 after fees and 24.05 before them. Losses grow with assumed
+  depth. The lower assumed fee schedule lets more forecasts clear the edge threshold;
+  they lose as well.
+- **† The paper risk engine stopped this run.** This row placed 85 fewer orders than its
+  no-fill row (169 against 254). A single-ledger rerun shows why:
+  - 147 forecasts fell below the edge threshold and 85 intents were refused;
+  - the refusal reason counts are `daily_loss_stop` 8 and `kill_switch_engaged` 84 (one
+    intent can carry both);
+  - the 5% daily loss stop on conservative equity engaged the kill switch automatically,
+    and the simulator never disengages it;
+  - the remaining 169 orders filled: 1,968 contracts (145 fills at the 12-contract
+    cap), mean price 0.4207, net −48.31, about −2.5 cents per contract.
+
+**Cost.** One scenario on 401 rows takes 80–95 s, nearly all of it in
+`Ledger.projection()`: 185 of 207 profiled seconds, over 8,252 calls. The projection is
+cached only between writes, but the simulator writes on every input, so each call
+re-reads and re-parses the whole ledger. The cost grows with the square of the input
+count. An incremental projection is follow-up work (handoff §10); the ledger was not
+changed in this run.
+
+## 3b. Paper backtest on the two-season validation set (2,027 rows)
+
+Running: `real_data_demo.py backtest --coordinator single --skip-pod-backtest` (one
+ledger per candidate and assumed depth 5 or 25, general fee schedule, 0 slippage,
+250 ms latency, six parallel processes). Because of the quadratic cost, the full grid
+would take about 40 hours here. §3 already established that the dropped axes give no
+fills (one slippage tick, no depth) or change nothing (latency).

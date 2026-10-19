@@ -39,10 +39,10 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
 
 | Status | Items |
 |---|---|
-| **Demonstrated on real data** | rule v2 on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts, 2026-10-19); historical acquisition (2025 + 2026); datasets; training of logistic, gradient boosting and symbolic models; research pods and the protected evaluator on 2026 and on 2025→2026; candle vs collected book at C |
+| **Demonstrated on real data** | rule v2 on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts, 2026-10-19); historical acquisition (2025 + 2026, with 2026 execution windows); datasets; training of logistic, gradient boosting and symbolic models; research pods and the protected evaluator on 2026 and on 2025→2026; candle vs collected book at C; paper backtest (simulated execution) on real 2026 validation candles through pods and the coordinator, which agree exactly |
 | **Demonstrated on synthetic data (asserted in the suite)** | full chain proposed → validated → shadow_tested → paper_approved with hand-checked numbers; one-time holdout in both ledgers; dry-run order request; recovery from worker and coordinator SIGKILL, backtest crashes, live create timeout |
 | **Implemented, simulated only** | paper simulator, risk engine, Kelly; Kalshi live adapter against a deterministic exchange double; dry-run gateway |
-| **Pending tonight (bounded jobs running)** | live rule-v2 forward decision at C = 23:08Z for `KXMLBGAME-26OCT192008CLETB`; live forward shadow with the three 2026 pod models as registered forecasters; real-candle validation backtest (needs the running 2026 execution-window acquisition) |
+| **Pending tonight (bounded jobs running)** | live rule-v2 forward decision at C = 23:08Z for `KXMLBGAME-26OCT192008CLETB`; live forward shadow with the three 2026 pod models as registered forecasters; two-season real-candle backtest (2,027 validation rows) |
 | **Untested** | the live canary (`docs/live-canary-runbook.md`, never executed); exchange acceptance of any request; fee schedules against real fills |
 | **Blocked** | A5 NBA/NFL (D-005: no authorized official free schedule source) |
 | **Not done by decision** | one-time holdout of a final candidate (D-009: no candidate validated; the 2026 holdout is untouched) |
@@ -58,6 +58,18 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
 - The symbolic search's best expressions are the market's own midpoint or log-odds.
 - Candle vs collected book at C (12 postseason games): mid and spread identical; book
   best-level sizes 11k–5.9M (archive units).
+- Paper backtest on real 2026 validation candles. This is a simulation, and selection
+  biased.
+  - Without assumed depth nothing fills, because candles have no sizes.
+  - Under assumed depth 5 or 25, every scenario with fills loses money, both after and
+    before fees. For example, gradient boosting at depth 25 on the general schedule
+    loses 67.50 after fees (43.45 of fees) on a $1,000 bankroll.
+  - One extra slippage tick means no fill (the limit is the decision-time ask), and
+    latency below one minute changes nothing.
+  - In one run, the risk engine's daily loss stop engaged the kill switch, and that
+    stopped the run.
+  - The pods (verified input copies, no archive access) and the coordinator produced
+    identical numbers in all 36 shared scenarios.
 
 Details: `docs/evidence/real-data-demo-20261019.md`.
 
@@ -116,6 +128,11 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
   collect regular-season books.
 - Fee schedules are unverified (higher-fee default); Kalshi API facts marked unverified
   are listed in `docs/live-canary-runbook.md` §6 (A1–A20).
+- Backtest execution: candles cannot resolve sub-minute latency. Slippage is a worse fill
+  price that must stay within the limit; with take-at-ask limits, one tick means no
+  fill rather than a worse price. Paper runs cost time quadratic in the input count
+  (the ledger projection is rebuilt after every write), so the two-season backtest ran
+  single scenarios instead of the full grid.
 
 ## 7. Live-activation gates (all must pass; activation is the user's decision)
 
@@ -136,13 +153,15 @@ post-only order, cancel, reconcile, shutdown (never executed).
 3. D-009: whether a two-season split should define a new holdout before further model
    work; the current 2026 holdout stays untouched.
 4. D-008 default criteria (CI below zero and both halves) — stricter or looser?
-5. Live activation (demo canary) — only after review; requires the user's own key.
+5. Backtest slippage semantics: keep "slippage = no fill at a touch limit", or add a
+   strategy limit offset (pay up to k ticks) so the slippage axis measures price?
+6. Live activation (demo canary) — only after review; requires the user's own key.
 
 ## 9. Cleanup (not done automatically)
 
 - Background jobs: live rule-v2 driver (`/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2`), model shadow driver (`.../20261019-models`), follow-up acquisition (`/Users/ashwin/Documents/Vader-Intelligence-research/history/run-acquisition-2.sh`); all end by themselves (last ≈05:20 UTC 2026-10-20).
 - Worktrees (with their venvs): `Vader-Intelligence-wt-{deps,execution-risk,symbolic-engine,research-pods-core,models-library,live-adapter}` (finished subagent work, integrated), `-live-v2`, `-live-models`, `-history-run`, `-history-run2` (pinned run code). Local branches `wip/deps`, `feat/execution-risk`, `feat/symbolic-engine`, `feat/research-pods-core`, `feat/models-library`, `feat/live-adapter` are superseded by the stack.
-- Data directories (outside the repo): `/Users/ashwin/Documents/Vader-Intelligence-research/{history (≈0.3 GB),registry,pods-2026,pods-2025-2026,demo}`, `/Users/ashwin/Documents/Vader-Intelligence-shadow/{20261019-rule-v2,20261019-models}`, the session scratchpad.
+- Data directories (outside the repo): `/Users/ashwin/Documents/Vader-Intelligence-research/{history (≈0.3 GB),registry,pods-2026,pods-2025-2026 (with backtest-ledgers/),demo}`, `/Users/ashwin/Documents/Vader-Intelligence-shadow/{20261019-rule-v2,20261019-models}`, the session scratchpad.
 
 ## 10. Next highest-value work
 
@@ -154,7 +173,12 @@ post-only order, cancel, reconcile, shutdown (never executed).
    research question (the `fs-full-v1` team features exist but are research-only).
 4. Execution realism: collect order books (not candles) for the trading window to
    measure depth at arrival before any canary.
-5. Only after forward evidence of edge: the demo canary per the runbook.
+5. Simulator cost: make `Ledger.projection()` incremental (apply rows written since the
+   cached projection). Today it re-reads and re-parses the whole ledger after every
+   write, which makes a paper run quadratic. One 401-row scenario takes 80–95 s, and 185
+   of 207 profiled seconds are in the projection. This touches the authoritative ledger,
+   so it belongs in its own reviewed PR.
+6. Only after forward evidence of edge: the demo canary per the runbook.
 
 ## 11. Final head of #28
 

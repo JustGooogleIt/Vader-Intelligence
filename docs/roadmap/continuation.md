@@ -12,9 +12,9 @@ always names the exact next action.
 |---|---|
 | Main worktree | `/Users/ashwin/Documents/github-repos/Vader-Intelligence-roadmap` (`uv sync --locked`, uv 0.12.19 at `../Vader-Intelligence/.venv/bin/uv`, Python 3.11.6) |
 | Stack base | PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c31` |
-| Pinned run worktrees | `-live-v2` (detached `622caad`, live shadow driver), `-history-run` / `-history-run2` (pinned acquisition code) |
+| Pinned run worktrees | `-live-v2` (detached `622caad`, live rule-v2 shadow driver), `-live-models` (model shadow driver), `-history-run` / `-history-run2` (pinned acquisition code), `-verify` (detached, head verification) |
 | Finished subagent worktrees (cleanup) | `-wt-deps`, `-wt-execution-risk`, `-wt-symbolic-engine`, `-wt-research-pods-core`, `-wt-models-library`, `-wt-live-adapter` |
-| Research data (outside the repo) | `/Users/ashwin/Documents/Vader-Intelligence-research/{history,registry,pods-2026,demo}` |
+| Research data (outside the repo) | `/Users/ashwin/Documents/Vader-Intelligence-research/{history,registry,pods-2026,pods-2025-2026,demo}` |
 | Production | `~/Documents/Vader-Intelligence-operations/20260930-first-deployment/production.sqlite3`: read-only queries only; never copied (disk ~10 GiB free) |
 
 ## PR ledger (all drafts, none merged, none reviewed yet)
@@ -41,17 +41,22 @@ Full SHAs are in the final handoff (`docs/handoffs/roadmap-handoff.md`).
 | What | Where | Ends |
 |---|---|---|
 | Live forward-shadow driver (rule v2, test label, no launchd) | `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/driver.sh`; decision at C = 23:08:00Z for `KXMLBGAME-26OCT192008CLETB`, `shadow-evaluate` at 05:00 UTC 2026-10-20 | ≈05:05 UTC 2026-10-20 |
-| Follow-up acquisition: 2025 (`default,history-date-only`, post windows) then 2026 post-only windows | `/Users/ashwin/Documents/Vader-Intelligence-research/history/run-acquisition-2.sh` → `history.sqlite3`; log `acquisition-log.jsonl` | after both runs (≤ 3 h each) |
+| Model shadow driver (three 2026 pod models as registered forecasters) | `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/driver.sh`; evaluation 05:15 UTC | ≈05:20 UTC 2026-10-20 |
+| Two-season real-candle backtest (6 single ledgers, parallel) | `real_data_demo.py backtest --coordinator single` → `/Users/ashwin/Documents/Vader-Intelligence-research/demo/real-data-backtest-2025-2026.json` | when the six runs finish |
+
+The acquisitions are complete (2025 date-only identities; 2026 execution windows, 4,810
+post-cutoff windows, none failed). The 2026 real-candle backtest is recorded in
+`docs/evidence/real-data-demo-20261019.md` §3.
 
 ## Next action
 
-1. When the 2026 post-only acquisition finishes: run
-   `tests/integration/real_data_demo.py backtest ...` (paper-backtest pods and
-   coordinator backtests on real validation candles) and record the results in
-   `docs/evidence/real-data-demo-20261019.md`.
-2. When the 2025 acquisition is in: build the 2025 dataset (identity rules
-   `default,history-date-only`; report the `start_uncorroborated` stratum separately),
-   register it, and decide whether a two-season split changes the B/G conclusions.
-3. After 05:05 UTC 2026-10-20: read `driver-log.jsonl`, `cycle-*.json` and
-   `shadow-evaluate.json` in the shadow directory and record the live rule-v2 evidence.
-4. Final handoff with every PR's full SHA, test results and cleanup list.
+1. When the two-season backtest finishes: record §3b of the real-data evidence, copy the
+   JSON into `docs/evidence/`, push `feat/integration-demos` (no force) and update the
+   PR #28 body and the handoff.
+2. After 05:20 UTC 2026-10-20: read `driver-log.jsonl`, `cycle-*.json` and the
+   `shadow-evaluate` reports in both shadow directories and record the live evidence
+   (rule v2 decision; registered forecasters' forward decisions). Then run `vader live
+   dry-run --archive <models shadow.sqlite3> --forecaster model:<sha16> --ledger <new>
+   --sign-with-throwaway-key` on the real forward decision and record it.
+3. Final handoff: §11 head of #28, live results; matrix, backlog and evidence index
+   states.
