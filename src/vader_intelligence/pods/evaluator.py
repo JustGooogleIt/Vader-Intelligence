@@ -28,7 +28,7 @@ import numpy as np
 from ..datasets import splits
 from ..datasets.splits import SplitDefinition
 from ..models import metrics
-from ..models.artifact import ModelArtifact, predict_proba
+from ..models.artifact import ModelArtifact, check_inputs, predict_proba
 from ..provenance import json_text
 from ..research import backtest, training
 from .candidates import (
@@ -203,6 +203,7 @@ def recompute(registry, spec, criteria: Criteria) -> dict:
     )
     artifact = ModelArtifact.from_dict(json.loads(registry.model_artifact(spec["model_sha256"])))
     names = [f["name"] for f in manifest["feature_set"]["features"]]
+    check_inputs(artifact, names)  # the same columns, by name and order
     X, y, dates, groups = training.matrices(validation, names)
     p = predict_proba(artifact, X)
     feature = None if criteria.baseline == "constant" else criteria.baseline.split(":", 1)[1]

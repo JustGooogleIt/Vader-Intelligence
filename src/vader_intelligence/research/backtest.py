@@ -25,7 +25,7 @@ import numpy as np
 from ..datasets import splits
 from ..forecast.references import digest as reference_digest
 from ..history import interpret
-from ..models.artifact import ModelArtifact, predict_proba
+from ..models.artifact import ArtifactError, ModelArtifact, check_inputs, predict_proba
 from ..provenance import source_hash
 from ..trading.instruments import Market
 from ..trading.marketdata import BookSnapshot
@@ -161,6 +161,10 @@ def forecasts(artifact_json, manifest, rows, model_id):
     names = [f["name"] for f in manifest["feature_set"]["features"]]
     if artifact.training.get("feature_set") != manifest["feature_set"]["name"]:
         raise ValueError("model and dataset use different feature sets")
+    try:
+        check_inputs(artifact, names)
+    except ArtifactError as exc:
+        raise ValueError(str(exc)) from None
     if not rows:
         return []
     X, _, _, _ = training.matrices(rows, names)
