@@ -3,6 +3,7 @@ import json
 import sqlite3
 import sys
 from contextlib import nullcontext
+from pathlib import Path
 
 from .collector import Collector
 from .config import Config
@@ -148,6 +149,23 @@ def parser():
     hsummary = history_commands.add_parser("summary", help="read-only interpretation counts")
     hsummary.add_argument("--run-id", help="one acquisition run; omit for the whole archive")
     hsummary.add_argument("--identity-rules", default="default")
+    dataset = commands.add_parser("dataset", help="point-in-time research datasets (registry)")
+    dataset_commands = dataset.add_subparsers(dest="dataset_command", required=True)
+    dbuild = dataset_commands.add_parser("build", help="build and register one dataset")
+    dbuild.add_argument("--registry", required=True, help="research registry directory")
+    dbuild.add_argument("--source", required=True, choices=("history", "collection"))
+    dbuild.add_argument("--history-db", required=True, help="historical-acquisition archive")
+    dbuild.add_argument("--collection-db", help="collection archive (source=collection)")
+    dbuild.add_argument("--quote-source", choices=("listing", "book"), default="listing")
+    dbuild.add_argument("--lineage", choices=("live", "synthetic"), default="live")
+    dbuild.add_argument("--feature-set", required=True)
+    dbuild.add_argument("--from", dest="start", required=True)
+    dbuild.add_argument("--through", required=True)
+    dbuild.add_argument("--name", required=True)
+    dbuild.add_argument("--identity-rules", default="default")
+    dinspect = dataset_commands.add_parser("inspect", help="read-only dataset listing/manifest")
+    dinspect.add_argument("--registry", required=True)
+    dinspect.add_argument("--id", help="one dataset; omit to list")
     return p
 
 
@@ -207,6 +225,8 @@ def execute(args):
         return _research(args, config)
     if args.command == "history":
         return _history(args, config)
+    if args.command == "dataset":
+        return _dataset(args)
     with nullcontext() if args.command == "health" else writer_lock(config.database):
         store = Store(
             config.database, min_free_bytes=config.min_free_bytes, readonly=args.command == "health"
@@ -464,6 +484,82 @@ def _history(args, config):
                 reader.close()
         finally:
             store.close()
+
+
+def _readonly(path):
+    if not Path(path).is_file():
+        raise ValueError(f"archive not found: {path}")
+    db = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
+    db.execute("PRAGMA query_only=ON")
+    return db
+
+
+def _dataset(args):
+    """Datasets read archives through read-only connections and write only the registry."""
+    from .research.registry import Registry
+
+    if args.dataset_command == "inspect":
+        registry = Registry(args.registry, readonly=True)
+        try:
+            if args.id:
+                return {"status": "complete", "manifest": registry.dataset(args.id)}
+            rows = registry.db.execute(
+                "SELECT id, name, created_at, json_extract(manifest_json,'$.rows'),"
+                " json_extract(manifest_json,'$.evidence_kind') FROM datasets ORDER BY created_at"
+            ).fetchall()
+            return {
+                "status": "complete",
+                "datasets": [
+                    dict(zip(("id", "name", "created_at", "rows", "evidence_kind"), r))
+                    for r in rows
+                ],
+            }
+        finally:
+            registry.close()
+    from .datasets import collection as collection_dataset
+    from .datasets import history as history_dataset
+    from .forecast.reconstruct import parse_date
+
+    rules = tuple(args.identity_rules.split(","))
+    history_db = _readonly(args.history_db)
+    try:
+        if args.source == "history":
+            manifest, rows = history_dataset.build(
+                history_db,
+                feature_set=args.feature_set,
+                start_date=parse_date(args.start),
+                through_date=parse_date(args.through),
+                name=args.name,
+                identity_rules=rules,
+            )
+        else:
+            if not args.collection_db:
+                raise ValueError("--collection-db is required for source=collection")
+            collection_db = _readonly(args.collection_db)
+            try:
+                manifest, rows = collection_dataset.build(
+                    collection_db,
+                    history_db,
+                    feature_set=args.feature_set,
+                    quote_source=args.quote_source,
+                    start_date=parse_date(args.start),
+                    through_date=parse_date(args.through),
+                    name=args.name,
+                    identity_rules=rules,
+                    lineage=args.lineage,
+                )
+            finally:
+                collection_db.close()
+    finally:
+        history_db.close()
+    registry = Registry(args.registry)
+    try:
+        dataset_id = registry.register_dataset(manifest, rows)
+    finally:
+        registry.close()
+    summary = {k: manifest[k] for k in ("name", "evidence_kind", "rows", "positives")}
+    summary |= {k: manifest[k] for k in ("exclusions", "missing_by_feature")}
+    return {"status": "complete" if rows else "inconclusive", "dataset_id": dataset_id, **summary}
 
 
 def main():
