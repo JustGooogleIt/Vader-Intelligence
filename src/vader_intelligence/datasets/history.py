@@ -109,6 +109,7 @@ def build(
     records = interpret.markets(db, run_id)
     games = interpret.schedule(db, run_id)
     histories = team_histories(games)
+    candle_index = interpret.candle_index(db, run_id)
     exclusions, rows = {}, []
 
     def exclude(reason):
@@ -134,8 +135,8 @@ def build(
             continue
         start = datetime.fromisoformat(identity["start"])
         cutoff = start - HORIZON
-        selected_candles = interpret.candles(db, selected["ticker"], run_id)
-        other_candles = interpret.candles(db, other["ticker"], run_id)
+        selected_candles = candle_index.get(selected["ticker"], [])
+        other_candles = candle_index.get(other["ticker"], [])
         selected_series = quotes.from_candles(selected["ticker"], selected_candles).until(cutoff)
         other_series = quotes.from_candles(other["ticker"], other_candles).until(cutoff)
         game = games[identity["game_id"]]

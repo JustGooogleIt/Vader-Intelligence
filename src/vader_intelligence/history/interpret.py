@@ -301,33 +301,65 @@ def _price(block, name):
     return value if isinstance(value, str) else None
 
 
+def _parse_candles(data, fetch_id, retrieved_at, out):
+    for candle in data.get("candlesticks", []):
+        end = candle.get("end_period_ts")
+        if type(end) is not int:
+            continue
+        out[end] = {
+            "end": datetime.fromtimestamp(end, timezone.utc),
+            "yes_bid_close": _price(candle.get("yes_bid"), "close"),
+            "yes_ask_close": _price(candle.get("yes_ask"), "close"),
+            "price_close": _price(candle.get("price"), "close"),
+            "price_mean": _price(candle.get("price"), "mean"),
+            "volume": candle.get("volume_fp", candle.get("volume")),
+            "open_interest": candle.get("open_interest_fp", candle.get("open_interest")),
+            "fetch_id": fetch_id,
+            "retrieved_at": retrieved_at,
+        }
+
+
+def _candle_rows(db, run_id, stage, key_glob):
+    if stage not in ("hist-candles", "hist-candles-post"):
+        raise ValueError("unknown candle stage")
+    query = (
+        "SELECT f.id, f.retrieved_at, b.body, q.request_key FROM fetches f"
+        " JOIN requests q ON q.id=f.request_id JOIN blobs b ON b.sha256=f.body_sha256"
+        " WHERE q.stage=? AND f.state='ok' AND q.request_key GLOB ?"
+    )
+    params = [stage, key_glob]
+    if run_id is not None:
+        query += " AND q.run_id=?"
+        params.append(run_id)
+    return db.execute(query + " ORDER BY f.seq", params)
+
+
 def candles(db, ticker, run_id=None, *, stage="hist-candles"):
     """Parsed 1-minute candles of one ticker (both endpoint field variants), oldest first,
     each with the retrieval identity of the response it came from. Feature code reads only
-    the default stage, whose windows end at the cutoff."""
-    if stage not in ("hist-candles", "hist-candles-post"):
-        raise ValueError("unknown candle stage")
+    the default stage, whose windows end at the cutoff. Only this ticker's responses are
+    decoded (the request key carries the ticker)."""
     prefix = "candles" if stage == "hist-candles" else "post"
     out = {}
-    for fetch_id, retrieved_at, data, key in _bodies(db, run_id, stage):
-        if data.get("ticker") not in (None, ticker) or not key.startswith(f"{prefix}:{ticker}:"):
-            continue
-        for candle in data.get("candlesticks", []):
-            end = candle.get("end_period_ts")
-            if type(end) is not int:
-                continue
-            out[end] = {
-                "end": datetime.fromtimestamp(end, timezone.utc),
-                "yes_bid_close": _price(candle.get("yes_bid"), "close"),
-                "yes_ask_close": _price(candle.get("yes_ask"), "close"),
-                "price_close": _price(candle.get("price"), "close"),
-                "price_mean": _price(candle.get("price"), "mean"),
-                "volume": candle.get("volume_fp", candle.get("volume")),
-                "open_interest": candle.get("open_interest_fp", candle.get("open_interest")),
-                "fetch_id": fetch_id,
-                "retrieved_at": retrieved_at,
-            }
+    for fetch_id, retrieved_at, body, key in _candle_rows(
+        db, run_id, stage, f"{prefix}:{ticker}:*"
+    ):
+        data = decode(body)
+        if data.get("ticker") in (None, ticker):
+            _parse_candles(data, fetch_id, retrieved_at, out)
     return [out[k] for k in sorted(out)]
+
+
+def candle_index(db, run_id=None, *, stage="hist-candles"):
+    """ticker → parsed candles, in one pass over the stage (what dataset builders use)."""
+    prefix = "candles" if stage == "hist-candles" else "post"
+    by_ticker = {}
+    for fetch_id, retrieved_at, body, key in _candle_rows(db, run_id, stage, f"{prefix}:*"):
+        ticker = key.split(":", 2)[1]
+        data = decode(body)
+        if data.get("ticker") in (None, ticker):
+            _parse_candles(data, fetch_id, retrieved_at, by_ticker.setdefault(ticker, {}))
+    return {t: [c[k] for k in sorted(c)] for t, c in by_ticker.items()}
 
 
 def execution_candles(db, ticker, run_id=None):
