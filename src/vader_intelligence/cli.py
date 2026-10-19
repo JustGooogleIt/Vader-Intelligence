@@ -166,6 +166,29 @@ def parser():
     dinspect = dataset_commands.add_parser("inspect", help="read-only dataset listing/manifest")
     dinspect.add_argument("--registry", required=True)
     dinspect.add_argument("--id", help="one dataset; omit to list")
+    model = commands.add_parser("model", help="train, evaluate and inspect registered models")
+    model_commands = model.add_subparsers(dest="model_command", required=True)
+    for name in ("train", "holdout"):
+        sub = model_commands.add_parser(name)
+        sub.add_argument("--registry", required=True)
+        sub.add_argument("--dataset", required=True, help="dataset id")
+        sub.add_argument("--development-through", required=True)
+        sub.add_argument("--validation-through", required=True)
+        sub.add_argument("--embargo-days", type=int, default=1)
+        sub.add_argument("--seed", type=int, default=0)
+        if name == "train":
+            sub.add_argument("--family", required=True, choices=("logistic", "gbm"))
+            sub.add_argument(
+                "--calibration", choices=("platt", "isotonic", "none"), default="platt"
+            )
+            sub.add_argument("--folds", type=int, default=4)
+            sub.add_argument("--max-configs", type=int, default=24)
+            sub.add_argument("--deadline", type=float, default=900.0, help="search seconds")
+        else:
+            sub.add_argument("--model", required=True, help="model id (artifact SHA-256)")
+    minspect = model_commands.add_parser("inspect")
+    minspect.add_argument("--registry", required=True)
+    minspect.add_argument("--id", help="one model; omit to list")
     return p
 
 
@@ -227,6 +250,8 @@ def execute(args):
         return _history(args, config)
     if args.command == "dataset":
         return _dataset(args)
+    if args.command == "model":
+        return _model(args)
     with nullcontext() if args.command == "health" else writer_lock(config.database):
         store = Store(
             config.database, min_free_bytes=config.min_free_bytes, readonly=args.command == "health"
@@ -560,6 +585,71 @@ def _dataset(args):
     summary = {k: manifest[k] for k in ("name", "evidence_kind", "rows", "positives")}
     summary |= {k: manifest[k] for k in ("exclusions", "missing_by_feature")}
     return {"status": "complete" if rows else "inconclusive", "dataset_id": dataset_id, **summary}
+
+
+def _model(args):
+    """Models read datasets from the registry and write only the registry."""
+    from .datasets.splits import SplitDefinition
+    from .research import training
+    from .research.registry import Registry
+
+    if args.model_command == "inspect":
+        registry = Registry(args.registry, readonly=True)
+        try:
+            if args.id:
+                row = registry.db.execute("SELECT * FROM models WHERE id=?", (args.id,)).fetchone()
+                if row is None:
+                    raise ValueError("unknown model")
+                evaluations = [
+                    {
+                        "id": e["id"],
+                        "split": e["split"],
+                        "selection_biased": bool(e["selection_biased"]),
+                        "metrics": json.loads(e["metrics_json"]),
+                    }
+                    for e in registry.db.execute(
+                        "SELECT * FROM evaluations WHERE model_id=? ORDER BY id", (args.id,)
+                    )
+                ]
+                artifact = json.loads(registry.model_artifact(args.id))
+                return {
+                    "status": "complete",
+                    "model": dict(row) | {"summary": json.loads(row["summary_json"])},
+                    "training": artifact["training"],
+                    "evaluations": evaluations,
+                }
+            return {
+                "status": "complete",
+                "models": [
+                    dict(r) | {"summary_json": None}
+                    for r in registry.db.execute(
+                        "SELECT id, family, dataset_id, created_at FROM models ORDER BY created_at"
+                    )
+                ],
+            }
+        finally:
+            registry.close()
+    split = SplitDefinition(args.development_through, args.validation_through, args.embargo_days)
+    registry = Registry(args.registry)
+    try:
+        if args.model_command == "train":
+            import time
+
+            return training.train(
+                registry,
+                args.dataset,
+                family=args.family,
+                split=split,
+                n_folds=args.folds,
+                seed=args.seed,
+                max_configs=args.max_configs,
+                deadline_seconds=args.deadline,
+                calibration=args.calibration,
+                clock=time.monotonic,
+            )
+        return training.evaluate_holdout(registry, args.dataset, args.model, split, seed=args.seed)
+    finally:
+        registry.close()
 
 
 def main():
