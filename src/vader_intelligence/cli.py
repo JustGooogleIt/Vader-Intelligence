@@ -193,6 +193,21 @@ def parser():
             sub.add_argument("--deadline", type=float, default=900.0, help="search seconds")
         else:
             sub.add_argument("--model", required=True, help="model id (artifact SHA-256)")
+    symbolic = commands.add_parser("symbolic", help="bounded symbolic search on a dataset")
+    symbolic_commands = symbolic.add_subparsers(dest="symbolic_command", required=True)
+    ssearch = symbolic_commands.add_parser("search")
+    ssearch.add_argument("--registry", required=True)
+    ssearch.add_argument("--dataset", required=True)
+    ssearch.add_argument("--development-through", required=True)
+    ssearch.add_argument("--validation-through", required=True)
+    ssearch.add_argument("--embargo-days", type=int, default=1)
+    ssearch.add_argument("--population", type=int, default=200)
+    ssearch.add_argument("--generations", type=int, default=30)
+    ssearch.add_argument("--max-candidates", type=int, default=20000)
+    ssearch.add_argument("--max-seconds", type=float, default=60.0)
+    ssearch.add_argument("--max-depth", type=int, default=5)
+    ssearch.add_argument("--max-nodes", type=int, default=25)
+    ssearch.add_argument("--seed", type=int, default=0)
     minspect = model_commands.add_parser("inspect")
     minspect.add_argument("--registry", required=True)
     minspect.add_argument("--id", help="one model; omit to list")
@@ -259,6 +274,8 @@ def execute(args):
         return _dataset(args)
     if args.command == "model":
         return _model(args)
+    if args.command == "symbolic":
+        return _symbolic(args)
     with nullcontext() if args.command == "health" else writer_lock(config.database):
         store = Store(
             config.database, min_free_bytes=config.min_free_bytes, readonly=args.command == "health"
@@ -663,6 +680,33 @@ def _model(args):
                 clock=time.monotonic,
             )
         return training.evaluate_holdout(registry, args.dataset, args.model, split, seed=args.seed)
+    finally:
+        registry.close()
+
+
+def _symbolic(args):
+    import time
+
+    from .datasets.splits import SplitDefinition
+    from .research import symbolic_search
+    from .research.registry import Registry
+    from .symbolic import SearchConfig
+
+    config = SearchConfig(
+        population=args.population,
+        generations=args.generations,
+        max_candidates=args.max_candidates,
+        max_seconds=args.max_seconds,
+        max_depth=args.max_depth,
+        max_nodes=args.max_nodes,
+        seed=args.seed,
+    )
+    split = SplitDefinition(args.development_through, args.validation_through, args.embargo_days)
+    registry = Registry(args.registry)
+    try:
+        return symbolic_search.run(
+            registry, args.dataset, split=split, config=config, clock=time.monotonic
+        )
     finally:
         registry.close()
 

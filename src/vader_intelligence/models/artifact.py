@@ -256,10 +256,15 @@ def dependency_versions():
 
 
 def _known(family):
+    if family == "symbolic" and family not in _REGISTERED:
+        import vader_intelligence.symbolic.artifact_family  # noqa: F401
     return family in FAMILIES or family in _REGISTERED
 
 
 def _scorer(family):
+    if family == "symbolic" and family not in _REGISTERED:
+        # The symbolic engine registers its family on import (no import cycle at load time).
+        import vader_intelligence.symbolic.artifact_family  # noqa: F401
     fn = _BUILTIN.get(family) or _REGISTERED.get(family)
     if fn is None:
         raise ArtifactError(f"no scorer registered for family {family!r}")
