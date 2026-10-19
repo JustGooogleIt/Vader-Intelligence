@@ -72,7 +72,16 @@ Specification: `docs/specs/live-adapter-v1.md`. API facts and their verification
 
 ## 2. Readiness checks (`vader live readiness`, dry: no credential, no order)
 
-The integrator's readiness command should report, without loading the key:
+Command (local checks only; it never loads the key, contacts the exchange or orders):
+
+```sh
+vader live readiness --activation-config live-demo.toml \
+  --acknowledge "$(shasum -a 256 live-demo.toml | cut -d' ' -f1)" --ledger live-demo.sqlite3
+```
+
+It reports every gate below except the exchange status and clock skew rows, which need
+the public `/exchange/status` read performed at canary time. It reports, without loading
+the key:
 
 | Check | Source | Pass |
 |---|---|---|
