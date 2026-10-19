@@ -5,6 +5,7 @@ candles supply no depth unless the labelled scenario assumes some, and the holdo
 reachable only through a ledger-recorded run. Values are invented.
 """
 
+import fcntl
 import json
 from dataclasses import replace
 from datetime import date, datetime, timedelta
@@ -170,6 +171,32 @@ def test_holdout_backtest_is_recorded_in_the_holdout_ledger(store, config, tmp_p
         assert rows[0]["fills"] == 0
     finally:
         registry.close()
+
+
+def test_cli_backtests_read_the_registry_read_only_except_the_holdout(store, config, tmp_path):
+    registry, dataset_id, model_id = registered(store, config, tmp_path, VALIDATION)
+    registry.close()
+    root = tmp_path / "research"
+
+    def backtest_cli(segment, ledger, *extra):
+        return execute(
+            parser().parse_args(
+                ["backtest", "run", "--registry", str(root), "--history-db", str(config.database)]
+                + ["--dataset", dataset_id, "--model", model_id, "--segment", segment]
+                + ["--development-through", VALIDATION.development_through]
+                + ["--validation-through", VALIDATION.validation_through]
+                + ["--ledger", str(tmp_path / ledger), *extra]
+            )
+        )
+
+    # Another process holding the registry writer lock (e.g. a concurrent backtest
+    # opening it) does not stop a validation backtest, which never writes.
+    with open(root / "research.sqlite3.lockfile", "a", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = backtest_cli("validation", "v.sqlite3")
+        assert result["status"] == "complete" and result["segment"] == "validation"
+        with pytest.raises(RuntimeError, match="registry lock"):
+            backtest_cli("holdout", "h.sqlite3", "--acknowledge-holdout")
 
 
 def test_cli_refuses_an_unacknowledged_holdout(tmp_path):
