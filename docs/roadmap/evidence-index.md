@@ -38,3 +38,13 @@ endpoints in isolated storage; nothing here is production evidence.
 | On real archived postseason evidence v2 admits date-only markets, only with corroborated starts, and refuses moved/postponed games | `docs/evidence/rule-v2-archive-recheck-20261019.json` (read-only recheck of production bytes) | real archived bytes, historical recheck |
 | Ticker interpretation agrees with every archived rule (60 event/rule pairs; 38 timed rules' times equal ticker time) | D-002 facts | real archived bytes |
 | Full regression | 868 passed, 2 deselected (pre-existing), ops 42 OK, ruff clean | — |
+
+## A3 Schedule revisions (`feat/schedule-revisions`)
+
+| Claim | Evidence | Kind |
+|---|---|---|
+| A game postponed after the decision is reported `schedule_changed_after_decision`, unscored | `tests/evaluation/test_schedule_revisions.py::test_a_game_postponed_after_the_decision_is_reported_and_not_scored` | synthetic |
+| The same game at the decided start still scores (control) | `::test_the_same_game_at_the_decided_start_still_scores` | synthetic |
+| A revision reverted before C leaves the decision eligible; one in force at C abstains with its reason | `::test_a_revision_reverted_before_cutoff_does_not_taint_the_decision`, `::test_a_revision_still_in_force_at_cutoff_abstains_with_its_reason` | synthetic |
+| Rule v2 revision before C abstains with `ticker_start_mismatch`; unwitnessed revisions do not apply at C | `tests/forecast/test_rule_v2_pipeline.py::test_start_revised_after_binding_abstains_at_cutoff_with_the_rule_v2_reason` | synthetic |
+| Full regression | 873 passed, 2 deselected (pre-existing) | — |

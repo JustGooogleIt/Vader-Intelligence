@@ -110,3 +110,32 @@ Implementation facts (PR `feat/eligibility-rule-v2`):
 - Alternative kept in reserve: Kalshi's public `/milestones` reports a `start_date` that
   matched the ticker time in the docs research; it would be a new collected source with
   its own retrieval semantics, not needed while the ticker corroborates.
+
+## D-003 Schedule revisions: explicit abstention before C, unscored disposition after C (2026-10-19)
+
+Context. The previous release deferred a schedule-revision state machine (binding
+revision chains, a moving C) and abstained with `schedule_revised`. Real archived evidence
+shows revisions are common (official times moved for `26OCT122000LADMIL` and
+`26OCT152000MILLAD`; `26OCT161800TBCLE` was postponed). The evaluator meanwhile scored a
+decision whose game the settlement mapping showed at another start
+(`evidenced_schedule_change`), i.e. a forecast whose real horizon was not 3600 s.
+
+Decision.
+- No binding revision chain or moving C: under rule v1 the rule-stated time, and under
+  rule v2 the ticker time, must equal the official start, so a revised start is
+  ineligible by definition. A chain could only ever produce abstentions. The binding's
+  first C stays sticky; the decision at C abstains with the revision reason
+  (`schedule_revised`, `schedule_rule_time_mismatch`, `ticker_start_mismatch`,
+  `rescheduled_game`, `unmapped_game`) from the pass applicable at C. A revision that is
+  reverted before C, as seen by the applicable pass, leaves the decision eligible.
+  Revisions not witnessed by C do not apply at C.
+- After C: the decision stands; publication is vetoed by already-available evidence that
+  the game is no longer pregame (existing). If the settlement mapping confirms the same
+  game at a different start, the evaluation disposition is
+  `schedule_changed_after_decision` (reason `start_moved:<mapping reason>`, or
+  `mapping_start_unknown`), never scored. Evaluator version `evaluation-v2` (it also
+  covers D-001's one-contract scoping).
+
+Alternative (configurable later if wanted): score such opportunities in a separately
+labelled bucket as long-horizon forecasts of the same contract. Not done: it changes the
+meaning of a T-60 score.
