@@ -15,21 +15,23 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 
 | PR | Branch | Head (full SHA) | Scope | Suite at head |
 |---|---|---|---|---|
-| #17 | `fix/record-contract-3` | `f8642bf34fefc229470b4417a97acf818c3a9986` | A1 contract versioning (D-001), foundation repair | 881 passed |
-| #18 | `feat/eligibility-rule-v2` | `622caadd47d2047139c7c994b3c831abf1f57dca` | A2 rule v2 for date-only postseason rules (D-002) | see PR |
-| #19 | `feat/schedule-revisions` | `74a60a8057467bd4a6f34082925cfa9389d481c0` | A3 post-C schedule changes unscored (D-003) | see PR |
-| #20 | `feat/historical-acquisition` | `2f99f6101d429cf41fc2bf4e2df1e27d6b588bf5` | A4 public historical acquisition | see PR |
-| #21 | `feat/datasets-models` | `09ecb35522bb8781a8fa22b5eadbb79a7785e936` | B features, datasets, registry, models, training | see PR |
-| #22 | `feat/registered-forecasters` | `007a9d3a983497c534306e214817eb47dbaf5459` | B4 decision contract 4, evaluation contract 2 (D-004) | see PR |
+| #17 | `fix/record-contract-3` | `f8642bf34fefc229470b4417a97acf818c3a9986` | A1 contract versioning (D-001), foundation repair | 835 passed |
+| #18 | `feat/eligibility-rule-v2` | `622caadd47d2047139c7c994b3c831abf1f57dca` | A2 rule v2 for date-only postseason rules (D-002) | 868 passed |
+| #19 | `feat/schedule-revisions` | `74a60a8057467bd4a6f34082925cfa9389d481c0` | A3 post-C schedule changes unscored (D-003) | 873 passed |
+| #20 | `feat/historical-acquisition` | `2f99f6101d429cf41fc2bf4e2df1e27d6b588bf5` | A4 public historical acquisition | 881 passed |
+| #21 | `feat/datasets-models` | `09ecb35522bb8781a8fa22b5eadbb79a7785e936` | B features, datasets, registry, models, training | 953 passed |
+| #22 | `feat/registered-forecasters` | `007a9d3a983497c534306e214817eb47dbaf5459` | B4 decision contract 4, evaluation contract 2 (D-004) | 960 passed |
 | #23 | `feat/symbolic-search` | `00eb7376c1af21b6d8a23267b8f4cb04d8e09442` | C bounded symbolic regression | 1022 passed |
-| #24 | `feat/paper-execution-risk` | `e70da2b6ba6ea14a67054ce460d7273ed4f8fdc4` | D/E ledger, simulator, risk, Kelly (D-006) | see PR |
+| #24 | `feat/paper-execution-risk` | `e70da2b6ba6ea14a67054ce460d7273ed4f8fdc4` | D/E ledger, simulator, risk, Kelly (D-006) | 1105 passed |
 | #25 | `feat/kalshi-live-adapter` | `25a4a8d38b51219e57d1f9451f0587853bd70193` | F live adapter, disabled by default (D-007) | 1209 passed |
 | #26 | `feat/history-backtest` | `1e02613ef1ce79f2bc473c3fb5537f3b1d7072b4` | D/H candle backtest, live dry run (D-010, D-011) | 1217 passed |
 | #27 | `feat/research-pods` | `145735cf6ba04820870e181a5ac02bff5050ffe7` | G orchestration, operations, protected evaluator (D-008) | 1272 passed |
-| #28 | `feat/integration-demos` | see §10 | H demos, ops model registry, run documents | 1275 passed |
+| #28 | `feat/integration-demos` | final head in §11 | H demos, ops model registry, run documents | 1275 passed |
 
-"Suite" = `pytest -q` with the two pre-existing `tmux_jev` observer tests deselected
-(the optional tool is not installed; they fail on `main` too).
+"Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
+tests deselected (the optional tool is not installed; they fail on `main` too), measured
+2026-10-19 in a clean verification worktree; `ruff check src tests ops` clean at every
+head.
 
 ## 2. Status by requirement
 
@@ -97,6 +99,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 
 | Head | Result |
 |---|---|
+| #17–#25 | 835, 868, 873, 881, 953, 960, 1022, 1105, 1209 passed (2 deselected each); ruff clean |
 | #26 | 1217 passed, 2 deselected |
 | #27 | 1272 passed, 2 deselected |
 | #28 | 1275 passed, 2 deselected; wheel smoke complete (schemas 1–6); ops 43 passed |
@@ -152,3 +155,8 @@ post-only order, cancel, reconcile, shutdown (never executed).
 4. Execution realism: collect order books (not candles) for the trading window to
    measure depth at arrival before any canary.
 5. Only after forward evidence of edge: the demo canary per the runbook.
+
+## 11. Final head of #28
+
+Recorded when the last evidence commit lands (see the PR's head on GitHub; this file is
+part of that commit, so its own SHA cannot appear in it).
