@@ -49,13 +49,6 @@ def _json_validator(key):
     return apply
 
 
-def _ticker_date(ticker):
-    from ..scope import ticker_identity
-
-    found = ticker_identity(ticker.rsplit("-", 1)[0]) if isinstance(ticker, str) else None
-    return None if found is None else found["start"].date()
-
-
 class Acquisition:
     def __init__(self, store, reader, *, max_requests=8000, budget=7200.0, monotonic=None):
         if getattr(reader, "profile", None) != "history":
@@ -92,7 +85,19 @@ class Acquisition:
         period_minutes=1,
         page_size=200,
         max_pages=200,
+        identity_rules=("default",),
+        pre_cutoff=True,
+        post_cutoff_seconds=0,
     ):
+        identity_rules = tuple(identity_rules)
+        if type(pre_cutoff) is not bool or type(post_cutoff_seconds) is not int:
+            raise ValueError("pre_cutoff must be a bool and post_cutoff_seconds an integer")
+        if not 0 <= post_cutoff_seconds <= 3600 or not (pre_cutoff or post_cutoff_seconds):
+            raise ValueError("post_cutoff_seconds in [0, 3600]; at least one candle window")
+        if not set(identity_rules) <= set(interpret.IDENTITY_RULES) or (
+            "default" not in identity_rules
+        ):
+            raise ValueError("identity_rules must include 'default' and only known rules")
         if not isinstance(start_date, date) or not isinstance(through_date, date):
             raise ValueError("dates required")
         if not 0 <= (through_date - start_date).days < MAX_RANGE_DAYS:
@@ -112,6 +117,13 @@ class Acquisition:
             "max_pages": max_pages,
             "interpretation": interpret.INTERPRETATION,
         }
+        # Recorded only when non-default so earlier runs keep their configuration.
+        if identity_rules != ("default",):
+            configuration["identity_rules"] = list(identity_rules)
+        if not pre_cutoff:
+            configuration["pre_cutoff"] = False
+        if post_cutoff_seconds:
+            configuration["post_cutoff_seconds"] = post_cutoff_seconds
         tool = {
             "source_lineage": "live" if self.reader.live else "synthetic",
             "retrieval_kind": "historical",
@@ -206,14 +218,15 @@ class Acquisition:
             records = {
                 t: m
                 for t, m in interpret.markets(db, run_id).items()
-                if (d := _ticker_date(t)) is not None and start_date <= d <= through_date
+                if (d := interpret.event_date(m["event_ticker"])) is not None
+                and start_date <= d <= through_date
             }
             games = interpret.schedule(db, run_id)
             grouped = interpret.events(records)
             summary["markets_in_range"] = len(records)
             summary["events_in_range"] = len(grouped)
             for event_ticker, event_markets in sorted(grouped.items()):
-                identity = interpret.identify(event_markets, games)
+                identity = interpret.identify(event_markets, games, identity_rules)
                 if identity["status"] != "identified":
                     reason = identity["reason"]
                     summary["unresolved_by_reason"][reason] = (
@@ -223,8 +236,18 @@ class Acquisition:
                 summary["identified_events"] += 1
                 cutoff = datetime.fromisoformat(identity["start"]) - timedelta(hours=1)
                 end_ts = int(cutoff.astimezone(timezone.utc).timestamp())
-                start_ts = end_ts - window_seconds
-                for market in event_markets:
+                # Feature candles end at C; execution candles (a separate stage that
+                # feature code never reads) cover (C, C + post] for fill simulation only.
+                windows = []
+                if pre_cutoff:
+                    windows.append(("hist-candles", "candles", end_ts - window_seconds, end_ts))
+                if post_cutoff_seconds:
+                    windows.append(
+                        ("hist-candles-post", "post", end_ts + 60, end_ts + post_cutoff_seconds)
+                    )
+                for market, (stage, prefix, start_ts, stop_ts) in [
+                    (m, w) for m in event_markets for w in windows
+                ]:
                     ticker = market["ticker"]
                     url = (
                         f"{KALSHI}/historical/markets/{ticker}/candlesticks"
@@ -234,12 +257,12 @@ class Acquisition:
                     try:
                         self._get(
                             run_id,
-                            "hist-candles",
-                            f"candles:{ticker}:{start_ts}:{end_ts}:{period_minutes}",
+                            stage,
+                            f"{prefix}:{ticker}:{start_ts}:{stop_ts}:{period_minutes}",
                             url,
                             {
                                 "start_ts": start_ts,
-                                "end_ts": end_ts,
+                                "end_ts": stop_ts,
                                 "period_interval": period_minutes,
                             },
                             _json_validator("candlesticks"),
