@@ -26,13 +26,14 @@ from .ledger import (
     LedgerError,
     build_order,
 )
-from .money import ZERO, dec, digest, text
+from .money import ONE, ZERO, dec, digest, in_exact, text
 from .orders import GATEWAY_SOURCE, Fill, OrderEvent
-from .portfolio import CashEvent
+from .portfolio import CashEvent, Settlement
 from .risk import Approval, Rejection, RiskContext
 
 MAX_FILL_PAGES = 1000
 FILLS_CURSOR = CHECKPOINT_PREFIX + "reconcile:fills_cursor"
+SETTLEMENTS_CURSOR = CHECKPOINT_PREFIX + "reconcile:settlements_cursor"
 _VENUE_TERMINAL = ("canceled", "expired", "rejected", "not_found")
 
 
@@ -272,7 +273,8 @@ class Executor:
         )
 
     def reconcile(self, *, now):
-        """Resolve submissions, fetch missed fills, compare positions and balance.
+        """Resolve submissions, fetch missed fills, record venue settlements (gateways
+        that report them), compare positions and balance.
 
         Mismatches and venue failures become `unknown_reasons`, which block
         risk-increasing orders until a later reconciliation is clean.
@@ -328,6 +330,7 @@ class Executor:
             if filled > state.filled_quantity:
                 gaps[coid] = filled
         reasons.extend(self._reconcile_fills(now))
+        reasons.extend(self._reconcile_settlements(now))
         projection = ledger.projection()
         for coid, venue_filled in sorted(gaps.items()):
             if projection.orders[coid].filled_quantity < venue_filled:
@@ -370,6 +373,70 @@ class Executor:
                 return []
             cursor = next_cursor
         return ["fills_pagination_exceeded"]
+
+    def _reconcile_settlements(self, now):
+        """Record the venue's settlements of this ledger's markets.
+
+        Fills are reconciled first. A settlement is recorded only when it agrees exactly
+        with the ledger: the market has ledger orders and none is still active, the YES
+        and NO counts it settled equal the ledger's holding, the cash it paid equals that
+        holding's payout, and it charged no fee (the ledger models none). Otherwise
+        nothing is recorded, the reason blocks risk-increasing orders, and the cursor is
+        kept so the next reconciliation reads the record again. A disagreement means
+        fills are still missing (REST lag) or the ledger is wrong; a fill that arrives
+        after its market's settlement contradicts the counts the venue settled and stays
+        refused by the ledger.
+        """
+        read = getattr(self.gateway, "settlements_since", None)
+        if read is None:
+            return []
+        data = self.ledger.processed(SETTLEMENTS_CURSOR)
+        cursor = data.get("cursor") if data else None
+        try:
+            venue, next_cursor = read(cursor)
+        except Exception:
+            return ["settlements_unavailable"]
+        reasons = []
+        for item in venue:
+            reason = self._settle(item)
+            if reason is not None:
+                reasons.append(f"{reason}:{item.ticker}")
+        if not reasons and next_cursor != cursor:
+            self.ledger.set_checkpoint(SETTLEMENTS_CURSOR, {"cursor": next_cursor}, now)
+        return reasons
+
+    @in_exact
+    def _settle(self, item):
+        settlement = Settlement(
+            # A venue settles each market of an account once.
+            settlement_id="kalshi:" + item.ticker,
+            ticker=item.ticker,
+            result=item.result,
+            settlement_value=item.settlement_value,
+            source_ref=item.source_ref,
+            effective_at=item.settled_at,
+        )
+        projection = self.ledger.projection()
+        recorded = projection.portfolio.settlements.get(item.ticker)
+        if recorded is not None:
+            return None if recorded == settlement else "settlement_conflict"
+        states = [s for s in projection.orders.values() if s.order.ticker == item.ticker]
+        if not states:
+            return "settlement_foreign"
+        if any(s.active for s in states):
+            return "settlement_orders_active"
+        if item.fee != ZERO:
+            return "settlement_fee"
+        held = projection.portfolio.holding(item.ticker)
+        value = item.settlement_value
+        payout = held.yes_qty * value + held.no_qty * (ONE - value)
+        if (item.yes_count, item.no_count, item.revenue) != (held.yes_qty, held.no_qty, payout):
+            return "settlement_mismatch"
+        try:
+            self.ledger.append_settlement(settlement)
+        except LedgerConflict:
+            return "settlement_conflict"
+        return None
 
     def _reconcile_positions(self, portfolio):
         try:

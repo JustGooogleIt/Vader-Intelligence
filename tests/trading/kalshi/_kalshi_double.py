@@ -2,7 +2,7 @@
 
 The double implements only the documented V2 endpoints the adapter allowlists
 (docs/specs/kalshi-api-facts-2026-10-18.md §2, §5, §9): create/cancel orders, list/get
-orders, fills, positions, balance and exchange status. It verifies the signature of
+orders, fills, positions, settlements, balance and exchange status. It verifies the signature of
 every authenticated request with the public half of a key generated inside the test,
 keeps its own independent cash/position accounting, and can inject timeouts (before or
 after processing), 429/5xx answers, REST visibility lag and cancel/fill races.
@@ -100,6 +100,7 @@ class KalshiDouble:
         self.exchange_index = 3
         self.orders = {}  # order_id -> internal dict
         self.fill_log = []  # internal dicts, oldest first
+        self.settlement_log = []  # settlement records, oldest first
         self.positions = {}  # ticker -> signed YES position
         self.calls = []  # (method, path, params, body)
         self.auth_failures = 0
@@ -213,6 +214,8 @@ class KalshiDouble:
                 return self._list_fills(params)
             if sub == "/portfolio/positions":
                 return self._positions(params)
+            if sub == "/portfolio/settlements":
+                return self._list_settlements(params)
             if sub == "/portfolio/balance":
                 return self._balance()
             if sub == "/exchange/status":
@@ -469,6 +472,44 @@ class KalshiDouble:
             if position != 0 or ticker in self.zero_position_rows
         ]
         return self._page(rows, params, "market_positions")
+
+    def settle(self, ticker, result, *, value=None, fee="0", **overrides):
+        """Settle a market: resting orders are canceled, the signed position is paid
+        (`value` = YES payout in cents for `scalar`), leaves the positions listing and
+        appears in the settlement listing. `overrides` replace record fields as sent."""
+        for order in self.orders.values():
+            if order["ticker"] == ticker and order["status"] == "resting":
+                order["remaining"], order["status"] = D(0), "canceled"
+                order["updated"] = self.clock.now()
+        cents = {"yes": 100, "no": 0}.get(result, value)
+        position = self.positions.pop(ticker, D(0))
+        yes, no = max(position, D(0)), max(-position, D(0))
+        revenue = yes * cents + no * (100 - cents)
+        self.cash += revenue / 100 - D(fee)
+        record = {
+            "ticker": ticker,
+            "event_ticker": ticker.rsplit("-", 1)[0],
+            "exchange_index": self.exchange_index,
+            "market_result": result,
+            "yes_count_fp": fp(yes, 2),
+            "yes_total_cost_dollars": "0.0000",
+            "no_count_fp": fp(no, 2),
+            "no_total_cost_dollars": "0.0000",
+            "revenue": int(revenue),
+            "settled_time": iso(self.clock.now()),
+            "fee_cost": fp(fee, 4),
+            "value": value,
+            **overrides,
+        }
+        self.settlement_log.append(record)
+        return record
+
+    def _list_settlements(self, params):
+        items = list(self.settlement_log)
+        if "min_ts" in params:
+            floor = EPOCH + timedelta(seconds=int(params["min_ts"]))
+            items = [r for r in items if datetime.fromisoformat(r["settled_time"]) >= floor]
+        return self._page(list(reversed(items)), params, "settlements")  # newest first
 
     def _balance(self):
         cents = int(self.cash * 100)

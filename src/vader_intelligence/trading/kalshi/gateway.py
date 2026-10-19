@@ -43,11 +43,18 @@ How the `trading.gateway.ExchangeGateway` contract is met:
   foreign order) raises, so reconciliation blocks risk-increasing orders.
 - `balance()`: `balance_dollars` of GET /portfolio/balance (all shards); the per-shard
   breakdown is kept in `shard_balances` (MLB markets are on shard 3, facts §12).
+- `settlements_since(cursor)`: GET /portfolio/settlements?min_ts= over every page, as
+  `VenueSettlement`s (facts §2.8). Same watermark cursor and overlap as fills; two
+  different records for one ticker raise. The executor decides what is recorded.
 
 Assumptions (UNVERIFIED or undocumented; also listed in docs/live-canary-runbook.md):
 
 - `min_ts` on the order and fill listings is Unix seconds and filters on creation time
   or a later timestamp (facts §2.4/§2.5 say only "Unix"); lookups subtract a margin;
+  on the settlement listing it filters on `settled_time` (re-read with the fills
+  overlap);
+- a settled market leaves the default (`unsettled`) positions listing when its
+  settlement record appears; until both agree, reconciliation reports a mismatch;
 - REST reads lag the matching engine by an undocumented "short delay" (facts §9): a
   lookup reports "not found" only `settle_seconds` (default 30) after the order was
   created, and fills are re-read with `fills_overlap_seconds` (default 3600) overlap;
@@ -95,6 +102,7 @@ from .mapping import (
     order_request,
     order_status,
     position_from_exchange,
+    settlement_from_exchange,
     venue_order,
 )
 
@@ -561,7 +569,7 @@ class KalshiGateway:
             return epoch_seconds(self._epoch)
         match = _CURSOR.fullmatch(cursor) if isinstance(cursor, str) else None
         if match is None:
-            raise KalshiError("unrecognized fills cursor")
+            raise KalshiError("unrecognized reconciliation cursor")
         return int(match.group(1))
 
     def _fill(self, item):
@@ -594,6 +602,24 @@ class KalshiGateway:
             fills[fill.fill_id] = fill
         ordered = sorted(fills.values(), key=lambda f: (f.exchange_ts, f.fill_id))
         newest = max((epoch_seconds(f.exchange_ts) for f in ordered), default=start)
+        watermark = max(start, min(newest, epoch_seconds(self._now())))
+        return ordered, f"ts:{watermark}"
+
+    def settlements_since(self, cursor):
+        start = self._cursor_seconds(cursor)
+        min_ts = max(epoch_seconds(self._epoch), start - self.fills_overlap_seconds)
+        items = self._pages(
+            "/portfolio/settlements", {"min_ts": min_ts, "limit": PAGE_LIMIT}, "settlements"
+        )
+        settlements = {}
+        for item in items:
+            settlement = settlement_from_exchange(item)
+            previous = settlements.get(settlement.ticker)
+            if previous is not None and previous != settlement:
+                raise ReconciliationMismatch(f"conflicting settlements of {settlement.ticker}")
+            settlements[settlement.ticker] = settlement
+        ordered = sorted(settlements.values(), key=lambda s: (s.settled_at, s.ticker))
+        newest = max((epoch_seconds(s.settled_at) for s in ordered), default=start)
         watermark = max(start, min(newest, epoch_seconds(self._now())))
         return ordered, f"ts:{watermark}"
 

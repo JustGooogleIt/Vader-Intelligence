@@ -42,7 +42,8 @@ it depends on must be listed as an assumption in code and in the runbook.
 
 POST `/portfolio/events/orders`; DELETE `/portfolio/events/orders/{order_id}`; GET
 `/portfolio/orders`, `/portfolio/orders/{order_id}`, `/portfolio/fills`,
-`/portfolio/positions`, `/portfolio/balance`; GET `/exchange/status`. No other path.
+`/portfolio/positions`, `/portfolio/settlements` (added below), `/portfolio/balance`;
+GET `/exchange/status`. No other path.
 
 ## Tests (`tests/trading/kalshi/`, no network)
 
@@ -103,3 +104,31 @@ ledger), and the explicit statement that activation is a separate user decision.
     than reservations being silently underfunded.
   - A live approval must cite complete, recorded limits.
 
+## Revision: venue settlements (2026-10-19)
+
+Before this revision nothing recorded a live market's settlement: the venue paid out and
+dropped the position, the ledger kept the holding, and reconciliation reported position
+and balance mismatches indefinitely (safe, since buys stop, but never resolved).
+
+- **Read.** `GET /portfolio/settlements` is allowlisted with `min_ts`, `limit` and
+  `cursor` only. `KalshiGateway.settlements_since(cursor)` reads every page from a
+  watermark (the fills cursor scheme and overlap) and returns `VenueSettlement`s
+  (`trading/gateway.py`); two different records for one ticker raise. Results `yes` and
+  `no` settle at 1 and 0 per YES contract, `scalar` at `value` cents (ledger result
+  `fair`); any other result or a missing field fails the read.
+- **Record.** `Executor.reconcile` reads settlements after fills and before positions
+  and balance. A settlement `kalshi:<ticker>` is appended only when the market has
+  ledger orders and none is active, the settled YES/NO counts equal the ledger's
+  holding, the revenue equals that holding's payout, and the fee is zero. Otherwise it
+  reports `settlement_foreign`, `settlement_orders_active`, `settlement_mismatch`,
+  `settlement_fee` or `settlement_conflict` with the ticker, records nothing and keeps
+  the cursor, so the next reconciliation reads the record again. Gateways without
+  `settlements_since` (simulator, dry run) are unchanged.
+- **Late fills.** A fill that arrives after its market's settlement was recorded
+  stays refused by the ledger (`fill on a settled market`). With the rule above, the
+  settlement was recorded only after the ledger's holding matched the venue's settled
+  counts, so such a fill contradicts the venue's own settlement; the refusal flags the
+  state unknown for the operator. This resolves the late-fill item of the #24/#25
+  pre-review by construction rather than by relaxing the ledger.
+- **Assumptions.** Runbook §6 A21–A23 (record semantics, `min_ts` field, timing of the
+  positions listing). All fail closed.

@@ -40,7 +40,13 @@ Assumptions (UNVERIFIED; also listed in docs/live-canary-runbook.md):
 - the `outcome_side` reported for orders created through V2 is not used (its value for
   a V2 `ask` is not documented);
 - a `balance_breakdown` item's `balance` is integer cents (text is read as dollars);
-  the reconciled total is always the exact `balance_dollars` (facts §2.7).
+  the reconciled total is always the exact `balance_dollars` (facts §2.7);
+- a settlement record (facts §2.8 [V:OAS]) settles this account's whole holding of its
+  market: `yes_count_fp`/`no_count_fp` are the contracts held at settlement, `revenue`
+  is the cash paid for them in integer cents, `fee_cost` is the settlement fee in
+  dollars (zero for yes/no results, facts §7 [V:SET]) and `value`, when present, is the
+  YES payout in cents; `scalar` results settle at `value`. Records with any other result
+  or without these fields fail closed.
 """
 
 import re
@@ -48,7 +54,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from ..gateway import OrderStatus
+from ..gateway import OrderStatus, VenueSettlement
 from ..money import ONE, ZERO, dec, in_exact, on_grid
 from ..orders import Fill
 from .client import ORDER_ID
@@ -431,3 +437,48 @@ def balance_from_exchange(data):
         else:
             shards[index] = _decimal(item, "balance")
     return total, shards
+
+
+@in_exact
+def settlement_from_exchange(data):
+    """`VenueSettlement` of a `/portfolio/settlements` item (facts §2.8 [V:OAS]).
+
+    `yes` and `no` settle at 1 and 0 per YES contract; `scalar` settles at `value` cents
+    (result `fair`). Any other result, a missing count, revenue or fee field, or a
+    `value` that contradicts a yes/no result raises `MappingError` (fail closed).
+    """
+    ticker = _text_field(data, "ticker", _TICKER)
+    result = _field(data, "market_result")
+    value = data.get("value")
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
+        raise MappingError("invalid_field", "settlement value is not integer cents")
+    if value is not None and not 0 <= value <= 100:
+        raise MappingError("invalid_field", "settlement value is out of range")
+    if result in ("yes", "no"):
+        payout = ONE if result == "yes" else ZERO
+        if value is not None and Decimal(value) / 100 != payout:
+            raise MappingError("inconsistent_settlement", "settlement value contradicts result")
+    elif result == "scalar" and value is not None:
+        result, payout = "fair", Decimal(value) / 100
+    else:
+        raise MappingError("unknown_result", f"settlement result {result!r} is not mapped")
+    counts = {}
+    for name in ("yes_count_fp", "no_count_fp"):
+        counts[name] = _decimal(data, name)
+        if not on_grid(counts[name], COUNT_STEP):
+            raise MappingError("invalid_field", f"settlement {name} is off the count grid")
+    revenue = _field(data, "revenue")
+    if isinstance(revenue, bool) or not isinstance(revenue, int) or revenue < 0:
+        raise MappingError("invalid_field", "settlement revenue is not integer cents")
+    settled_time = _field(data, "settled_time")
+    return VenueSettlement(
+        ticker=ticker,
+        result=result,
+        settlement_value=payout,
+        yes_count=counts["yes_count_fp"],
+        no_count=counts["no_count_fp"],
+        revenue=Decimal(revenue) / 100,
+        fee=_decimal(data, "fee_cost"),
+        settled_at=rfc3339(settled_time),
+        source_ref=f"kalshi:portfolio/settlements:{ticker}:{settled_time}",
+    )

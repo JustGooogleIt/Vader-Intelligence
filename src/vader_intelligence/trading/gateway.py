@@ -10,8 +10,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
-from .money import frozen_mapping, nonnegative, opt_utc
+from .money import frozen_mapping, nonnegative, opt_utc, price, utc
 from .orders import GATEWAY_KINDS, VENUE_STATUSES
+from .portfolio import RESULTS
 
 SUBMIT_STATUSES = ("submitted", "accepted", "rejected", "unknown")
 CANCEL_STATUSES = ("canceled", "pending", "rejected")
@@ -83,6 +84,36 @@ class GatewayEvent:
         object.__setattr__(self, "exchange_ts", opt_utc(self.exchange_ts, "exchange_ts"))
 
 
+@dataclass(frozen=True)
+class VenueSettlement:
+    """A venue's settlement of one market for this account: the result, the YES payout
+    per contract, the YES/NO counts it settled, the cash it paid and any fee charged."""
+
+    ticker: str
+    result: str
+    settlement_value: object
+    yes_count: object
+    no_count: object
+    revenue: object
+    fee: object
+    settled_at: datetime
+    source_ref: str
+
+    def __post_init__(self):
+        if not isinstance(self.ticker, str) or not self.ticker:
+            raise ValueError("ticker is required")
+        if self.result not in RESULTS:
+            raise ValueError(f"unknown settlement result {self.result!r}")
+        if not isinstance(self.source_ref, str) or not self.source_ref:
+            raise ValueError("source_ref is required")
+        object.__setattr__(
+            self, "settlement_value", price(self.settlement_value, "settlement_value")
+        )
+        for name in ("yes_count", "no_count", "revenue", "fee"):
+            object.__setattr__(self, name, nonnegative(getattr(self, name), name))
+        object.__setattr__(self, "settled_at", utc(self.settled_at, "settled_at"))
+
+
 class ExchangeGateway(Protocol):
     """Contract for adapters (the live adapter must honour every point):
 
@@ -97,6 +128,9 @@ class ExchangeGateway(Protocol):
       fill ids; fill quantities lie on the order's quantity step.
     - `positions()` maps ticker to a holding with `yes_qty`/`no_qty`; `balance()` is
       total cash comparable with the ledger's projected cash, or None when unknown.
+    - Optional: `settlements_since(cursor)` returns `(VenueSettlement list, next_cursor)`
+      for gateways whose venue settles markets (the live adapter). Gateways without it
+      (the simulator, the dry run) leave settlements to their caller.
     """
 
     environment: str  # "paper" | "live"
