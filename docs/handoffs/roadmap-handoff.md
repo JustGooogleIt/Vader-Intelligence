@@ -29,7 +29,7 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #28 | `feat/integration-demos` | final head in §11 | H demos, ops model registry, run documents | 1275 passed |
 | #29 | `perf/ledger-row-cache` | `26dceed2f8fad8b22320845b40d6d3b755265057` | ledger parsed-row reuse (D-012); read-only registry for non-holdout backtests | 1279 passed |
 | #30 | `feat/pod-autopilot` | `d744766d96ebb869a9e8ab6ab1fc1c40e9ca5262` | G pod autopilot: development-only planners, bounded loop (D-013) | 1294 passed |
-| #31 | `fix/review-26-27` | `9f06a3df76325a65775f3d08f676be8e858c3d1b` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | 1303 passed |
+| #31 | `fix/review-26-27` | `e4b6770baf7332697720819bd86a0a8a7e13ea6c` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | 1303 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
