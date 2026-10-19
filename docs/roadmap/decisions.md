@@ -140,7 +140,7 @@ Alternative (configurable later if wanted): score such opportunities in a separa
 labelled bucket as long-horizon forecasts of the same contract. Not done: it changes the
 meaning of a T-60 score.
 
-## D-004 Registered forecasters in the forward path: decision contract 4 (2026-10-19, planned)
+## D-004 Registered forecasters in the forward path: decision contract 4 (2026-10-19)
 
 Context. Forward-shadow decisions (contracts 1–3) carry exactly the baseline pair. A
 candidate model can only be shadow-tested if the tick computes its forecast at C from the
@@ -178,3 +178,81 @@ second-ranked settlement source in both Kalshi contracts) or provides an authori
 the recommended order is NFL first (research only; nflverse as an independent cross-check;
 ties and fair-price resolutions as explicit non-binary outcomes), then NBA (preseason,
 makeup games with new tickers, NBA Cup final outside the series).
+
+## D-006 Execution layer: separate ledgers, unverified fees, conservative defaults (2026-10-19)
+
+Context. D/E need paper execution, risk and sizing that a later live path can share
+without letting simulation leak into live state.
+
+Decision (#24, spec `docs/specs/execution-risk-v1.md`). Decimal money only. Paper and
+live ledgers are separate files whose environment is fixed at creation and enforced by
+triggers; events are append-only. The executor writes `submit_requested` durably before
+any gateway call and records an unanswered submit as `submit_unknown`, resolved only by
+reconciliation, never by a blind retry. The risk engine is authoritative (limits,
+reservations, kill switch, unknown-state refusal); fractional Kelly sizes within it.
+Fee schedules are versioned and marked unverified; the higher-fee schedule is the
+default. The simulator defaults to worst-of-bracketing books, a 50% depth haircut, no
+maker fills and latency; depth-unknown snapshots (quotes, candles) supply no depth unless
+the labelled `assumed_depth` scenario is chosen.
+
+## D-007 Live adapter implemented, disabled by default (2026-10-19)
+
+Decision (#25, spec `docs/specs/live-adapter-v1.md`). A live gateway exists only after
+`activate_live` passes every gate (acknowledged config hash, enabled, environment,
+key id, secret reference without key material, caps, market rules, live and consistent
+ledger, complete limits matching their recorded hash, explicit kill-switch disengage),
+with the credential read last. No CLI path activates live trading; `vader live
+readiness` checks every local gate without the key or the network. The canary runbook was
+not executed. Activation remains a separate user decision after review.
+
+## D-008 Research pods: approved operations, staged inputs, recomputed evidence (2026-10-19)
+
+Context. G asks for autonomous research pods without letting generated work reach
+credentials, production data, orchestration state or the final holdout.
+
+Decision (#27, spec `docs/specs/research-orchestration-v1.md` §8).
+- Only registry operations with typed parameters run; no agent-generated code executes.
+  Workers are local subprocesses with a scrubbed environment and resource limits; this is
+  fault and resource isolation, explicitly not a security sandbox.
+- Inputs are staged by the coordinator as verified read-only copies; a dataset snapshot
+  holds development and validation rows only and refuses any row outside its segment.
+- Pod outputs are proposals and diagnostics. The protected evaluator recomputes every
+  promotion metric from the registry. Default `validated` criteria: log loss vs market mid
+  on paired validation rows, N ≥ 100, paired bootstrap 95% CI entirely below zero, and a
+  negative estimate in each chronological half; the number of proposals on the snapshot
+  is recorded. Shadow evidence comes from a stored contract-4 evaluation, paper evidence
+  only from a coordinator-run backtest plus an operator approval. No lifecycle state names
+  live eligibility.
+- Search budgets are declared parameters (a retried task reproduces its artifact digest).
+
+## D-009 The 2026 final holdout stays untouched (2026-10-19)
+
+Context. The roadmap asks for a one-time holdout evaluation of the final candidate. On
+the real 2026 dataset every model, from direct training (#21) and from research pods
+(#27), is worse than market mid on validation; the evaluator rejected all of them.
+
+Decision. No holdout is consumed. Evaluating a rejected candidate on the holdout would
+spend the only unbiased test on a model already known to lose to the market, and the
+lifecycle refuses it anyway (holdout only from `validated`). The holdout (official dates
+after 2026-09-01 under `dev<=2026-07-31|val<=2026-08-31|embargo=1`) is reported
+untouched in both ledgers. The one-time holdout path is demonstrated end to end on
+synthetic data (`tests/integration/e2e_demo.py`). Open question for the user: whether a
+two-season dataset (2025 + 2026) should define a new split and holdout before any
+further model work.
+
+## D-010 Historical backtests execute on candle quotes; depth is a labelled scenario (2026-10-19)
+
+Decision (#26, spec `docs/specs/history-backtest-and-dry-run-v1.md`). Backtests use candle
+closing bid/ask within [C − 120 s, C + 300 s] (feature stage merged with the
+execution-only post-cutoff stage); candles carry no sizes, so nothing fills unless an
+`assumed_depth` scenario is chosen, and every report says so. Evidence for the price
+assumption: on the 12 postseason games present in both archives, candle mid and spread at
+C equal those of the books the production collector retrieved before C
+(`docs/evidence/real-data-demo-20261019.md` §2); depth at arrival remains unverified.
+
+## D-011 Live-adapter dry run clips sizes to the limits (2026-10-19)
+
+Decision (#26). `vader live dry-run` sizes with the paper risk engine and clips to the
+limits instead of refusing: a canary sizes down, and a refused order would hide whether
+the request itself is well formed. The dry run writes only a paper ledger, signs only with
+an in-memory throwaway key on request, and has no HTTP client.

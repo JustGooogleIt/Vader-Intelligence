@@ -11,12 +11,14 @@ merged, deployed or activated; no credentials exist in this system.
 | #18 | `feat/eligibility-rule-v2` | D-002 rule v2 + mapping policy 2 | lead | live smoke |
 | #19 | `feat/schedule-revisions` | D-003 post-C schedule change disposition | lead | — |
 | #20 | `feat/historical-acquisition` | A4 public historical source | evidence kind | transport/CLI/resume |
-| next | `feat/datasets-models` | B features, datasets, registry, models | leakage, holdout | CLI, determinism |
-| next | symbolic | C bounded symbolic search | selection bias, holdout | budgets |
-| next | execution-risk | D/E ledger, simulator, risk, Kelly | accounting, risk math | crash/restart |
-| next | live adapter | F disabled-by-default Kalshi adapter | duplicate exposure | secrets, activation gates |
-| next | pods | G orchestration and candidate lifecycle | protected state | process bounds |
-| next | integration | H end-to-end, demos | claims | reproduction |
+| #21 | `feat/datasets-models` | B features, datasets, registry, models, training | leakage, holdout | CLI, determinism |
+| #22 | `feat/registered-forecasters` | D-004 decision contract 4, evaluation contract 2 | witnessed inputs, scoring | migration 006, CLI |
+| #23 | `feat/symbolic-search` | C bounded symbolic search | selection bias, holdout | budgets |
+| #24 | `feat/paper-execution-risk` | D/E ledger, simulator, risk, Kelly (D-006) | accounting, risk math | crash/restart |
+| #25 | `feat/kalshi-live-adapter` | F disabled-by-default Kalshi adapter (D-007) | duplicate exposure | secrets, activation gates |
+| #26 | `feat/history-backtest` | D/H candle backtest, dry run (D-010, D-011) | execution realism, holdout ledger | no network, paper-only |
+| #27 | `feat/research-pods` | G orchestration, operations, protected evaluator (D-008) | protected state, criteria | process bounds, determinism |
+| #28 | `feat/integration-demos` | H demos, ops model registry, run docs | claims | reproduction |
 
 ## Codex Prime — evidence meaning, versioning, leakage, scoring, money correctness
 
@@ -43,6 +45,24 @@ Read first: `docs/roadmap/decisions.md` (D-001..), `docs/roadmap/evidence-index.
    that saw the row; holdout read only through `splits.holdout_rows`; the holdout ledger
    marks every evaluation after the first as reuse.
 
+6. **D-004 (#22).** Can a model feature use a quote not witnessed by C, or a research-only
+   (non-forward) feature set run forward? Is a forecaster scored on exactly the baselines'
+   population? Does a protocol without forecasters keep its hash?
+7. **D-006 (#24).** Money: is every amount Decimal and on grid? Can a paper event reach a
+   live ledger? Can `submit_unknown` be resolved other than by reconciliation? Kelly: hand
+   cases and the clip to limits; does the risk engine ever approve with an unknown state?
+8. **D-007 (#25).** Can any path create a network transport or read the credential without
+   passing every gate? Can a lost create response lead to two venue orders?
+9. **D-010 (#26).** Can a backtest fill without an assumed depth? Can the holdout segment
+   run without a ledger entry? Is a model trained on another split refused?
+10. **D-008 (#27).** Can a worker read anything but its staged inputs, or can a snapshot
+    carry a holdout row? Can pod output reach promotion evidence? Are the evaluator's
+    criteria applied to recomputed values only? Can a candidate skip a state or be decided
+    twice? Is the holdout consumed at most once per candidate and only from `validated`?
+11. **Claims (#28).** Every number in `docs/evidence/real-data-demo-20261019.md` and the
+    E2E demo must trace to a recorded output; no profitable simulation is described as
+    edge; D-009 (holdout preserved) is the right call.
+
 Commands:
 
 ```sh
@@ -62,10 +82,22 @@ cd <worktree>; .venv/bin/python -m pytest -q tests/forecast_storage tests/foreca
 4. Datasets: `vader dataset build|inspect` determinism (same inputs → same dataset id);
    registry append-only triggers; artifact write-once.
 
+5. Trading CLI: `vader ledger ...` never orders; `vader live readiness` never loads the
+   key; `vader live dry-run` writes only a paper ledger and has no HTTP client.
+6. Pods: `vader pods ...` end to end (`tests/pods/test_research_pods.py::test_cli_*`);
+   kill -9 of worker and coordinator (`tests/integration/test_recovery_demo.py`); budgets;
+   no orphan processes; scrubbed environment; declared search budgets.
+7. Demos: `.venv/bin/python tests/integration/e2e_demo.py` and `recovery_demo.py` run
+   offline in about 20 s each; `real_data_demo.py` and `candle_vs_book_check.py` need the
+   research data directories (read-only for production).
+8. Ops: optional `model_registry` in the shadow block (validated against forbidden paths).
+
 ## Interfaces (both reviewers)
 
 - `collector → discovery → witness → evidence.PROOF → tick → evaluation` (D-001/D-002).
 - `history.acquire → history.interpret → datasets.history → research.registry`.
 - `collection archive → datasets.collection` (lineage filter) ↔ `history archive` labels.
-- (later) `models` ↔ `registry` ↔ `pods`; `forecast → trading.risk → trading.executor →
-  simulator | live gateway`.
+- `registry` → `pods.snapshot` → workers → `pods.evaluator` (recompute) → `candidates`.
+- `registry model` → `research.backtest` (candles) → `trading.simulator`.
+- `forecast decision (contract 4)` → `trading.shadow_dryrun` → `risk` → `executor` →
+  `DryRunGateway` | (after activation only) `KalshiGateway`.

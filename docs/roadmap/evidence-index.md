@@ -92,3 +92,62 @@ endpoints in isolated storage; nothing here is production evidence.
 | Engine: protected operators, budgets, dedup, determinism, planted relation, replay | `tests/symbolic/` (58) | synthetic |
 | Integration: artifact parity with replay; full search record stored; holdout untouched; shared ledger; usable as a forward forecaster | `tests/datasets/test_symbolic_search.py` (4) | synthetic |
 | Full regression at the C head | 1022 passed, 2 deselected (pre-existing) | — |
+
+## D/E Paper execution, risk and Kelly (`feat/paper-execution-risk`, #24)
+
+| Claim | Evidence | Kind |
+|---|---|---|
+| Decimal money; versioned fee schedules, higher-fee default, unverified flag | `tests/trading/test_trading_money_fees.py` | synthetic |
+| Paper and live ledgers separate by construction; append-only; verify detects tampering | `tests/trading/test_trading_ledger.py` | synthetic |
+| `submit_requested` durable before the gateway; unknown submissions block until reconciled; no resubmission | `tests/trading/test_trading_executor.py::test_unknown_submission_blocks_until_reconciled`, `::test_timeout_after_venue_accepted_reconciles_to_open` | synthetic |
+| Risk limits, reservations, kill switch, unknown-state refusal | `tests/trading/test_trading_risk.py` | synthetic |
+| Fractional Kelly hand cases and properties | `tests/trading/test_trading_kelly.py` (hypothesis) | synthetic |
+| Simulator: crash at every durable step restarts to identical projections; depth-unknown snapshots fill nothing unless a depth scenario is assumed; sensitivity byte-reproducible | `tests/trading/test_trading_simulator.py` | synthetic |
+| Ledger operator CLI (no orders) | `tests/trading/test_trading_cli.py` | synthetic |
+
+## F Kalshi live adapter, disabled by default (`feat/kalshi-live-adapter`, #25)
+
+| Claim | Evidence | Kind |
+|---|---|---|
+| Signatures (RSA-PSS, Ed25519) verified with public keys; clock-skew refusal | `tests/trading/kalshi/test_kalshi_auth.py` | synthetic |
+| Secrets: file mode 0600, keychain via stub, never in repr/logs | `tests/trading/kalshi/test_kalshi_secrets.py` | synthetic |
+| Allowlisted endpoints; read backoff only; writes sent once (unknown on timeout/429/5xx) | `tests/trading/kalshi/test_kalshi_client.py`, `test_kalshi_gateway.py::test_reads_back_off_and_create_is_never_retried` | synthetic double |
+| Timeout/lost response never produces two venue orders (409 → lookup) | `test_kalshi_gateway.py::test_timeout_on_create_then_reconciliation_finds_the_order`, `::test_timeout_before_processing_none_then_safe_same_id_resubmission`, `::test_lost_response_with_rest_lag_resubmission_hits_409_then_lookup` | synthetic double |
+| Every activation gate refused individually; credential read last; only activation builds a network transport (AST check) | `tests/trading/kalshi/test_kalshi_activation.py` | synthetic |
+| Readiness CLI checks every local gate without the key | `tests/trading/kalshi/test_kalshi_cli.py` | synthetic |
+| Dry-run gateway sends nothing | `tests/trading/kalshi/test_kalshi_dryrun.py` | synthetic |
+| Canary runbook | `docs/live-canary-runbook.md` — **not executed** | document |
+
+## D/H Historical backtest and live-adapter dry run (`feat/history-backtest`, #26)
+
+| Claim | Evidence | Kind |
+|---|---|---|
+| Execution inputs use candles on both sides of C only | `tests/datasets/test_backtest.py::test_execution_inputs_use_candles_around_the_cutoff_only` | synthetic history archive |
+| Hand-checked fill: 0.75 vs ask 0.61 → one buy at 0.61; no fill without assumed depth; ≤ 2 of 4 assumed contracts fill; realized = qty × 0.39 − fees | `::test_hand_checked_fill_only_under_the_depth_scenario` | synthetic |
+| Split/dataset mismatch refused; holdout recorded in the ledger; CLI refuses unacknowledged holdout | `::test_backtest_run_reports_the_segment_and_refuses_mismatches`, `::test_holdout_backtest_is_recorded_in_the_holdout_ledger`, `::test_cli_refuses_an_unacknowledged_holdout` | synthetic |
+| A forward-shadow forecast becomes one signed, unsent POST; no edge → no request; CLI | `tests/trading/kalshi/test_shadow_dryrun.py` (HTTP sends fail the test) | synthetic |
+| Full regression at the #26 head | 1217 passed, 2 deselected (pre-existing) | — |
+
+## G Research pods (`feat/research-pods`, #27)
+
+| Claim | Evidence | Kind |
+|---|---|---|
+| Orchestration core: leases, heartbeats, kill -9 retry, coordinator restart from the database, budgets, cancellation, quarantine, scrubbed environment, no orphans | `tests/pods/test_pods_coordinator.py`, `test_pods_store.py`, `test_pods_contracts.py` | synthetic, real subprocesses |
+| Missing inputs refused at submission; corrupt snapshot fails deterministically | `test_pods_coordinator.py::test_deterministic_failures_are_not_retried` | synthetic |
+| Snapshots hold development/validation only; a smuggled holdout row is refused | `tests/pods/test_research_pods.py::test_snapshot_holds_only_development_and_validation_rows` | synthetic |
+| Pods train and search; the evaluator recomputes and rejects a CI-crossing candidate; min-N rejection | `::test_pods_train_and_search_then_the_evaluator_decides` | synthetic |
+| Holdout once per validated candidate, both ledgers | `::test_holdout_is_evaluated_once_and_recorded_in_both_ledgers` | synthetic |
+| Robustness and paper-backtest pods; pod output cannot promote to paper | `::test_robustness_and_paper_backtest_pods_on_a_candidate` | synthetic |
+| A retried training task reproduces the clean artifact digest | `::test_a_retried_training_task_reproduces_the_clean_artifact` | synthetic, SIGKILL |
+| CLI from snapshot to decision | `::test_cli_drives_a_pod_from_snapshot_to_decision` | synthetic |
+| Real 2026 data: three pod candidates, all worse than market mid on 401 validation rows, rejected | `docs/evidence/real-data-demo-20261019.md` §1, `docs/evidence/real-data-pods-20261019.json` | real historical |
+
+## H Integration (`feat/integration-demos`, #28)
+
+| Claim | Evidence | Kind |
+|---|---|---|
+| One chain: pods → evaluator → forward shadow with the pod artifact → settlement → contract-2 evaluation → shadow evidence → coordinator backtest → operator approval (paper only) → holdout once → dry-run request; hand-checked Brier/log loss and execution arithmetic | `tests/integration/test_e2e_demo.py` (`e2e_demo.py`) | synthetic |
+| Recovery: worker SIGKILL (identical artifact), coordinator SIGKILL (recovered from the database), backtest crashes (identical projections), live create timeout (one venue order, no resubmission) | `tests/integration/test_recovery_demo.py` (`recovery_demo.py`) | synthetic |
+| Candle mid/spread at C equal collected book mid/spread on 12 postseason games | `tests/integration/candle_vs_book_check.py` → `docs/evidence/candle-vs-book-20261019.json` | real, read-only |
+| Shadow tick passes the model registry (ops) | `tests/ops/test_operations.py::test_optional_model_registry_is_validated_and_passed_to_the_tick` | synthetic |
+| Live forward shadow with registered forecasters (3 pod models) around C = 23:08Z 2026-10-19 | `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models` (pending) | live public, isolated |
