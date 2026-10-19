@@ -32,7 +32,7 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #31 | `fix/review-26-27` | `e4b6770baf7332697720819bd86a0a8a7e13ea6c` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | 1303 passed |
 | #32 | `fix/review-24-25` | `3827df2adea441b33bdef56d0a48c226d5e89aa7` | repairs from the #24/#25 pre-review: skew latch, TLS trust, ambiguous writes, exits, ingest idempotency, Kelly rounding | 1317 passed |
 | #33 | `fix/review-17-23-28` | `4e44ef5877b2a3311e64a1081639ed0950017a12` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping, forecast tick abstention, synthetic label, case-insensitive ops guard | 1321 passed |
-| #34 | `feat/live-settlements` | `a02d7625aefeec0a8c75def02fc4a501c1f7f781` | F live settlement recording: venue settlements recorded only after a clean fills reconciliation and an exact match with the ledger (every venue-reported fill, counts, payout, no fee); operator resolution through the ledger | 1342 passed |
+| #34 | `feat/live-settlements` | `d1ced5f291acc23509af108ee1af16907b71c808` | F live settlement recording: venue settlements recorded only after a clean fills reconciliation and an exact match with the ledger (every venue-reported fill, counts, payout, no fee); operator resolution through the ledger | 1344 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -133,7 +133,8 @@ each finding in temp directories.
     - #34's own read-only Opus pre-review found two major defects in its first commit
       (a settlement recorded while netted fills were missing; conflicts that could not
       be cleared) and two minor ones; all four were confirmed by probes and fixed in
-      `a02d762`.
+      `a02d762`. A second pass found no sequence that settles with venue fills
+      missing, and four minor fail-closed gaps, fixed in `d1ced5f`.
   - Documented, not changed:
     - fractional quantity steps over-reserving fees;
     - reduce-only sells under unknown state (by design; guarded by venue coverage).
@@ -200,7 +201,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #31 | 1303 passed, 2 deselected (9 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 | #32 | 1317 passed, 2 deselected (14 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 | #33 | 1321 passed, 2 deselected (4 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
-| #34 | 1342 passed, 2 deselected (21 new tests) at `a02d762`; ruff clean; the synthetic e2e and recovery demos complete (at `9cca473`; no packaging or schema change) |
+| #34 | 1344 passed, 2 deselected (23 new tests) at `d1ced5f`; ruff clean; the synthetic e2e and recovery demos complete (at `9cca473`; no packaging or schema change) |
 
 ## 6. Data and model limitations
 
