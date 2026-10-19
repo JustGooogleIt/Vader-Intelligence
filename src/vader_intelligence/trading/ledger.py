@@ -13,7 +13,8 @@
 - Appending an existing key with identical content returns the existing row; different
   content raises `LedgerConflict`. Nothing is ever overwritten.
 - State (orders, positions, cash, reservations) is never stored: it is a deterministic
-  projection of the records, recomputed on demand and checked by `verify()`.
+  projection of the records, recomputed on demand and checked by `verify()`. Full reads
+  of the append-only record tables parse each committed row once (`_table_rows`).
 """
 
 import hashlib
@@ -175,6 +176,21 @@ _APPEND_ONLY = (
 )
 
 
+# Record tables whose full reads are served from parsed committed rows (`_table_rows`).
+_ROW_CACHED = frozenset(
+    (
+        "intents",
+        "approvals",
+        "rejections",
+        "orders",
+        "order_events",
+        "fills",
+        "settlements",
+        "cash_events",
+    )
+)
+
+
 def _triggers():
     out = []
     for table, unique in _APPEND_ONLY:
@@ -269,6 +285,7 @@ class Ledger:
         self.fault = None  # test hook: called with durable-step names
         self._depth = 0
         self._cache = None
+        self._committed = {}  # table -> (last rowid, parsed committed rows)
         self._stack = ExitStack()
         if not readonly:
             try:
@@ -422,8 +439,28 @@ class Ledger:
         return dict(self.db.execute("SELECT key, value FROM ledger_meta").fetchall())
 
     def _rows(self, table, factory, where="", params=(), order="rowid"):
+        if not where and table in _ROW_CACHED and order in ("rowid", "seq"):
+            return self._table_rows(table, factory)
         sql = f"SELECT data_json FROM {table} {where} ORDER BY {order}"
         return [factory(json.loads(r[0])) for r in self.db.execute(sql, params)]
+
+    def _table_rows(self, table, factory):
+        """Every row of an append-only table in rowid order, parsing committed rows once.
+
+        Triggers refuse UPDATE, DELETE and REPLACE on these tables and one writer commits
+        at a time, so a committed row never changes and every later row has a larger
+        rowid (`seq` is the rowid). Only rows read outside any transaction are kept: inside
+        one, rows this connection wrote may still roll back (and their rowids be reused)."""
+        last, committed = self._committed.get(table, (0, ()))
+        fresh = self.db.execute(
+            f"SELECT rowid, data_json FROM {table} WHERE rowid>? ORDER BY rowid", (last,)
+        ).fetchall()
+        parsed = [factory(json.loads(data)) for _, data in fresh]
+        if fresh and not self.db.in_transaction:
+            committed = (*committed, *parsed)
+            self._committed[table] = (fresh[-1][0], committed)
+            return list(committed)
+        return [*committed, *parsed]
 
     def _one(self, table, factory, key_column, key):
         rows = self._rows(table, factory, f"WHERE {key_column}=?", (key,))
@@ -816,6 +853,8 @@ class Ledger:
 
         Returns a list of failure strings (empty when the ledger is consistent).
         """
+        # Recompute from the records on disk, never from rows parsed earlier.
+        self._committed, self._cache = {}, None
         failures = []
         if self.db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             failures.append("SQLite quick_check failed")

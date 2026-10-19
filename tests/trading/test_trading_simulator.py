@@ -10,6 +10,7 @@ from _trading_synthetic import EVENT, OTHER, TICKER, D, at, book, market
 
 from vader_intelligence.normalize import book_data
 from vader_intelligence.storage import Store
+from vader_intelligence.trading import ledger as ledger_module
 from vader_intelligence.trading.fees import KALSHI_2026_02_MLB_ASSUMED, PROVISIONAL_SCHEDULES
 from vader_intelligence.trading.ledger import Ledger, LedgerConflict, LedgerError
 from vader_intelligence.trading.marketdata import (
@@ -253,6 +254,15 @@ def test_crash_restart_when_an_order_expires_before_it_arrives(tmp_path):
     assert "market_not_open" in clean.rejections_by_reason
     arrivals = [h for h in clean.exposure_history if h["input"].startswith("arrive:")]
     assert arrivals[0]["input"] == "arrive:" + first["client_order_id"]  # recorded no-op
+
+
+@pytest.mark.parametrize("pricing", ["take", "join"])
+def test_parsed_row_reuse_changes_no_result(tmp_path, monkeypatch, pricing):
+    data, config = crash_scenario(pricing)
+    cached = run_paper(config, data, tmp_path / "cached.sqlite3")
+    monkeypatch.setattr(ledger_module, "_ROW_CACHED", frozenset())
+    uncached = run_paper(config, data, tmp_path / "uncached.sqlite3")
+    assert cached.fills and cached.to_json() == uncached.to_json()
 
 
 def _crash_at_every_point(config, data, tmp_path):

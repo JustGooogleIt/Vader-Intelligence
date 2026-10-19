@@ -15,6 +15,7 @@ from _trading_synthetic import (
 )
 
 from vader_intelligence.storage import Store
+from vader_intelligence.trading import ledger as ledger_module
 from vader_intelligence.trading.ledger import (
     EnvironmentMismatch,
     Ledger,
@@ -120,6 +121,66 @@ def test_event_tables_are_append_only(tmp_path):
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
             ledger.db.execute("INSERT OR REPLACE INTO orders SELECT * FROM orders")
         assert ledger.verify() == []
+
+
+class Abort(Exception):
+    pass
+
+
+def records(ledger):
+    """Every cached table read straight from the records (no parsed-row reuse)."""
+    readers = {
+        "intents": ledger.intents,
+        "approvals": ledger.approvals,
+        "rejections": ledger.rejections,
+        "orders": ledger.orders,
+        "order_events": ledger.events,
+        "fills": ledger.fills,
+        "settlements": ledger.settlements,
+        "cash_events": ledger.cash_events,
+    }
+    assert set(readers) == ledger_module._ROW_CACHED
+    cached = {table: read() for table, read in readers.items()}
+    saved, ledger._committed = ledger._committed, {}
+    try:
+        fresh = {table: read() for table, read in readers.items()}
+    finally:
+        ledger._committed = saved
+    return cached, fresh
+
+
+def test_cached_table_reads_equal_the_records_across_rollbacks_and_readers(tmp_path):
+    tables = {table for table, _ in ledger_module._APPEND_ONLY}
+    assert ledger_module._ROW_CACHED <= tables  # only append-only tables are cached
+    path = tmp_path / "c.sqlite3"
+    with open_ledger(path) as ledger:
+        order = submitted_order(ledger)
+        ledger.append_fill(fill(order, 2, t=1))
+        cached, fresh = records(ledger)
+        assert cached == fresh and len(cached["fills"]) == 1
+        # Rows written inside a transaction are visible there but never kept: after the
+        # rollback the next fill reuses the rowid (seq) and must replace the phantom.
+        with pytest.raises(Abort):
+            with ledger.transaction("aborted"):
+                ledger.append_fill(fill(order, 3, t=2))
+                assert [f.quantity for f in ledger.fills()] == [D(2), D(3)]
+                raise Abort
+        assert [f.quantity for f in ledger.fills()] == [D(2)]
+        ledger.append_fill(fill(order, 4, t=3))
+        cached, fresh = records(ledger)
+        assert cached == fresh and [f.quantity for f in cached["fills"]] == [D(2), D(4)]
+        with Ledger(path, "paper", readonly=True) as reader:
+            assert reader.fills() == ledger.fills()
+            ledger.append_fill(fill(order, 1, t=4))
+            ledger.append_cash_event(CashEvent("dep-c", "deposit", D(5), at()))
+            assert reader.fills() == ledger.fills() and len(reader.fills()) == 3
+            assert reader.cash_events() == ledger.cash_events()
+        assert ledger.projection().orders[order.client_order_id].filled_quantity == D(7)
+        # verify() recomputes from the records on disk, not from rows parsed earlier.
+        ledger.db.execute("DROP TRIGGER fills_no_update")
+        ledger.db.execute("UPDATE fills SET data_json=replace(data_json, '\"4\"', '\"5\"')")
+        assert any("digest mismatch" in f for f in ledger.verify())
+        assert [f.quantity for f in ledger.fills()] == [D(2), D(5), D(1)]
 
 
 def test_idempotent_appends_and_conflicts(tmp_path):
