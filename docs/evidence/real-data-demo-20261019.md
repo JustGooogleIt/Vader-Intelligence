@@ -173,3 +173,54 @@ ledger per candidate and assumed depth 5 or 25, general fee schedule, 0 slippage
 250 ms latency, six parallel processes). Because of the quadratic cost, the full grid
 would take about 40 hours here. §3 already established that the dropped axes give no
 fills (one slippage tick, no depth) or change nothing (latency).
+
+## 4. Pod autopilot on the 2026 snapshot (#30)
+
+`tests/integration/autopilot_demo.py` (#30) ran on the §1 snapshot (`77ffe832…`, 1,611
+development and 401 validation rows) in the existing orchestration root. Two runs:
+
+- **Run A** (#30 at `aebec9c`): pods `auto-baseline` and `auto-symbolic`, with
+  `--accept-best`. Output: `docs/evidence/real-data-autopilot-2026-20261019.json`.
+- **Run B** (#30 at `4c9cf73`, after the logistic refinement fix): pods `auto2-*`, with
+  `--plan-only`, which accepts no candidate. Output:
+  `docs/evidence/real-data-autopilot-2026-planonly-20261019.json`.
+
+**The paid-call boundary.** A vendor-planner round on `auto-baseline` stopped with
+`paid_calls_disabled` and submitted no task.
+
+**Heuristic planner, baseline pod.** Three rounds, six `train_model` tasks, all on
+development rows. Scores are the selected configuration's chronological
+cross-validation log loss on development rows:
+
+| Round | Logistic grid → selected (dev CV) | Gradient boosting grid → selected (dev CV) |
+|---|---|---|
+| 1 | default C {0.01, 0.1, 1, 10} → 0.01 (0.68756) | default (8 configs) → lr 0.05, 100 iterations, 7 leaves (0.69191) |
+| 2 | {0.00033, 0.001, 0.0033} → 0.0033 (0.68687) | lr {0.025, 0.05} × iterations {100, 200} × leaves {3, 7, 14} → lr 0.025, 100, 3 leaves (0.68525) |
+| 3 | A: {0.01, 0.033, 0.1} → 0.01 (0.68756); B: {0.00183, 0.0033, 0.00577} → 0.0033 (0.68687) | lr {0.0125, 0.025} × {100, 200} × leaves {3, 6} → unchanged (0.68525) |
+
+- Both families then stopped: no score improved by 0.0005, so the planner proposed
+  nothing.
+- In run A, the round-3 logistic grid extended *upward*, although the best C lay between
+  earlier grids. Commit `4c9cf73` makes refinement bracket the best C between its
+  nearest tried neighbours (run B).
+- Identical tasks reproduced identical scores in both runs.
+
+**Heuristic planner, symbolic pod.** Two searches:
+
+- the default search found `pair_mid_c` (inner-split log loss 0.68545);
+- a search twice as large found `tanh(logit_pair_mid_c)` (0.68536);
+- the improvement was below 0.0005, so the planner stopped. Both expressions are the
+  market's own midpoint.
+
+**Protected evaluator (run A, one candidate per pod).** Validation was recomputed from
+the registry against market mid on 401 paired rows, where mid scores 0.67105:
+
+| Candidate | Validation log loss | Paired delta (95% CI) | Halves | Decision |
+|---|---|---|---|---|
+| gradient boosting (best dev CV 0.68525) | 0.68312 | +0.01206 (+0.00146, +0.02321) | +0.0036, +0.0194 | rejected: significantly worse than the market |
+| symbolic `tanh(logit_pair_mid_c)` | 0.67620 | +0.00515 (−0.00403, +0.01391) | −0.0010, +0.0105 | rejected |
+
+The snapshot now records 5 proposals: the 3 from §1 and these 2. Run B added none. The
+holdout was not read. The autopilot behaves as specified, and on these market-only
+features it reaches the same conclusion as the operator-run pods: nothing beats the
+market midpoint.

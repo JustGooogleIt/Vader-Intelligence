@@ -28,6 +28,7 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #27 | `feat/research-pods` | `145735cf6ba04820870e181a5ac02bff5050ffe7` | G orchestration, operations, protected evaluator (D-008) | 1272 passed |
 | #28 | `feat/integration-demos` | final head in §11 | H demos, ops model registry, run documents | 1275 passed |
 | #29 | `perf/ledger-row-cache` | `26dceed2f8fad8b22320845b40d6d3b755265057` | ledger parsed-row reuse (D-012); read-only registry for non-holdout backtests | 1279 passed |
+| #30 | `feat/pod-autopilot` | `4c9cf730cff19b96814f6c0cf51a851c6d0f6ecb` | G pod autopilot: development-only planners, bounded loop (D-013) | 1288 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -40,7 +41,7 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
 
 | Status | Items |
 |---|---|
-| **Demonstrated on real data** | rule v2 on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts, 2026-10-19); historical acquisition (2025 + 2026, with 2026 execution windows); datasets; training of logistic, gradient boosting and symbolic models; research pods and the protected evaluator on 2026 and on 2025→2026; candle vs collected book at C; paper backtest (simulated execution) on real 2026 validation candles through pods and the coordinator, which agree exactly |
+| **Demonstrated on real data** | rule v2 on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts, 2026-10-19); historical acquisition (2025 + 2026, with 2026 execution windows); datasets; training of logistic, gradient boosting and symbolic models; research pods and the protected evaluator on 2026 and on 2025→2026; the pod autopilot (heuristic planner) on the 2026 snapshot; candle vs collected book at C; paper backtest (simulated execution) on real 2026 validation candles through pods and the coordinator, which agree exactly |
 | **Demonstrated on synthetic data (asserted in the suite)** | full chain proposed → validated → shadow_tested → paper_approved with hand-checked numbers; one-time holdout in both ledgers; dry-run order request; recovery from worker and coordinator SIGKILL, backtest crashes, live create timeout |
 | **Implemented, simulated only** | paper simulator, risk engine, Kelly; Kalshi live adapter against a deterministic exchange double; dry-run gateway |
 | **Pending tonight (bounded jobs running)** | live rule-v2 forward decision at C = 23:08Z for `KXMLBGAME-26OCT192008CLETB`; live forward shadow with the three 2026 pod models as registered forecasters; two-season real-candle backtest (2,027 validation rows) |
@@ -57,6 +58,10 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
   (CI −0.0031, +0.0039), gradient boosting +0.0095 (CI +0.0035, +0.0158), symbolic
   (`logit_mid_c`) −0.0004 (CI −0.0017, +0.0010, halves disagree). All rejected.
 - The symbolic search's best expressions are the market's own midpoint or log-odds.
+- The pod autopilot on the 2026 snapshot refined grids on development cross-validation
+  over three rounds and then stopped. Both best models were rejected by the protected
+  evaluator: gradient boosting is significantly worse than market mid (+0.0121, CI
+  +0.0015 to +0.0232), and the symbolic `tanh(logit_pair_mid_c)` is the market itself.
 - Candle vs collected book at C (12 postseason games): mid and spread identical; book
   best-level sizes 11k–5.9M (archive units).
 - Paper backtest on real 2026 validation candles. This is a simulation, and selection
@@ -117,6 +122,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #27 | 1272 passed, 2 deselected |
 | #28 | 1275 passed, 2 deselected; wheel smoke complete (schemas 1–6); ops 43 passed |
 | #29 | 1279 passed, 2 deselected; the real 2026 scenario gives the same report apart from `code_hash`, with CPU time down from 78 s to 16 s |
+| #30 | 1288 passed, 2 deselected (9 new autopilot tests) |
 
 ## 6. Data and model limitations
 

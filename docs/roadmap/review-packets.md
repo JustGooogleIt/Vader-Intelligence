@@ -20,6 +20,7 @@ merged, deployed or activated; no credentials exist in this system.
 | #27 | `feat/research-pods` | G orchestration, operations, protected evaluator (D-008) | protected state, criteria | process bounds, determinism |
 | #28 | `feat/integration-demos` | H demos, ops model registry, run docs | claims | reproduction |
 | #29 | `perf/ledger-row-cache` | ledger parsed-row reuse; read-only registry for non-holdout backtests (D-012) | append-only soundness | concurrency |
+| #30 | `feat/pod-autopilot` | G autonomy: development-only planners, bounded autopilot loop (D-013) | context leakage, selection | bounds, resume, provider refusal |
 
 ## Codex Prime — evidence meaning, versioning, leakage, scoring, money correctness
 
@@ -73,6 +74,14 @@ Read first: `docs/roadmap/decisions.md` (D-001..), `docs/roadmap/evidence-index.
       (auto-engaged on `daily_loss_stop`, never auto-disengaged)?
     - `Ledger.projection()` is rebuilt after every write (quadratic paper runs). Is an
       incremental projection safe to add in its own PR?
+13. **Autopilot (#30).** Several checks:
+    - Can any validation-derived value reach `planner.context` (the allowlist,
+      `VISIBLE_FIELDS`)?
+    - Can a provider proposal reach `store.submit` without `planner.validate` and the
+      operation contract?
+    - Can the loop submit beyond its bounds?
+    - Is one accepted candidate per pod the right multiplicity control? The evaluator
+      records the snapshot's proposal count.
 
 Commands:
 

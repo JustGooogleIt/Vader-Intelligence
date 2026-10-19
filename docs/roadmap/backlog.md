@@ -52,6 +52,7 @@ D, E, F and G1 are independent of the evidence work and proceed in parallel.
 | F | Kalshi live adapter, disabled by default | D1, E | Signing, durable client IDs, unknown-submission reconciliation, rate limits, restart reconciliation, kill switch; deterministic exchange double; canary runbook (not executed) | done (#25); readiness CLI; dry-run path from forward-shadow decisions (#26); never activated |
 | G1 | Durable orchestration core | — | Tasks, leases, heartbeats, retries, budgets, cancellation, idempotent ingestion, quarantine | done (#27) |
 | G2 | Research pods and candidate lifecycle | G1, B3, C | Distinct pods; protected evaluator/holdout; promotion criteria; no live eligibility | done (#27): staged inputs, five real operations, protected evaluator, CLI; demonstrated on real 2026 data (all candidates rejected) |
+| G3 | Pod autopilot (autonomous planning of approved operations) | G2 | Development-only planning context; contract-validated proposals; bounded, resumable loop; evaluator as the only judge | demonstrated (#30, D-013): real 2026 snapshot, both best models rejected |
 | H | Integrated CLI, deterministic E2E, real-data demo, recovery demos, live dry-run | all | Commands reproducible from the handoff; claims precise | active (#28): E2E and recovery demos asserted in the suite; real-data pods, candle-vs-book check and the 2026 real-candle backtest demonstrated; two-season backtest running; live forward evidence after 05:20Z 2026-10-20 |
 
 ## Standing rules for this run

@@ -34,6 +34,7 @@ always names the exact next action.
 | #27 | `feat/research-pods` | G orchestration, real operations, protected evaluator |
 | #28 | `feat/integration-demos` | H demos (E2E, recovery, real data, candle-vs-book) and run docs |
 | #29 | `perf/ledger-row-cache` | D-012 ledger parsed-row reuse (5× less CPU per paper run); read-only registry for non-holdout backtests |
+| #30 | `feat/pod-autopilot` | D-013 pod autopilot: development-only planners and a bounded loop of approved operations |
 
 Full SHAs are in the final handoff (`docs/handoffs/roadmap-handoff.md`).
 

@@ -271,3 +271,27 @@ stays a full fold over the records, now about 15 of 42 profiled seconds. An incr
 projection would change how state is derived in the authoritative ledger; it is left as
 a separately reviewed follow-up. Result on the real scenario: the same report, with CPU
 time down from 78 s to 16 s.
+
+## D-013 Pod autonomy: planners propose approved operations from development scores (2026-10-19)
+
+Context. G asks for autonomous research pods. Until #30, a pod ran only what an operator
+submitted. The security boundary (D-008) allows only declarative, approved operations,
+because worker processes are not a security sandbox.
+
+Decision (#30, spec §9).
+
+- **The planner.** A planner chooses the next operations from a development-only
+  context: the pod's own tasks, with allowlisted fields such as development
+  cross-validation or inner-split scores and the selected configuration. Validation
+  diagnostics, candidates and the holdout are excluded, so adaptive planning cannot
+  overfit the validation rows.
+- **Proposals.** Proposals pass the same typed contracts as operator submissions;
+  nothing a planner returns is executed as code. A provider planner (LLM) exists behind
+  the `ModelProvider` interface. It runs only against the scripted double; a real vendor
+  raises `PaidCallsDisabled`.
+- **The loop.** The loop is bounded by rounds, tasks and wall time, and the bounds are
+  checked before submission. It resumes from the store after a crash, and records every
+  round as a chained artifact.
+- **Evaluation.** One candidate per pod (the best by development score) goes to the
+  protected evaluator, which recomputes the validation metrics and records the
+  snapshot's proposal count.

@@ -22,6 +22,7 @@ recorded output), **simulated** (only against synthetic data or doubles), **unte
 | F | Live Kalshi adapter, disabled by default | #25 | implemented, simulated against a deterministic double; **never activated** | D-007; canary runbook not executed; fee facts unverified |
 | G1 | Durable orchestration (leases, retries, budgets, recovery) | #27 | implemented, demonstrated (recovery demo) | not a security sandbox; approved operations only |
 | G2 | Research pods and candidate lifecycle with protected evaluator | #27 | implemented, demonstrated on real 2026 data (3 candidates rejected) and synthetic (full chain to paper_approved) | D-008; no live state |
+| G3 | Autonomous planning (pod autopilot) | #30 | implemented, demonstrated on real 2026 data (heuristic planner: 8 tasks, 2 candidates rejected) and synthetic | D-013; development-only context; provider planner only against the scripted double (paid calls disabled) |
 | H1 | Deterministic E2E demo with hand-checkable numbers | #28 | demonstrated, asserted in the suite | `tests/integration/test_e2e_demo.py` |
 | H2 | Real-data demo | #28 | demonstrated (pods, evaluator, candle-vs-book, 2026 real-candle backtest); two-season backtest running | `docs/evidence/real-data-demo-20261019.md` |
 | H3 | Recovery demos | #28 | demonstrated, asserted in the suite | `tests/integration/test_recovery_demo.py` |
