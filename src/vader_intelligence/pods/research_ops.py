@@ -13,11 +13,11 @@ that the coordinator, which imports the operation registry, stays light.
 
 import json
 import tempfile
-import time
 from decimal import Decimal
 
 from .contracts import require
 from .operations import (
+    DEFAULT_SEARCH_SECONDS,
     FEATURE_DROP_PREFIX,
     DeterministicFailure,
     EvaluateCandidateParams,
@@ -35,7 +35,6 @@ DIAGNOSTICS_KIND = "pod_diagnostics"
 SEARCH_RECORD_KIND = "search_record"
 ROBUSTNESS_KIND = "robustness_report"
 PAPER_KIND = "paper_backtest_report"
-DEADLINE_MARGIN_SECONDS = 15.0
 NOT_EVIDENCE = (
     "pod diagnostic: not promotion evidence; the protected evaluator recomputes every "
     "metric from the registry"
@@ -48,10 +47,6 @@ def _snapshot(ctx, sha256):
         return load(ctx.read_input(sha256))
     except (SnapshotRefused, KeyError, TypeError, ValueError) as exc:
         raise DeterministicFailure(f"snapshot refused: {exc}") from None
-
-
-def _remaining(ctx) -> float:
-    return max(1.0, ctx.deadline_at - time.time() - DEADLINE_MARGIN_SECONDS)
 
 
 def _emit_json(ctx, name, payload, kind):
@@ -124,7 +119,9 @@ def train_model(params: TrainModelParams, ctx):
             n_folds=h.get("n_folds", 4),
             seed=params.seed,
             max_configs=h.get("max_configs", 24),
-            deadline_seconds=_remaining(ctx),
+            # Declared, not the remaining wall time: the budget is recorded in the
+            # artifact, so a retried task must pass the same value to reproduce it.
+            deadline_seconds=float(h.get("search_seconds", DEFAULT_SEARCH_SECONDS)),
             calibration=h.get("calibration", "platt"),
         )
     except ValueError as exc:
@@ -167,7 +164,7 @@ def symbolic_search_op(params: SymbolicSearchParams, ctx):
         population=params.population,
         generations=params.max_generations,
         max_candidates=params.max_candidates,
-        max_seconds=min(params.max_seconds, _remaining(ctx)),
+        max_seconds=params.max_seconds,  # declared (recorded in the search config)
         seed=params.seed,
     )
     try:

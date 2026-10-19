@@ -305,7 +305,8 @@ def emit_artifact(params: EmitArtifactParams, ctx: OperationContext):
 
 # Research operation contracts (implementations: `pods.research_ops`) --------------------
 
-TRAIN_HYPERPARAMETERS = ("grid", "calibration", "n_folds", "max_configs")
+TRAIN_HYPERPARAMETERS = ("grid", "calibration", "n_folds", "max_configs", "search_seconds")
+DEFAULT_SEARCH_SECONDS = 300.0
 CALIBRATIONS = ("platt", "isotonic", "none")
 DIAGNOSTIC_METRICS = ("log_loss", "brier", "ece")
 PERTURBATIONS = (
@@ -353,6 +354,10 @@ class TrainModelParams:
         require(h.get("calibration", "platt") in CALIBRATIONS, "unknown calibration")
         require(2 <= h.get("n_folds", 4) <= 10, "n_folds must be in 2..10")
         require(1 <= h.get("max_configs", 24) <= 256, "max_configs must be in 1..256")
+        seconds = h.get("search_seconds", DEFAULT_SEARCH_SECONDS)
+        require(
+            isinstance(seconds, int | float) and 0 < seconds <= 86400, "search_seconds out of range"
+        )
         grid = h.get("grid", {})
         require(isinstance(grid, dict), "grid must be an object of lists")
         require(all(isinstance(v, list) and v for v in grid.values()), "grid values: lists")

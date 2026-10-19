@@ -347,3 +347,34 @@ def test_cli_drives_a_pod_from_snapshot_to_decision(research, tmp_path):
     assert [t["to"] for t in shown["transitions"]] == ["proposed", "rejected"]
     with pytest.raises(ValueError, match="acknowledge-final"):
         run("holdout", "--registry", reg, "--candidate", candidate)
+
+
+def test_a_retried_training_task_reproduces_the_clean_artifact(research, tmp_path):
+    """SIGKILL the worker mid-task: the retry's artifact digest equals a clean run's (the
+    search budget is a declared parameter, never the remaining wall time)."""
+    import os
+    import signal
+
+    from ._harness import Harness, wait_for
+
+    registry, dataset_id, manifest, rows = research
+    digests = []
+    for name, kill in (("clean", False), ("killed", True)):
+        pods = Harness(tmp_path / name)
+        try:
+            snapshot = evaluator.snapshot_dataset(pods.store, registry, dataset_id, SPLIT)
+            pods.pod("baseline", "baseline_models")
+            task = submit(pods, "baseline", "train_model", train_params(snapshot, manifest))
+            coordinator = pods.coordinator()
+            if kill:
+                coordinator.step()
+                os.kill(pods.claimed_pid(task), signal.SIGKILL)
+            coordinator.run(max_steps=20000, deadline_seconds=240)
+            wait_for(lambda: pods.state(task) == "succeeded", timeout=5)
+            outcomes = [(a["outcome"], a["reason"]) for a in pods.attempts(task)]
+            assert outcomes == ([("lost", "signal_9")] if kill else []) + [("succeeded", "result")]
+            artifacts = pods.store.result(task)["result"]["artifacts"]
+            digests.append(next(a["sha256"] for a in artifacts if a["kind"] == "model_artifact"))
+        finally:
+            pods.close()
+    assert digests[0] == digests[1]

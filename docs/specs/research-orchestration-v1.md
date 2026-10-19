@@ -150,7 +150,12 @@ in-sample), `robustness_analysis` (validation slices: by month, regular/postseas
 tight/wide spread, single-feature dropout; paired delta vs market mid per slice) and
 `paper_backtest` (validation forecasts executed against candle quotes; a small labelled
 scenario grid over slippage, latency and assumed depth). Every output carries "pod
-diagnostic: not promotion evidence".
+diagnostic: not promotion evidence". Search budgets are declared parameters
+(`hyperparameters.search_seconds`, default 300; symbolic `max_seconds`), never the
+remaining wall time: the budget is recorded in the artifact, so a retried task
+reproduces the clean run's artifact digest (tested by killing a worker mid-task). A
+search that stops on its time budget is still timing-dependent and is reported
+`partial`.
 
 **Protected evaluator** (`pods/evaluator.py`, coordinator process only):
 
