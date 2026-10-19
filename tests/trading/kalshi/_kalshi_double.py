@@ -101,6 +101,7 @@ class KalshiDouble:
         self.orders = {}  # order_id -> internal dict
         self.fill_log = []  # internal dicts, oldest first
         self.settlement_log = []  # settlement records, oldest first
+        self.hidden_settlements = set()  # ids of records not listed until published
         self.positions = {}  # ticker -> signed YES position
         self.calls = []  # (method, path, params, body)
         self.auth_failures = 0
@@ -297,6 +298,7 @@ class KalshiDouble:
     def publish(self):
         self.hidden_orders.clear()
         self.hidden_fills.clear()
+        self.hidden_settlements.clear()
 
     def _create(self, body):
         if not isinstance(body, dict) or not _CREATE_REQUIRED <= set(body):
@@ -473,15 +475,16 @@ class KalshiDouble:
         ]
         return self._page(rows, params, "market_positions")
 
-    def settle(self, ticker, result, *, value=None, fee="0", **overrides):
+    def settle(self, ticker, result, *, value=None, fee="0", hidden=False, **overrides):
         """Settle a market: resting orders are canceled, the signed position is paid
         (`value` = YES payout in cents for `scalar`), leaves the positions listing and
-        appears in the settlement listing. `overrides` replace record fields as sent."""
+        appears in the settlement listing (after `publish()` when `hidden`). `overrides`
+        replace record fields as sent."""
         for order in self.orders.values():
             if order["ticker"] == ticker and order["status"] == "resting":
                 order["remaining"], order["status"] = D(0), "canceled"
                 order["updated"] = self.clock.now()
-        cents = {"yes": 100, "no": 0}.get(result, value)
+        cents = {"yes": 100, "no": 0}.get(result, value if value is not None else 0)
         position = self.positions.pop(ticker, D(0))
         yes, no = max(position, D(0)), max(-position, D(0))
         revenue = yes * cents + no * (100 - cents)
@@ -502,10 +505,12 @@ class KalshiDouble:
             **overrides,
         }
         self.settlement_log.append(record)
+        if hidden:
+            self.hidden_settlements.add(id(record))
         return record
 
     def _list_settlements(self, params):
-        items = list(self.settlement_log)
+        items = [r for r in self.settlement_log if id(r) not in self.hidden_settlements]
         if "min_ts" in params:
             floor = EPOCH + timedelta(seconds=int(params["min_ts"]))
             items = [r for r in items if datetime.fromisoformat(r["settled_time"]) >= floor]

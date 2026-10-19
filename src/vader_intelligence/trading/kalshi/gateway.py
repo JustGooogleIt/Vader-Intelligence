@@ -44,8 +44,10 @@ How the `trading.gateway.ExchangeGateway` contract is met:
 - `balance()`: `balance_dollars` of GET /portfolio/balance (all shards); the per-shard
   breakdown is kept in `shard_balances` (MLB markets are on shard 3, facts §12).
 - `settlements_since(cursor)`: GET /portfolio/settlements?min_ts= over every page, as
-  `VenueSettlement`s (facts §2.8). Same watermark cursor and overlap as fills; two
-  different records for one ticker raise. The executor decides what is recorded.
+  `VenueSettlement`s (facts §2.8); a record that does not map is returned as an
+  `UnreadableSettlement` without hiding the others. Same watermark cursor and overlap as
+  fills; two different records for one ticker raise. The executor decides what is
+  recorded.
 
 Assumptions (UNVERIFIED or undocumented; also listed in docs/live-canary-runbook.md):
 
@@ -76,7 +78,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from ...storage import utc_now
-from ..gateway import CancelResult, SubmitResult
+from ..gateway import CancelResult, SubmitResult, UnreadableSettlement
 from ..ledger import EnvironmentMismatch
 from ..money import ZERO, in_exact, positive, utc
 from ..portfolio import Holding
@@ -103,6 +105,7 @@ from .mapping import (
     order_status,
     position_from_exchange,
     settlement_from_exchange,
+    settlement_token,
     venue_order,
 )
 
@@ -611,9 +614,14 @@ class KalshiGateway:
         items = self._pages(
             "/portfolio/settlements", {"min_ts": min_ts, "limit": PAGE_LIMIT}, "settlements"
         )
-        settlements = {}
+        settlements, unreadable = {}, {}
         for item in items:
-            settlement = settlement_from_exchange(item)
+            try:
+                settlement = settlement_from_exchange(item)
+            except MappingError as exc:
+                token = settlement_token(item)
+                unreadable.setdefault(token, UnreadableSettlement(token, exc.code))
+                continue
             previous = settlements.get(settlement.ticker)
             if previous is not None and previous != settlement:
                 raise ReconciliationMismatch(f"conflicting settlements of {settlement.ticker}")
@@ -621,7 +629,7 @@ class KalshiGateway:
         ordered = sorted(settlements.values(), key=lambda s: (s.settled_at, s.ticker))
         newest = max((epoch_seconds(s.settled_at) for s in ordered), default=start)
         watermark = max(start, min(newest, epoch_seconds(self._now())))
-        return ordered, f"ts:{watermark}"
+        return [*ordered, *sorted(unreadable.values(), key=lambda u: u.token)], f"ts:{watermark}"
 
     def positions(self):
         items = self._pages("/portfolio/positions", {"limit": PAGE_LIMIT}, "market_positions")

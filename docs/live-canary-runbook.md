@@ -122,7 +122,8 @@ ET, facts §9) and before the canary market's close time.
    reconcile until clean. Expect one ledger settlement `kalshi:<ticker>` whose result
    matches the market, no holding of that ticker, and ledger cash equal to
    `balance_dollars` (assumptions A21-A23). Any `settlement_*` reason: stop and compare
-   the GET `/portfolio/settlements` record with the ledger by hand.
+   the GET `/portfolio/settlements` record with the ledger by hand, then resolve it as
+   in §7 (venue settlements).
 
 ## 4. Success criteria
 
@@ -171,7 +172,7 @@ before production.
 | A19 | `self_trade_prevention_type = taker_at_cross`; `reduce_only` only on IOC sells | §2.1 V:OAS | `mapping` | exchange rejects the order (definitive) |
 | A20 | `fill_count_fp`/`remaining_count_fp`/`initial_count_fp`, `yes_price_dollars`, `book_side` and `status` on Order objects as in the OAS; `outcome_side` of V2 orders unused | §2.4 | `mapping` | lookups raise (fail closed) |
 | A21 | A settlement record settles the account's whole holding of its market: `yes_count_fp`/`no_count_fp` are the contracts held at settlement, `revenue` is the cash paid in integer cents, `fee_cost` is present (zero for yes/no, §7 SET); `scalar` settles at `value` cents | §2.8 (semantics UNV) | `mapping`, `executor` | `settlement_mismatch`/`settlement_fee`/`settlements_unavailable`: nothing recorded, buys blocked (fail closed) |
-| A22 | `min_ts` on the settlement listing filters on `settled_time`; one record per market and account | §2.8 (filter UNV) | `gateway`, `executor` | a missed record leaves a `position_mismatch`; a second record is a `settlement_conflict` |
+| A22 | `min_ts` on the settlement listing filters on `settled_time`; one record per market and account; a record appears within the 1 h overlap of the newest one already read | §2.8 (filter UNV) | `gateway`, `executor` | a missed record leaves a `position_mismatch`; two different records in one listing give `settlements_unavailable`; a record that changes after recording gives `settlement_conflict` |
 | A23 | A settled market leaves the default (`unsettled`) positions listing when its settlement record appears | §2.6 (timing UNV) | `executor` | a transient `position_mismatch` between the two (buys blocked until they agree) |
 
 ## 7. Known limitations
@@ -190,7 +191,20 @@ before production.
   the exchange's reported fees for fills, while risk sizing still uses the schedule.
 - The daily notional cap counts gross notional (quantity x limit) of all orders created
   that UTC day except those definitively never placed.
-- Venue settlements are recorded only when they agree exactly with the ledger (counts,
-  payout, no fee, no active order on the market). Any disagreement records nothing and
-  blocks buys; the operator resolves it (a correction is appended through the ledger,
-  never by the adapter). Settlement fees on sub-cent scalar payouts are not modelled.
+- Venue settlements are recorded only when they agree exactly with the ledger (fills
+  reconciled, every venue-reported fill recorded, no active order on the market, counts,
+  payout, no fee). Any disagreement records nothing and blocks buys until an operator
+  resolves it through the ledger, never through the adapter:
+  - `settlement_mismatch`, `settlement_fee`, `settlement_conflict`: after checking the
+    venue record, append the settlement, or a correction superseding the current one,
+    with the venue's result and value (`ledger.append_settlement(Settlement(...))`); the
+    record then agrees and the cursor moves on;
+  - `settlement_foreign`, `settlement_unreadable`: after checking that the record does
+    not belong in this ledger, acknowledge it with
+    `ledger.mark_processed(settlement_ack_key(token), {"actor": ..., "note": ...}, at)`
+    (`trading/executor.py`; `token` is the name in the reason);
+  - `settlement_fills_missing`, `settlement_orders_active`, `settlements_deferred`:
+    usually REST lag; reconcile again before doing anything.
+- Scalar settlements whose payout is not a whole number of cents for the held count
+  cannot match the venue's cent-rounded revenue (facts §7 [V:SET]) and stay
+  `settlement_mismatch` until resolved by hand. Binary MLB markets are unaffected.

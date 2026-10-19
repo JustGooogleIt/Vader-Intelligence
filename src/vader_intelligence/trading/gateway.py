@@ -114,6 +114,15 @@ class VenueSettlement:
         object.__setattr__(self, "settled_at", utc(self.settled_at, "settled_at"))
 
 
+@dataclass(frozen=True)
+class UnreadableSettlement:
+    """A venue settlement record that could not be mapped. `token` names it (its ticker
+    when that is readable) for reasons and operator acknowledgements."""
+
+    token: str
+    error: str
+
+
 class ExchangeGateway(Protocol):
     """Contract for adapters (the live adapter must honour every point):
 
@@ -128,9 +137,10 @@ class ExchangeGateway(Protocol):
       fill ids; fill quantities lie on the order's quantity step.
     - `positions()` maps ticker to a holding with `yes_qty`/`no_qty`; `balance()` is
       total cash comparable with the ledger's projected cash, or None when unknown.
-    - Optional: `settlements_since(cursor)` returns `(VenueSettlement list, next_cursor)`
-      for gateways whose venue settles markets (the live adapter). Gateways without it
-      (the simulator, the dry run) leave settlements to their caller.
+    - Optional: `settlements_since(cursor)` returns `(records, next_cursor)`, each record a
+      `VenueSettlement` or an `UnreadableSettlement`, for gateways whose venue settles
+      markets (the live adapter). Gateways without it (the simulator, the dry run) leave
+      settlements to their caller.
     """
 
     environment: str  # "paper" | "live"

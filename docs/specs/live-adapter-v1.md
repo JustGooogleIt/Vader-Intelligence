@@ -113,22 +113,46 @@ and balance mismatches indefinitely (safe, since buys stop, but never resolved).
 - **Read.** `GET /portfolio/settlements` is allowlisted with `min_ts`, `limit` and
   `cursor` only. `KalshiGateway.settlements_since(cursor)` reads every page from a
   watermark (the fills cursor scheme and overlap) and returns `VenueSettlement`s
-  (`trading/gateway.py`); two different records for one ticker raise. Results `yes` and
-  `no` settle at 1 and 0 per YES contract, `scalar` at `value` cents (ledger result
-  `fair`); any other result or a missing field fails the read.
-- **Record.** `Executor.reconcile` reads settlements after fills and before positions
-  and balance. A settlement `kalshi:<ticker>` is appended only when the market has
-  ledger orders and none is active, the settled YES/NO counts equal the ledger's
-  holding, the revenue equals that holding's payout, and the fee is zero. Otherwise it
-  reports `settlement_foreign`, `settlement_orders_active`, `settlement_mismatch`,
-  `settlement_fee` or `settlement_conflict` with the ticker, records nothing and keeps
-  the cursor, so the next reconciliation reads the record again. Gateways without
-  `settlements_since` (simulator, dry run) are unchanged.
-- **Late fills.** A fill that arrives after its market's settlement was recorded
-  stays refused by the ledger (`fill on a settled market`). With the rule above, the
-  settlement was recorded only after the ledger's holding matched the venue's settled
-  counts, so such a fill contradicts the venue's own settlement; the refusal flags the
-  state unknown for the operator. This resolves the late-fill item of the #24/#25
-  pre-review by construction rather than by relaxing the ledger.
+  (`trading/gateway.py`); two different records for one ticker in one listing raise.
+  Results `yes` and `no` settle at 1 and 0 per YES contract, `scalar` at `value` cents
+  (ledger result `fair`). A record with any other result or a missing field comes back
+  as an `UnreadableSettlement` named by its ticker (or a digest), without hiding the
+  other records. `source_ref` carries the parsed settlement instant, so another
+  spelling of the same time is the same record.
+- **Record.** `Executor.reconcile` reads settlements only after a clean fills
+  reconciliation (otherwise `settlements_deferred`), and before positions and balance.
+  A settlement `kalshi:<ticker>` is appended only when:
+  1. the market has ledger orders (`settlement_foreign`);
+  2. none of them is active (`settlement_orders_active`);
+  3. for each of them the ledger holds at least the fill count the venue reported in
+     its `reconciled` events (`settlement_fills_missing`): an order canceled at the venue
+     (for example at close) becomes terminal before its fills are served;
+  4. the fee is zero (`settlement_fee`);
+  5. the settled YES/NO counts equal the ledger's holding and the revenue equals that
+     holding's payout (`settlement_mismatch`).
+
+  A market the ledger already settled (by the executor or an operator's correction)
+  only has to agree on result and value (`settlement_conflict` otherwise). On any
+  reason (also `settlement_unreadable`), nothing is recorded for that record, the
+  others are still processed, and the cursor is kept so the next reconciliation reads
+  the record again. Gateways without `settlements_since` (simulator, dry run) are
+  unchanged.
+- **Operator resolution.** A record that keeps a reason is resolved through the ledger,
+  never by the adapter: append the settlement (or a correction superseding the current
+  one) with the venue's result and value, after which the record agrees; or, for a
+  record that does not belong in this ledger or cannot be read, acknowledge it with
+  `ledger.mark_processed(settlement_ack_key(token), {...}, at)` (an insert-once,
+  auditable record; `token` is the name in the reason). Either lets the cursor move on.
+- **Late fills.** A fill that arrives after its market's settlement was recorded stays
+  refused by the ledger (`fill on a settled market` → `fill_conflict`). Under the rule
+  above, every order on the market was terminal or filled with all venue-reported fills
+  recorded and the holding equal to the venue's settled counts, so such a fill
+  contradicts the venue's own final fill count or settlement. The refusal flags the
+  state unknown for the operator. The ledger's rule is unchanged.
 - **Assumptions.** Runbook §6 A21–A23 (record semantics, `min_ts` field, timing of the
   positions listing). All fail closed.
+- **Pre-review (Opus, read-only) before Codex.** The first version recorded a
+  settlement while fills were known to be missing when they netted to zero contracts,
+  could not clear a conflict after an operator correction, treated another spelling of
+  the settlement time as a different record, and let one unreadable record block every
+  settlement. All four were confirmed by probes and are fixed as described above.

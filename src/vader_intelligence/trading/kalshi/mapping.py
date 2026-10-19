@@ -49,6 +49,8 @@ Assumptions (UNVERIFIED; also listed in docs/live-canary-runbook.md):
   or without these fields fail closed.
 """
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -470,7 +472,7 @@ def settlement_from_exchange(data):
     revenue = _field(data, "revenue")
     if isinstance(revenue, bool) or not isinstance(revenue, int) or revenue < 0:
         raise MappingError("invalid_field", "settlement revenue is not integer cents")
-    settled_time = _field(data, "settled_time")
+    settled_at = rfc3339(_field(data, "settled_time"))
     return VenueSettlement(
         ticker=ticker,
         result=result,
@@ -479,6 +481,17 @@ def settlement_from_exchange(data):
         no_count=counts["no_count_fp"],
         revenue=Decimal(revenue) / 100,
         fee=_decimal(data, "fee_cost"),
-        settled_at=rfc3339(settled_time),
-        source_ref=f"kalshi:portfolio/settlements:{ticker}:{settled_time}",
+        settled_at=settled_at,
+        # The parsed instant, so another spelling of the same time is the same record.
+        source_ref=f"kalshi:portfolio/settlements:{ticker}:{settled_at.isoformat()}",
     )
+
+
+def settlement_token(data):
+    """A name for a settlement record that may not map: its ticker when readable, else
+    a digest of the record."""
+    ticker = data.get("ticker") if isinstance(data, dict) else None
+    if isinstance(ticker, str) and _TICKER.fullmatch(ticker):
+        return ticker
+    text = json.dumps(data, sort_keys=True, default=str)
+    return "record-" + hashlib.sha256(text.encode()).hexdigest()[:16]
