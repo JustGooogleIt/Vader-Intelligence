@@ -103,6 +103,11 @@ ledger), and the explicit statement that activation is a separate user decision.
   - A fill whose fee exceeds the order's fee bound is refused, so trading stops rather
     than reservations being silently underfunded.
   - A live approval must cite complete, recorded limits.
+- **Key material in the activation file.** `no_key_material` first detected only PEM
+  armour. It now also refuses any base64 or hex run, including one wrapped across lines
+  or quotes, that decodes to PEM text or to a DER private key, encrypted or not. A
+  SHA-256 digest or a path is not refused. (A later repair: the #24/#25 pre-review
+  listed this as documented, not changed.)
 
 ## Revision: venue settlements (2026-10-19)
 

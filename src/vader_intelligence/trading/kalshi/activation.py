@@ -18,7 +18,9 @@ Gates (stable codes, evaluated in this order):
     key_id                  a key id reference (UUID); no key material in the file
     secret_provider         [secret] provider = "file" (absolute path) or "keychain"
                             (service, account)
-    no_key_material         the file contains no PEM block / private key text
+    no_key_material         the file contains no private key: no PEM text, and no
+                            base64 or hex run that decodes to PEM text or a DER
+                            private key
     notional_caps           max_order_notional, max_daily_notional: positive decimal
                             strings, per-order <= daily
     markets                 [[markets]] allowed series/tickers with price grids
@@ -57,6 +59,8 @@ Config file (no key material; the key id is an identifier, not a secret):
 activation: `price_ranges` is the source of truth.)
 """
 
+import base64
+import binascii
 import hashlib
 import hmac
 import re
@@ -66,6 +70,7 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
+from cryptography.hazmat.primitives import serialization
 
 from ..money import dec, utc
 from ..risk import LimitsIncomplete
@@ -114,6 +119,43 @@ _SECRET_KEYS = frozenset({"provider", "path", "service", "account"})
 _MARKET_KEYS = frozenset({"series", "exchange_index", "tickers", "price_ranges"})
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _KEY_MATERIAL = (b"-----BEGIN", b"PRIVATE KEY")
+_BASE64_RUN = re.compile(rb"[A-Za-z0-9+/]{40,}={0,2}")
+_HEX_RUN = re.compile(rb"[0-9A-Fa-f]{40,}")
+_LAYOUT = re.compile(rb"[\s\"'\\]+")  # whitespace, quotes, TOML line continuations
+
+
+def _decodes_to_key(blob):
+    if any(marker in blob for marker in _KEY_MATERIAL):
+        return True
+    try:
+        serialization.load_der_private_key(blob, password=None)
+    except TypeError:  # an encrypted private key: still key material
+        return True
+    except Exception:  # not a DER private key
+        return False
+    return True
+
+
+def contains_key_material(data):
+    """True when `data` holds a private key in any form an operator might paste: PEM text,
+    or a base64 or hex run (also across line breaks and quotes) that decodes to PEM text
+    or a DER private key. A SHA-256 hex digest decodes to 32 bytes that are neither."""
+    if any(marker in data for marker in _KEY_MATERIAL):
+        return True
+    for text in (data, _LAYOUT.sub(b"", data)):
+        for match in _BASE64_RUN.finditer(text):
+            run = match.group()
+            try:
+                blob = base64.b64decode(run + b"=" * (-len(run) % 4), validate=True)
+            except (binascii.Error, ValueError):
+                continue
+            if _decodes_to_key(blob):
+                return True
+        for match in _HEX_RUN.finditer(text):
+            run = match.group()
+            if _decodes_to_key(bytes.fromhex(run[: len(run) // 2 * 2].decode())):
+                return True
+    return False
 
 
 class ActivationRefused(Exception):
@@ -260,7 +302,7 @@ def check_gates(config_path, *, acknowledge_hash, ledger, now):
         gate("acknowledge_hash", acknowledged)
 
         def no_material():
-            if any(marker in data for marker in _KEY_MATERIAL):
+            if contains_key_material(data):
                 raise ValueError("the config file must not contain key material")
 
         gate("no_key_material", no_material)

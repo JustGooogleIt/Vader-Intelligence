@@ -3,6 +3,7 @@ and incomplete limits refused, the credential read only after every other gate, 
 only `activate_live` can create a network transport. No network request is made."""
 
 import ast
+import base64
 import hashlib
 import os
 from dataclasses import replace
@@ -14,7 +15,7 @@ import httpx
 import pytest
 from _trading_synthetic import D, at
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 
 import vader_intelligence
 from vader_intelligence.trading.kalshi.activation import (
@@ -22,6 +23,7 @@ from vader_intelligence.trading.kalshi.activation import (
     ActivationRefused,
     activate_live,
     check_gates,
+    contains_key_material,
 )
 from vader_intelligence.trading.kalshi.client import LiveTransportRefused
 from vader_intelligence.trading.kalshi.gateway import KalshiGateway
@@ -280,3 +282,46 @@ def test_only_activation_creates_a_network_transport(tmp_path):
     assert users["KalshiClient"] == activation
     assert users["KalshiGateway"] == activation
     assert users["_NETWORK_TRANSPORT_KEY"] == activation | {"trading/kalshi/client.py"}
+
+
+def _pasted_forms():
+    """Ways an operator might paste a private key into the activation file (keys are
+    generated here and never leave the test)."""
+    ser = serialization
+    ed = ed25519.Ed25519PrivateKey.generate()
+    rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    der = ed.private_bytes(ser.Encoding.DER, ser.PrivateFormat.PKCS8, ser.NoEncryption())
+    pkcs1 = rsa_key.private_bytes(
+        ser.Encoding.DER, ser.PrivateFormat.TraditionalOpenSSL, ser.NoEncryption()
+    )
+    encrypted = ed.private_bytes(
+        ser.Encoding.DER, ser.PrivateFormat.PKCS8, ser.BestAvailableEncryption(b"pw")
+    )
+    pem_text = pem(ed)
+    body = b"".join(line for line in pem(rsa_key).splitlines() if b"-----" not in line)
+    wrapped = b"\\\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+    return {
+        "ed25519_der_base64": base64.b64encode(der),
+        "rsa_pkcs1_der_base64": base64.b64encode(pkcs1),
+        "encrypted_der_base64": base64.b64encode(encrypted),
+        "pem_body_wrapped": wrapped,  # armour removed, TOML line continuations
+        "pem_base64": base64.b64encode(pem_text),
+        "pem_hex": pem_text.hex().encode(),
+        "der_hex": der.hex().encode(),
+    }
+
+
+@pytest.mark.parametrize("form", sorted(_pasted_forms()))
+def test_encoded_key_material_is_refused(tmp_path, form):
+    blob = _pasted_forms()[form].decode()
+    setup = Setup(tmp_path)
+    setup.write(extra=f'note = """\n{blob}\n"""\n')
+    assert "no_key_material" in setup.refused().failed
+
+
+def test_hashes_and_paths_are_not_key_material():
+    text = (
+        f'risk_limits_hash = "{"ab" * 32}"\nkey_id = "{KEY_ID}"\n'
+        'path = "/Users/operator/Documents/AbsolutelyLongDirectoryName/kalshi/key.pem"\n'
+    ).encode()
+    assert not contains_key_material(text)
