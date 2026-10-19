@@ -119,6 +119,19 @@ def parser():
     rinspect = research_commands.add_parser("inspect", help="read-only research run inspection")
     rinspect.add_argument("--run-id", help="one run; omit to list recent runs")
     rinspect.add_argument("--limit", type=int, default=20)
+    history = commands.add_parser(
+        "history", help="public historical market data for research (dedicated archive)"
+    )
+    history_commands = history.add_subparsers(dest="history_command", required=True)
+    hacquire = history_commands.add_parser("acquire", help="bounded, resumable acquisition")
+    hacquire.add_argument("--from", dest="start", required=True, help="first game date")
+    hacquire.add_argument("--through", required=True, help="last game date (max 250 days)")
+    hacquire.add_argument("--resume", help="resume this unfinished historical-acquire run")
+    hacquire.add_argument("--max-requests", type=int, default=8000)
+    hacquire.add_argument("--budget", type=float, default=7200.0, help="seconds")
+    hacquire.add_argument("--window-seconds", type=int, default=3600)
+    hsummary = history_commands.add_parser("summary", help="read-only interpretation counts")
+    hsummary.add_argument("--run-id", help="one acquisition run; omit for the whole archive")
     return p
 
 
@@ -176,6 +189,8 @@ def execute(args):
         return _evaluation(args, config)
     if args.command == "research":
         return _research(args, config)
+    if args.command == "history":
+        return _history(args, config)
     with nullcontext() if args.command == "health" else writer_lock(config.database):
         store = Store(
             config.database, min_free_bytes=config.min_free_bytes, readonly=args.command == "health"
@@ -388,6 +403,48 @@ def _research(args, config):
     if args.out:
         summary["exported_to"] = reports.export(args.out, summary)
     return summary
+
+
+HISTORY_RUN_KINDS = ("historical-acquire",)
+
+
+def _history(args, config):
+    """Historical acquisition writes only to a dedicated archive: one holding nothing but
+    historical-acquire runs, so collector and forecast evidence never share it."""
+    from .forecast.reconstruct import parse_date
+    from .history import interpret
+    from .history.acquire import Acquisition
+
+    if args.history_command == "summary":
+        store = Store(config.database, min_free_bytes=config.min_free_bytes, readonly=True)
+        try:
+            result = interpret.summary(store.db, args.run_id)
+        finally:
+            store.close()
+        return {"status": "complete", **result}
+    with writer_lock(config.database):
+        store = Store(config.database, min_free_bytes=config.min_free_bytes)
+        try:
+            kinds = {r[0] for r in store.db.execute("SELECT DISTINCT kind FROM runs")}
+            if kinds - set(HISTORY_RUN_KINDS) or store.schema_version() != 1:
+                raise ValueError(
+                    "history acquisition requires a dedicated schema-1 archive holding only"
+                    " historical-acquire runs"
+                )
+            reader = Reader(store, config, profile="history")
+            try:
+                return Acquisition(
+                    store, reader, max_requests=args.max_requests, budget=args.budget
+                ).run(
+                    start_date=parse_date(args.start),
+                    through_date=parse_date(args.through),
+                    resume=args.resume,
+                    window_seconds=args.window_seconds,
+                )
+            finally:
+                reader.close()
+        finally:
+            store.close()
 
 
 def main():

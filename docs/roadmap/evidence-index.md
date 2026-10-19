@@ -48,3 +48,16 @@ endpoints in isolated storage; nothing here is production evidence.
 | A revision reverted before C leaves the decision eligible; one in force at C abstains with its reason | `::test_a_revision_reverted_before_cutoff_does_not_taint_the_decision`, `::test_a_revision_still_in_force_at_cutoff_abstains_with_its_reason` | synthetic |
 | Rule v2 revision before C abstains with `ticker_start_mismatch`; unwitnessed revisions do not apply at C | `tests/forecast/test_rule_v2_pipeline.py::test_start_revised_after_binding_abstains_at_cutoff_with_the_rule_v2_reason` | synthetic |
 | Full regression | 873 passed, 2 deselected (pre-existing) | — |
+
+## A4 Historical acquisition (`feat/historical-acquisition`)
+
+| Claim | Evidence | Kind |
+|---|---|---|
+| Archived with identity/raw/hash; endpoint by listing source; window ends at C; provenance retrieval_kind historical | `tests/history/test_acquire.py::test_acquisition_archives_identifies_and_chooses_the_candle_endpoint` | synthetic |
+| Both candle field variants; identity v1/v2; a moved start does not identify | `::test_interpretation_reads_both_candle_variants_and_the_identity` | synthetic |
+| Bounded partial then resume without repeated requests; changed configuration refused | `::test_bound_then_resume_completes_without_repeating_requests`, `::test_resume_refuses_a_changed_configuration` | synthetic |
+| A failed candle request is recorded, run partial, nothing fabricated | `::test_a_failed_candle_request_is_recorded_and_the_run_is_partial` | synthetic |
+| Collector allowlist unchanged; history profile admits only listed public routes | `::test_source_profiles_keep_the_collector_allowlist_unchanged` | synthetic |
+| Dedicated archive enforced | `::test_cli_refuses_an_archive_that_holds_other_evidence` | synthetic |
+| Real payload shapes: 9,378 settled markets listed; 15/15 events of 2026-09-20 identified; candles parse | bounded live probe 2026-10-19 (80 requests, scratch archive) | live public, historical retrieval |
+| Full regression | 881 passed, 2 deselected (pre-existing) | — |
