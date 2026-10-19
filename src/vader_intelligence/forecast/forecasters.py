@@ -170,3 +170,35 @@ class ForecasterRunner:
                 },
             }
         return out
+
+
+_LOADED = {}
+
+
+def predict_artifact(data, values):
+    """Model-library inference for one row (None → NaN for the artifact's own missing-value
+    treatment). Artifacts are parsed once per digest."""
+    import numpy as np
+
+    from ..models.artifact import ModelArtifact, predict_proba
+
+    sha = hashlib.sha256(data).hexdigest()
+    if sha not in _LOADED:
+        _LOADED[sha] = ModelArtifact.from_dict(json.loads(data))
+    row = np.array([[np.nan if v is None else float(v) for v in values]], dtype=np.float64)
+    return float(predict_proba(_LOADED[sha], row)[0])
+
+
+def runner_from_registry(registry_root, protocol):
+    """A runner for the protocol's forecasters read (and verified) from a research registry;
+    None when the protocol registers none."""
+    if not protocol.forecasters:
+        return None
+    from ..research.registry import Registry
+
+    registry = Registry(registry_root, readonly=True)
+    try:
+        artifacts = {sha: registry.model_artifact(sha) for sha in protocol.forecasters}
+    finally:
+        registry.close()
+    return ForecasterRunner(artifacts, predict_artifact)

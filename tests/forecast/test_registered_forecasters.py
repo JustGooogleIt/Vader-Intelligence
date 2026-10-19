@@ -196,3 +196,65 @@ def test_a_protocol_without_forecasters_keeps_its_hash_and_writes_contract_four(
     )
     assert payload["contract_version"] == 4 and payload["forecasters"] == []
     assert set(payload["results"]) == {"constant-v1", "midpoint-v1"}
+
+
+def test_a_trained_artifact_runs_at_the_cutoff_through_the_cli(tmp_path, config):
+    """Train a real logistic artifact on a synthetic registry dataset, register it as a
+    forecaster, and let the CLI tick compute its forecast from witnessed evidence."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "datasets"))
+    from test_training import SPLIT, synthetic_dataset
+
+    from vader_intelligence.cli import execute, parser
+    from vader_intelligence.forecast.forecasters import predict_artifact
+    from vader_intelligence.research import training
+    from vader_intelligence.research.registry import Registry
+    from vader_intelligence.storage import Store
+
+    root = tmp_path / "research"
+    registry = Registry(root)
+    manifest, rows = synthetic_dataset()
+    dataset_id = registry.register_dataset(manifest, rows)
+    model_id = training.train(registry, dataset_id, family="logistic", split=SPLIT)["model_id"]
+    artifact = registry.model_artifact(model_id)
+    registry.close()
+
+    db_path = Path(config.database)
+    store = Store(db_path, min_free_bytes=1)
+    to_schema6(store)
+    collect(store, config, origin=at(18, 3))
+    proto = Protocol(dataset="trained", forecasters=[model_id])
+    runner = ForecasterRunner({model_id: artifact}, predict_artifact)
+    tick_at_runner(store, proto, at(18, 3, 30), runner)
+    tick_at_runner(store, proto, at(18, 5, 30), runner)
+    (payload,) = [
+        json.loads(r[0]) for r in store.db.execute("SELECT payload_json FROM forecast_decisions")
+    ]
+    store.close()
+    result = payload["results"]["model:" + model_id[:16]]
+    names = [d.name for d in definitions.feature_set("fs-market-v1")]
+    expected = predict_artifact(artifact, [result["inputs"]["features"][n] for n in names])
+    assert result["probability"] == f"{min(max(expected, 1e-6), 1 - 1e-6):.6f}"
+
+    research_toml = tmp_path / "research.toml"
+    research_toml.write_text(f'[research]\ndataset = "cli"\nforecasters = ["{model_id}"]\n')
+    with pytest.raises(ValueError, match="--model-registry"):
+        execute(
+            parser().parse_args(
+                ["--db", str(db_path), "forecast", "tick", "--research-config", str(research_toml)]
+            )
+        )
+    ran = execute(
+        parser().parse_args(
+            [
+                "--db",
+                str(db_path),
+                "forecast",
+                "tick",
+                "--research-config",
+                str(research_toml),
+                "--model-registry",
+                str(root),
+            ]
+        )
+    )
+    assert ran["status"] in ("complete", "inconclusive", "partial")
