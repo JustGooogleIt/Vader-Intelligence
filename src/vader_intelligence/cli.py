@@ -278,6 +278,65 @@ def parser():
     )
     brun.add_argument("--ledger", help="single run into this new paper ledger (else: grid)")
     brun.add_argument("--seed", type=int, default=0)
+    pods = commands.add_parser("pods", help="research pods: orchestration and candidates")
+    pods_commands = pods.add_subparsers(dest="pods_command", required=True)
+    for name in (
+        "init",
+        "register",
+        "snapshot",
+        "execution-snapshot",
+        "submit",
+        "run",
+        "status",
+        "accept",
+        "evaluate",
+        "candidate",
+        "holdout",
+    ):
+        sub = pods_commands.add_parser(name)
+        sub.add_argument("--root", required=True, help="orchestration root directory")
+        if name in ("snapshot", "execution-snapshot", "accept", "evaluate", "holdout"):
+            sub.add_argument("--registry", required=True)
+        if name in ("snapshot", "execution-snapshot"):
+            sub.add_argument("--dataset", required=True)
+            sub.add_argument("--development-through", required=True)
+            sub.add_argument("--validation-through", required=True)
+            sub.add_argument("--embargo-days", type=int, default=1)
+        if name == "execution-snapshot":
+            sub.add_argument("--history-db", required=True)
+        if name == "register":
+            sub.add_argument("--pod", required=True)
+            sub.add_argument(
+                "--role",
+                required=True,
+                choices=("baseline_models", "symbolic_search", "robustness_execution"),
+            )
+            sub.add_argument("--max-concurrent", type=int, default=1)
+            sub.add_argument("--wall-seconds", type=float, default=900.0)
+            sub.add_argument("--memory-mb", type=int, default=4096)
+            sub.add_argument("--cpu-seconds-per-day", type=float, default=4 * 3600.0)
+        if name == "submit":
+            sub.add_argument("--pod", required=True)
+            sub.add_argument("--operation", required=True)
+            sub.add_argument("--params", required=True, help="JSON object")
+            sub.add_argument("--max-attempts", type=int, default=2)
+        if name == "run":
+            sub.add_argument("--max-steps", type=int, default=1_000_000)
+            sub.add_argument("--deadline-seconds", type=float, default=3600.0)
+        if name == "accept":
+            sub.add_argument("--task", required=True)
+        if name in ("evaluate", "candidate", "holdout"):
+            sub.add_argument("--candidate", required=True)
+        if name == "evaluate":
+            sub.add_argument("--min-n", type=int, default=100)
+            sub.add_argument("--metric", choices=("log_loss", "brier"), default="log_loss")
+            sub.add_argument("--baseline", default="market:mid_c")
+        if name == "holdout":
+            sub.add_argument(
+                "--acknowledge-final",
+                action="store_true",
+                help="required: consumes this candidate's one holdout evaluation",
+            )
     return p
 
 
@@ -349,6 +408,8 @@ def execute(args):
         return _live(args)
     if args.command == "backtest":
         return _backtest(args)
+    if args.command == "pods":
+        return _pods(args)
     with nullcontext() if args.command == "health" else writer_lock(config.database):
         store = Store(
             config.database, min_free_bytes=config.min_free_bytes, readonly=args.command == "health"
@@ -836,6 +897,102 @@ def _backtest(args):
         db.close()
         registry.close()
     return {"status": "complete"} | result
+
+
+def _pods(args):
+    """Research pods: approved operations only, no paid calls, no live state."""
+    from .datasets.splits import SplitDefinition
+    from .pods import evaluator
+    from .pods.candidates import candidate_record
+    from .pods.contracts import Budgets, ExperimentManifest, PodSpec, TaskSpec
+    from .pods.coordinator import Coordinator
+    from .pods.snapshot import feature_set_version, load
+    from .pods.store import open_store, status
+    from .provenance import source_hash
+    from .research.registry import Registry
+
+    store = open_store(args.root)
+    registry = Registry(args.registry) if getattr(args, "registry", None) else None
+    try:
+        command = args.pods_command
+        if command == "init":
+            return {"status": "complete", "root": str(store.root)}
+        if command == "register":
+            budgets = Budgets(
+                max_concurrent=args.max_concurrent,
+                wall_seconds_per_task=args.wall_seconds,
+                memory_mb=args.memory_mb,
+                cpu_seconds_per_day=args.cpu_seconds_per_day,
+            )
+            created = store.register_pod(PodSpec(args.pod, args.role, budgets))
+            return {"status": "complete", "pod": args.pod, "created": created}
+        if command in ("snapshot", "execution-snapshot"):
+            split = SplitDefinition(
+                args.development_through, args.validation_through, args.embargo_days
+            )
+            if command == "snapshot":
+                sha = evaluator.snapshot_dataset(store, registry, args.dataset, split)
+                snapshot = load(store.artifacts.get_bytes(sha))
+                return {
+                    "status": "complete",
+                    "snapshot_sha256": sha,
+                    "development_rows": len(snapshot.development),
+                    "validation_rows": len(snapshot.validation),
+                    "feature_set": snapshot.feature_set,
+                    "feature_set_version": feature_set_version(snapshot.manifest),
+                }
+            from .trading.marketdata import open_archive
+
+            db = open_archive(args.history_db)
+            try:
+                sha = evaluator.execution_snapshot(store, registry, db, args.dataset, split)
+            finally:
+                db.close()
+            return {"status": "complete", "execution_inputs_sha256": sha}
+        if command == "submit":
+            params = json.loads(args.params)
+            snapshot = load(store.artifacts.get_bytes(params["dataset_manifest_hash"]))
+            manifest = ExperimentManifest(
+                dataset_manifest_hash=params["dataset_manifest_hash"],
+                feature_set_versions={snapshot.feature_set: feature_set_version(snapshot.manifest)},
+                split={
+                    "development": {"through": snapshot.split.development_through},
+                    "validation": {"through": snapshot.split.validation_through},
+                },
+                code_hash=source_hash(),
+                operation=args.operation,
+                params=params,
+                seed=int(params.get("seed", 0)),
+                budget={"pod": args.pod},
+            )
+            manifest_sha = store.put_experiment_manifest(manifest)
+            task = TaskSpec(args.pod, args.operation, params, manifest_sha, 0, args.max_attempts)
+            return {"status": "complete", "task_id": store.submit(task)}
+        if command == "run":
+            with Coordinator(store) as coordinator:
+                report = coordinator.run(args.max_steps, args.deadline_seconds)
+            return {"status": "complete", "run": report, "pods": status(store)}
+        if command == "status":
+            return {"status": "complete", "pods": status(store)}
+        if command == "accept":
+            candidate = evaluator.accept_model(store, registry, args.task)
+            return {"status": "complete", "candidate": candidate_record(store, candidate)}
+        if command == "evaluate":
+            criteria = evaluator.Criteria(
+                baseline=args.baseline, metric=args.metric, min_n=args.min_n
+            )
+            return {"status": "complete"} | evaluator.evaluate(
+                store, registry, args.candidate, criteria
+            )
+        if command == "candidate":
+            return {"status": "complete", "candidate": candidate_record(store, args.candidate)}
+        if not args.acknowledge_final:
+            raise ValueError("holdout requires --acknowledge-final (one evaluation per candidate)")
+        return {"status": "complete"} | evaluator.evaluate_holdout(store, registry, args.candidate)
+    finally:
+        if registry is not None:
+            registry.close()
+        store.close()
 
 
 def _ledger(args):

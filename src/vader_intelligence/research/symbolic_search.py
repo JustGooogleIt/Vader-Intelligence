@@ -45,15 +45,15 @@ def inner_split(rows, fraction, embargo_days):
     return train, val, cut
 
 
-def run(registry, dataset_id, *, split, config=None, clock=time.monotonic):
+def fit(manifest, dataset_id, development, *, split, config=None, clock=time.monotonic):
+    """Search on development rows only; needs no registry (research pods call it).
+
+    Returns `{"artifact": ModelArtifact | None, "record", "experiment_manifest", "parity"}`;
+    `artifact` is None when no valid expression was found.
+    """
     config = config or SearchConfig()
-    manifest = registry.dataset(dataset_id)
-    rows = registry.dataset_rows(dataset_id)
-    development, validation = splits.development_and_validation(rows, split)
     if len(development) < training.MIN_DEVELOPMENT_ROWS:
         raise ValueError(f"insufficient development rows: {len(development)}")
-    if len(validation) < training.MIN_EVALUATION_ROWS:
-        raise ValueError(f"insufficient validation rows: {len(validation)}")
     names = [f["name"] for f in manifest["feature_set"]["features"]]
     specs = training.feature_specs(manifest)
     X, y, _, _ = training.matrices(development, names)
@@ -83,14 +83,9 @@ def run(registry, dataset_id, *, split, config=None, clock=time.monotonic):
         "config_hash": config.config_hash(),
         "code_hash": source_hash(),
     }
+    out = {"artifact": None, "record": record, "experiment_manifest": experiment_manifest}
     if result.selected is None:
-        experiment_id = registry.record_experiment(
-            "symbolic_search",
-            experiment_manifest,
-            {"status": "no_valid_expression", "search": record},
-            dataset_id=dataset_id,
-        )
-        return {"status": "inconclusive", "experiment_id": experiment_id, "search": _brief(record)}
+        return out | {"parity": None}
     model_dict = record["selected"]["model"]
     artifact = ModelArtifact(
         "symbolic",
@@ -122,22 +117,48 @@ def run(registry, dataset_id, *, split, config=None, clock=time.monotonic):
     parity = float(np.max(np.abs(predict_proba(artifact, X[inner_val]) - in_search)))
     if parity > 1e-9:
         raise ValueError(f"symbolic artifact does not reproduce the engine (parity {parity})")
+    return out | {"artifact": artifact, "parity": parity}
+
+
+def validation_metrics(artifact, manifest, validation, *, seed):
+    names = [f["name"] for f in manifest["feature_set"]["features"]]
+    Xv, yv, _, gv = training.matrices(validation, names)
+    return training.compare(predict_proba(artifact, Xv), validation, names, yv, gv, seed=seed) | {
+        "selection_biased": True,
+        "note": "the engine selected on development rows and the outer validation compares "
+        "families; only a once-evaluated holdout is unbiased",
+    }
+
+
+def run(registry, dataset_id, *, split, config=None, clock=time.monotonic):
+    config = config or SearchConfig()
+    manifest = registry.dataset(dataset_id)
+    rows = registry.dataset_rows(dataset_id)
+    development, validation = splits.development_and_validation(rows, split)
+    if len(development) < training.MIN_DEVELOPMENT_ROWS:
+        raise ValueError(f"insufficient development rows: {len(development)}")
+    if len(validation) < training.MIN_EVALUATION_ROWS:
+        raise ValueError(f"insufficient validation rows: {len(validation)}")
+    fitted = fit(manifest, dataset_id, development, split=split, config=config, clock=clock)
+    record, experiment_manifest = fitted["record"], fitted["experiment_manifest"]
+    artifact, parity = fitted["artifact"], fitted["parity"]
+    if artifact is None:
+        experiment_id = registry.record_experiment(
+            "symbolic_search",
+            experiment_manifest,
+            {"status": "no_valid_expression", "search": record},
+            dataset_id=dataset_id,
+        )
+        return {"status": "inconclusive", "experiment_id": experiment_id, "search": _brief(record)}
     model_id = registry.register_model(
         artifact.to_json(),
         family="symbolic",
         dataset_id=dataset_id,
         summary={"description": record["selected"]["description"], "parity": parity},
     )
-    Xv, yv, _, gv = training.matrices(validation, names)
-    validation_metrics = training.compare(
-        predict_proba(artifact, Xv), validation, names, yv, gv, seed=config.seed
-    ) | {
-        "selection_biased": True,
-        "note": "the engine selected on development rows and the outer validation compares "
-        "families; only a once-evaluated holdout is unbiased",
-    }
+    metrics_ = validation_metrics(artifact, manifest, validation, seed=config.seed)
     evaluation_id = registry.record_evaluation(
-        model_id, dataset_id, "validation:" + split.key, validation_metrics, selection_biased=True
+        model_id, dataset_id, "validation:" + split.key, metrics_, selection_biased=True
     )
     experiment_id = registry.record_experiment(
         "symbolic_search",
@@ -159,7 +180,7 @@ def run(registry, dataset_id, *, split, config=None, clock=time.monotonic):
         "expression": record["selected"]["description"],
         "complexity": record["selected"]["complexity"],
         "search": _brief(record),
-        "validation": validation_metrics,
+        "validation": metrics_,
         "holdout": registry.holdout_status(dataset_id, split.key),
     }
 
