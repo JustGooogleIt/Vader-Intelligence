@@ -22,6 +22,7 @@ merged, deployed or activated; no credentials exist in this system.
 | #29 | `perf/ledger-row-cache` | ledger parsed-row reuse; read-only registry for non-holdout backtests (D-012) | append-only soundness | concurrency |
 | #30 | `feat/pod-autopilot` | G autonomy: development-only planners, bounded autopilot loop (D-013) | context leakage, selection | bounds, resume, provider refusal |
 | #31 | `fix/review-26-27` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | holdout pin, evidence binding | dry-run checks, quarantine |
+| #32 | `fix/review-24-25` | repairs from the #24/#25 pre-review: skew latch, TLS trust store, ambiguous write answers, uncapped exits, ingest idempotency, Kelly rounding | ingest identity, fee bound | live adapter safety |
 
 ## Codex Prime — evidence meaning, versioning, leakage, scoring, money correctness
 

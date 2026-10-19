@@ -19,7 +19,7 @@ recorded output), **simulated** (only against synthetic data or doubles), **unte
 | C | Bounded symbolic regression | #23 | implemented, demonstrated on real data | best expression on 2026 data = `pair_mid_c` (the market) |
 | D | Credible paper execution | #24, #26 | implemented; simulated (synthetic); demonstrated as a simulation on real validation candles: 2026 (pods and coordinator agree exactly) and two seasons (2,027 games) | candles have no depth (D-010), so fills happen only under assumed depth; P&L is negative or mixed and every 95% interval contains zero; one-tick slippage means no fill with take-at-ask limits; run time quadratic, 5× faster after #29 |
 | E | Risk management and fractional Kelly | #24 | implemented, simulated | hand-verified Kelly cases; authoritative risk engine (D-006) |
-| F | Live Kalshi adapter, disabled by default | #25 | implemented, simulated against a deterministic double; **never activated** | D-007; canary runbook not executed; fee facts unverified |
+| F | Live Kalshi adapter, disabled by default | #25, #32 | implemented, simulated against a deterministic double; **never activated** | D-007; hardened after pre-review (#32); canary runbook not executed; fee facts unverified; live settlement recording not implemented |
 | G1 | Durable orchestration (leases, retries, budgets, recovery) | #27 | implemented, demonstrated (recovery demo) | not a security sandbox; approved operations only |
 | G2 | Research pods and candidate lifecycle with protected evaluator | #27 | implemented, demonstrated on real 2026 data (3 candidates rejected) and synthetic (full chain to paper_approved) | D-008; no live state |
 | G3 | Autonomous planning (pod autopilot) | #30 | implemented, demonstrated on real 2026 data (heuristic planner: 8 tasks, 2 candidates rejected) and synthetic | D-013; development-only context; provider planner only against the scripted double (paid calls disabled) |
@@ -30,5 +30,5 @@ recorded output), **simulated** (only against synthetic data or doubles), **unte
 | H5 | One-time holdout evaluation of the final candidate | — | **not done by decision** | D-009: no candidate validated; holdout untouched and pinned at 2026-09-02 (D-014, #31); path demonstrated on synthetic data |
 | X1 | No merges, deployment, production mutation, orders, paid calls, secrets | all | held | production read-only queries only; no credentials exist |
 | X2 | Stacked draft PRs, no force-push under review | #17–#28 | held | the only rewrite was of unpushed branches |
-| X4 | Independent review before Codex | #29–#31 | done (pre-review only) | read-only Opus reviews of #26, #27, #29 and #30; confirmed findings fixed in #30 (`d744766`) and #31; Codex Prime/Secondary review not yet done |
+| X4 | Independent review before Codex | #29–#32 | done (pre-review only) | read-only Opus reviews of #24, #25, #26, #27, #29 and #30; confirmed findings fixed in #30 (`d744766`), #31 and #32; Codex Prime/Secondary review not yet done |
 | X3 | Persistent run documents | #28 | implemented | continuation, backlog, decisions, evidence index, review packets, this matrix, final handoff |

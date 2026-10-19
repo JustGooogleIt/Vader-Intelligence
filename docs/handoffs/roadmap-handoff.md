@@ -30,6 +30,7 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #29 | `perf/ledger-row-cache` | `26dceed2f8fad8b22320845b40d6d3b755265057` | ledger parsed-row reuse (D-012); read-only registry for non-holdout backtests | 1279 passed |
 | #30 | `feat/pod-autopilot` | `d744766d96ebb869a9e8ab6ab1fc1c40e9ca5262` | G pod autopilot: development-only planners, bounded loop (D-013) | 1294 passed |
 | #31 | `fix/review-26-27` | `e4b6770baf7332697720819bd86a0a8a7e13ea6c` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | 1303 passed |
+| #32 | `fix/review-24-25` | `3827df2adea441b33bdef56d0a48c226d5e89aa7` | repairs from the #24/#25 pre-review: skew latch, TLS trust, ambiguous writes, exits, ingest idempotency, Kelly rounding | 1317 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -106,7 +107,27 @@ each finding in temp directories.
   - holdout results written before their ledger entry;
   - phantom dry-run exposure and an overstated dry-run claim.
 
-  All confirmed findings are fixed in #31. Codex review remains the user's step.
+  All confirmed findings are fixed in #31.
+- **#24 and #25:** no critical finding. The activation boundary, secret handling, write
+  semantics, Decimal money and the accounting identity all held.
+  - Fixed in #32:
+    - a stale or cached `Date` header that could stop shutdown from cancelling;
+    - the TLS trust store following the environment;
+    - ambiguous 4xx answers to order creation;
+    - notional caps blocking exits;
+    - sell coverage ignoring recent fills;
+    - startup reconciliation completing early;
+    - risk-limit and environment bindings;
+    - non-idempotent resent venue events;
+    - fees above their bound;
+    - a Kelly rounding edge case.
+  - Documented, not changed:
+    - live settlement recording does not exist yet;
+    - late fills on settled tickers;
+    - fractional quantity steps over-reserving fees;
+    - reduce-only sells under unknown state (by design; guarded by venue coverage).
+
+Codex review remains the user's step.
 
 ## 4. Reproduction
 
@@ -153,6 +174,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #29 | 1279 passed, 2 deselected; the real 2026 scenario gives the same report apart from `code_hash`, with CPU time down from 78 s to 16 s |
 | #30 | 1294 passed, 2 deselected (15 new autopilot tests); wheel built at this head imports `pods.planner` and `pods.autopilot`, and its smoke test is complete (schemas 1–6). A read-only Opus review of #29 and #30 found nothing critical; its confirmed findings on #30 were fixed in `d744766` |
 | #31 | 1303 passed, 2 deselected (9 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
+| #32 | 1317 passed, 2 deselected (14 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 
 ## 6. Data and model limitations
 
@@ -225,7 +247,9 @@ post-only order, cancel, reconcile, shutdown (never executed).
      seconds), so a paper run is still quadratic, with a much smaller constant.
    - An incremental projection is the remaining step. It changes how the authoritative
      ledger derives state, so it needs its own review.
-6. Only after forward evidence of edge: the demo canary per the runbook.
+6. Before any live use: record settlements in the live ledger, and accept late fills
+   timestamped before a settlement. #24/#25 pre-review, documented but not changed.
+7. Only after forward evidence of edge: the demo canary per the runbook.
 
 ## 11. Final head of #28
 
