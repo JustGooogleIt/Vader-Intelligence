@@ -15,6 +15,7 @@ confirm the frozen game identity for a binary label to score.
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from ..forecast.references import reference
 from ..settlement.models import kalshi_result
@@ -29,6 +30,7 @@ DISPOSITIONS = (
     "invalid_or_missing_outcome",
     "identity_unresolved",
     "identity_changed",
+    "schedule_changed_after_decision",
     "outcome_fetch_failed",
     "outcome_not_observed",
 )
@@ -69,8 +71,15 @@ def _version_within(db, kind, entity_key, outcomes_as_of, source_ceiling):
     ).fetchone()
 
 
-def join(db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling):
-    """Outcome disposition for one opportunity. `outcomes_as_of` is an aware datetime."""
+def join(db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling, scheduled_start=None):
+    """Outcome disposition for one opportunity. `outcomes_as_of` is an aware datetime.
+
+    `scheduled_start` is the start the opportunity was decided for. When the settlement
+    mapping confirms the same game but at another start (a postponement or time change
+    after the decision, decision D-003), the opportunity is no longer a horizon-3600
+    forecast of that game: the disposition is `schedule_changed_after_decision`,
+    explicit and never scored. A mapping without a start cannot confirm the horizon.
+    """
     if ticker is None:
         return Outcome("identity_unresolved", ("no_selected_contract",))
     attempt = db.execute(
@@ -152,6 +161,16 @@ def join(db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling):
         )
     if mapping_data.get("game_id") != game_id:
         return Outcome("identity_changed", ("mapping_game_mismatch",), **base)
+    if scheduled_start is not None:
+        played = mapping_data.get("scheduled_start")
+        if not isinstance(played, str):
+            return Outcome("schedule_changed_after_decision", ("mapping_start_unknown",), **base)
+        if datetime.fromisoformat(played.replace("Z", "+00:00")) != scheduled_start:
+            return Outcome(
+                "schedule_changed_after_decision",
+                ("start_moved:" + str(mapping_data.get("reason")),),
+                **base,
+            )
     y = eligibility.label
     winner = base.get("mlb_winner_team_id")
     agrees = None

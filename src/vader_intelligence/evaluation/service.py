@@ -40,7 +40,9 @@ from ..provenance import RunProvenanceV1, source_hash
 from ..storage import timestamp, utc_now
 from . import outcomes, scoring
 
-EVALUATOR_VERSION = "evaluation-v1"
+# evaluation-v2: one record contract per evaluation (D-001) and the
+# schedule_changed_after_decision disposition (D-003).
+EVALUATOR_VERSION = "evaluation-v2"
 HORIZON = 3600
 VIEWS = {
     "forward-shadow": "forward_shadow",
@@ -524,6 +526,9 @@ def evaluate(
                     yes_team_id=yes_team,
                     outcomes_as_of=as_of,
                     source_ceiling=source_ceiling,
+                    scheduled_start=None
+                    if record.get("scheduled_start") is None
+                    else utc(datetime.fromisoformat(record["scheduled_start"])),
                 )
                 if ticker is not None
                 else outcomes.Outcome(
