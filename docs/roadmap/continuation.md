@@ -54,11 +54,23 @@ post-cutoff windows, none failed). The real-candle backtests are recorded in `do
 
 ## Next action
 
-1. Done: two-season backtest recorded (§3b) and pushed.
-2. After 05:20 UTC 2026-10-20: read `driver-log.jsonl`, `cycle-*.json` and the
-   `shadow-evaluate` reports in both shadow directories and record the live evidence
-   (rule v2 decision; registered forecasters' forward decisions). Then run `vader live
-   dry-run --archive <models shadow.sqlite3> --forecaster model:<sha16> --ledger <new>
-   --sign-with-throwaway-key` on the real forward decision and record it.
-3. Final handoff: §11 head of #28, live results; matrix, backlog and evidence index
-   states.
+Done so far:
+- The real-candle backtests (§3, §3b) and the autopilot (§4) are recorded.
+- Every PR has had an independent read-only pre-review, with repairs in #30–#33 and the
+  open items in the handoff (§3b, §6, §8).
+
+Next:
+
+1. **≈22:00 UTC 2026-10-19:** check the first cycles of the model shadow
+   (`driver-log.jsonl`, `cycle-0.json`, `cycle-1.json` in
+   `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models`).
+2. **After 23:10 UTC:** check the rule-v2 decision at C = 23:08Z (`cycle-*.json` in
+   `.../20261019-rule-v2`), and the model shadow's decision for the same game.
+3. **After 05:20 UTC 2026-10-20:** read both `shadow-evaluate` reports and record the live
+   evidence. The fs-market-v1 models carry the D-015 caveat.
+4. **Then the dry run** on the real forward decision, with the #33 code: the corrected dry
+   run cancels each order and applies optional caps. Command: `vader live dry-run
+   --archive <models shadow.sqlite3> --forecaster model:<sha16> --ledger <new>
+   --sign-with-throwaway-key [--max-order-notional ... --max-daily-notional ...]`.
+5. **Final handoff:** verify every PR's head SHA against GitHub, write §11 (the head of
+   #28), and add the live results; update the matrix, backlog and evidence index states.
