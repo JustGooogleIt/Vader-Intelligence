@@ -41,16 +41,16 @@ D, E, F and G1 are independent of the evidence work and proceed in parallel.
 | A4 | Public historical acquisition adapter (separate source, H lineage) | A1 | Raw responses persisted with identity, retrieval time, source timestamps, interpretation version; never forward; bounded; resumable | done (`feat/historical-acquisition`); full 2025+2026 acquisition running |
 | A5 | NBA/NFL adapters | A1–A3 | League-specific identity/schedule/settlement, own eligibility tests and cohorts | todo |
 | A6 | Real-data reconstruction and bounded live smoke with rule v2 | A2 | Actual eligibility counts recorded; no production mutation | active: archive recheck done; live forward window 2026-10-19 22:45–23:20 UTC (game 00:08 UTC) |
-| B1 | Versioned point-in-time feature definitions | A1 | Feature registry with versions, availability cutoffs, missing-data treatment; leakage tests | todo |
-| B2 | Dataset builder and manifests | B1 | Content-hashed manifests listing every input identity; event-grouped chronological splits | todo |
-| B3 | Training, calibration, registry, deterministic inference | B2 | Logistic + nonlinear tabular + calibration fit on train only; JSON artifacts; compatibility failure = abstention | todo |
+| B1 | Versioned point-in-time feature definitions | A1 | Feature registry with versions, availability cutoffs, missing-data treatment; leakage tests | done (`feat/datasets-models` `549d073`) |
+| B2 | Dataset builder and manifests | B1 | Content-hashed manifests listing every input identity; event-grouped chronological splits | done (history + collection sources, registry, holdout ledger, CLI) |
+| B3 | Training, calibration, registry, deterministic inference | B2 | Logistic + nonlinear tabular + calibration fit on train only; JSON artifacts; compatibility failure = abstention | active (library agent on `feat/models-library`; pipeline next) |
 | B4 | Registered forecasters in the journal (decision contract 4) | A1, B3 | Models run at C in tick/reconstruct; evaluated beside baselines on the same population | todo |
-| C | Bounded symbolic regression research engine | B2 | Budgets, seeds, dedup, chronological validation, holdout ledger, serialization/replay | todo |
-| D1 | Execution ledger and order/fill lifecycle | — | Append-only events; idempotent ingestion; paper and live ledgers separate by construction | todo |
-| D2 | Event-driven paper simulator | D1, E | Partial fills, latency, depth, fees (versioned), conservative maker model, settlement, restart; sensitivity reports | todo |
-| E | Authoritative risk layer and fractional Kelly | D1 | All limits, reservations, kill switch, unknown-state refusal; hand-verified Kelly cases and properties | todo |
-| F | Kalshi live adapter, disabled by default | D1, E | Signing, durable client IDs, unknown-submission reconciliation, rate limits, restart reconciliation, kill switch; deterministic exchange double; canary runbook (not executed) | todo |
-| G1 | Durable orchestration core | — | Tasks, leases, heartbeats, retries, budgets, cancellation, idempotent ingestion, quarantine | todo |
+| C | Bounded symbolic regression research engine | B2 | Budgets, seeds, dedup, chronological validation, holdout ledger, serialization/replay | engine done on `feat/symbolic-engine` (`b2f184d`, 58 tests); dataset/registry integration pending |
+| D1 | Execution ledger and order/fill lifecycle | — | Append-only events; idempotent ingestion; paper and live ledgers separate by construction | done on `feat/execution-risk` (`ed67bc6`); to stack |
+| D2 | Event-driven paper simulator | D1, E | Partial fills, latency, depth, fees (versioned), conservative maker model, settlement, restart; sensitivity reports | done on `feat/execution-risk` (`220aec3`); historical candles need an explicit assumed-depth scenario option |
+| E | Authoritative risk layer and fractional Kelly | D1 | All limits, reservations, kill switch, unknown-state refusal; hand-verified Kelly cases and properties | done on `feat/execution-risk` (`479cf7f`); 78 trading tests incl. hypothesis |
+| F | Kalshi live adapter, disabled by default | D1, E | Signing, durable client IDs, unknown-submission reconciliation, rate limits, restart reconciliation, kill switch; deterministic exchange double; canary runbook (not executed) | active (agent on `feat/live-adapter`) |
+| G1 | Durable orchestration core | — | Tasks, leases, heartbeats, retries, budgets, cancellation, idempotent ingestion, quarantine | done on `feat/research-pods-core` (`3c0a79a`, 49 tests); operations to wire |
 | G2 | Research pods and candidate lifecycle | G1, B3, C | Distinct pods; protected evaluator/holdout; promotion criteria; no live eligibility | todo |
 | H | Integrated CLI, deterministic E2E, real-data demo, recovery demos, live dry-run | all | Commands reproducible from the handoff; claims precise | todo |
 
