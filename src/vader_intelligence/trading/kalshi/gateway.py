@@ -44,10 +44,9 @@ How the `trading.gateway.ExchangeGateway` contract is met:
 - `balance()`: `balance_dollars` of GET /portfolio/balance (all shards); the per-shard
   breakdown is kept in `shard_balances` (MLB markets are on shard 3, facts §12).
 - `settlements_since(cursor)`: GET /portfolio/settlements?min_ts= over every page, as
-  `VenueSettlement`s (facts §2.8); a record that does not map is returned as an
-  `UnreadableSettlement` without hiding the others. Same watermark cursor and overlap as
-  fills; two different records for one ticker raise. The executor decides what is
-  recorded.
+  `VenueSettlement`s (facts §2.8); a record that does not map, or two different records
+  for one ticker, are returned as an `UnreadableSettlement` without hiding the others.
+  Same watermark cursor and overlap as fills. The executor decides what is recorded.
 
 Assumptions (UNVERIFIED or undocumented; also listed in docs/live-canary-runbook.md):
 
@@ -624,8 +623,12 @@ class KalshiGateway:
                 continue
             previous = settlements.get(settlement.ticker)
             if previous is not None and previous != settlement:
-                raise ReconciliationMismatch(f"conflicting settlements of {settlement.ticker}")
+                unreadable[settlement.ticker] = UnreadableSettlement(
+                    settlement.ticker, "conflicting_records"
+                )
             settlements[settlement.ticker] = settlement
+        for token in unreadable:
+            settlements.pop(token, None)
         ordered = sorted(settlements.values(), key=lambda s: (s.settled_at, s.ticker))
         newest = max((epoch_seconds(s.settled_at) for s in ordered), default=start)
         watermark = max(start, min(newest, epoch_seconds(self._now())))

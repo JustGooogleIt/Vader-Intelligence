@@ -171,8 +171,8 @@ before production.
 | A18 | The account and primary subaccount are dedicated to this ledger | §2.4 | `gateway` | foreign activity blocks risk-increasing orders |
 | A19 | `self_trade_prevention_type = taker_at_cross`; `reduce_only` only on IOC sells | §2.1 V:OAS | `mapping` | exchange rejects the order (definitive) |
 | A20 | `fill_count_fp`/`remaining_count_fp`/`initial_count_fp`, `yes_price_dollars`, `book_side` and `status` on Order objects as in the OAS; `outcome_side` of V2 orders unused | §2.4 | `mapping` | lookups raise (fail closed) |
-| A21 | A settlement record settles the account's whole holding of its market: `yes_count_fp`/`no_count_fp` are the contracts held at settlement, `revenue` is the cash paid in integer cents, `fee_cost` is present (zero for yes/no, §7 SET); `scalar` settles at `value` cents | §2.8 (semantics UNV) | `mapping`, `executor` | `settlement_mismatch`/`settlement_fee`/`settlements_unavailable`: nothing recorded, buys blocked (fail closed) |
-| A22 | `min_ts` on the settlement listing filters on `settled_time`; one record per market and account; a record appears within the 1 h overlap of the newest one already read | §2.8 (filter UNV) | `gateway`, `executor` | a missed record leaves a `position_mismatch`; two different records in one listing give `settlements_unavailable`; a record that changes after recording gives `settlement_conflict` |
+| A21 | A settlement record settles the account's whole holding of its market: `yes_count_fp`/`no_count_fp` are the contracts held at settlement, `revenue` is the cash paid in integer cents, `fee_cost` is present (zero for yes/no, §7 SET); `scalar` settles at `value` cents | §2.8 (semantics UNV) | `mapping`, `executor` | `settlement_mismatch`/`settlement_fee`/`settlement_unreadable:<token>`: nothing recorded, buys blocked (fail closed) |
+| A22 | `min_ts` on the settlement listing filters on `settled_time`; one record per market and account; a record appears within the 1 h overlap of the newest one already read | §2.8 (filter UNV) | `gateway`, `executor` | a missed record leaves a `position_mismatch`; two different records for one ticker in a listing give `settlement_unreadable:<ticker>` (that ticker only); once a market is settled in the ledger only a changed result or value gives `settlement_conflict`, and other changes surface through the positions and balance checks |
 | A23 | A settled market leaves the default (`unsettled`) positions listing when its settlement record appears | §2.6 (timing UNV) | `executor` | a transient `position_mismatch` between the two (buys blocked until they agree) |
 
 ## 7. Known limitations
@@ -195,16 +195,25 @@ before production.
   reconciled, every venue-reported fill recorded, no active order on the market, counts,
   payout, no fee). Any disagreement records nothing and blocks buys until an operator
   resolves it through the ledger, never through the adapter:
-  - `settlement_mismatch`, `settlement_fee`, `settlement_conflict`: after checking the
-    venue record, append the settlement, or a correction superseding the current one,
-    with the venue's result and value (`ledger.append_settlement(Settlement(...))`); the
-    record then agrees and the cursor moves on;
-  - `settlement_foreign`, `settlement_unreadable`: after checking that the record does
-    not belong in this ledger, acknowledge it with
-    `ledger.mark_processed(settlement_ack_key(token), {"actor": ..., "note": ...}, at)`
-    (`trading/executor.py`; `token` is the name in the reason);
-  - `settlement_fills_missing`, `settlement_orders_active`, `settlements_deferred`:
-    usually REST lag; reconcile again before doing anything.
+  - `settlement_mismatch`, `settlement_conflict`: after checking the venue record,
+    append the settlement, or a correction superseding the current one, with the venue's
+    result and value (`ledger.append_settlement(Settlement(...))`); the record then
+    agrees and the cursor moves on;
+  - `settlement_fee`: as above, and record the fee the venue charged as a live cash
+    `adjustment` (negative amount) so ledger cash equals `balance_dollars`;
+  - `settlement_foreign`, `settlement_unreadable`: after checking the record (or, for
+    `conflicting_records`, the records), acknowledge it with
+    `acknowledge_settlement(ledger, token, actor=..., note=..., at=...)`
+    (`trading/executor.py`; `token` is the name in the reason). For this ledger's own
+    market, also append its settlement as above: an acknowledgement only skips the
+    record, and positions and balance keep flagging until the ledger is settled;
+  - `settlement_fills_missing`, `settlement_orders_active`: usually REST lag; reconcile
+    again before doing anything;
+  - `settlements_deferred`: the fills reconciliation reported a reason. REST lag clears
+    by itself, but a `fill_conflict` (a venue fill the ledger refuses, for example a fill
+    on a settled market) stops fills and settlements for every market until it is
+    investigated by hand against the venue's fill listing; there is no automated
+    remedy.
 - Scalar settlements whose payout is not a whole number of cents for the held count
   cannot match the venue's cent-rounded revenue (facts §7 [V:SET]) and stay
   `settlement_mismatch` until resolved by hand. Binary MLB markets are unaffected.

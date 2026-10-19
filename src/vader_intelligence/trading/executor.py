@@ -42,9 +42,17 @@ _VENUE_TERMINAL = ("canceled", "expired", "rejected", "not_found")
 
 def settlement_ack_key(token):
     """Processed-input key by which an operator acknowledges a venue settlement record
-    (a ticker, or the token of an unreadable record) as resolved outside the executor:
-    `ledger.mark_processed(settlement_ack_key(token), {...}, at)`."""
+    (a ticker, or the token of an unreadable record) as resolved outside the executor."""
     return SETTLEMENT_ACK_PREFIX + token
+
+
+def acknowledge_settlement(ledger, token, *, actor, note, at):
+    """Record an operator's acknowledgement (insert-once, auditable) that the venue
+    settlement records named `token` are resolved outside the executor, which then skips
+    them. Positions and balance are still reconciled."""
+    if not all(isinstance(v, str) and v.strip() for v in (token, actor, note)):
+        raise ValueError("an acknowledgement needs a token, an actor and a note")
+    return ledger.mark_processed(settlement_ack_key(token), {"actor": actor, "note": note}, at)
 
 
 @dataclass(frozen=True)
@@ -398,7 +406,9 @@ class Executor:
         and value. Otherwise nothing is recorded, the reason blocks risk-increasing
         orders, and the cursor is kept so the next reconciliation reads the record again;
         an operator either records the settlement through the ledger or acknowledges the
-        record (`settlement_ack_key`) after investigating.
+        record (`acknowledge_settlement`) after investigating. Once a market is settled in
+        the ledger, later changes to the venue record other than its result or value
+        surface only through the positions and balance checks.
 
         A fill arriving after its market's settlement was recorded contradicts the venue's
         own final fill count for its order or the counts it settled, and stays refused by
@@ -416,10 +426,13 @@ class Executor:
         except Exception:
             return ["settlements_unavailable"]
         reasons = []
+        acknowledged = {
+            key for key in self.ledger.processed_inputs() if key.startswith(SETTLEMENT_ACK_PREFIX)
+        }
         for item in venue:
             unreadable = isinstance(item, UnreadableSettlement)
             token = item.token if unreadable else item.ticker
-            if self.ledger.processed(settlement_ack_key(token)) is not None:
+            if settlement_ack_key(token) in acknowledged:
                 continue
             reason = "settlement_unreadable" if unreadable else self._settle(item)
             if reason is not None:

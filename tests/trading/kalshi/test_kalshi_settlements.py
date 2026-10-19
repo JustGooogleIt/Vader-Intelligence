@@ -9,9 +9,13 @@ from datetime import timedelta
 import pytest
 from _trading_synthetic import TICKER, D, at, book, make_intent, market
 
-from vader_intelligence.trading.executor import SETTLEMENTS_CURSOR, settlement_ack_key
+from vader_intelligence.trading.executor import (
+    SETTLEMENTS_CURSOR,
+    acknowledge_settlement,
+    settlement_ack_key,
+)
 from vader_intelligence.trading.kalshi.mapping import MappingError, settlement_from_exchange
-from vader_intelligence.trading.portfolio import Settlement
+from vader_intelligence.trading.portfolio import CashEvent, Settlement
 from vader_intelligence.trading.risk import Approval, ForecastStatus
 
 from ._kalshi_double import Harness, iso
@@ -19,6 +23,7 @@ from .test_kalshi_gateway import place
 
 ELSEWHERE_EVENT = "SYN-26OCT19CCCDDD"
 ELSEWHERE = ELSEWHERE_EVENT + "-CCC"
+VOID = "SYN-26OCT19EEEFFF-EEE"
 
 
 def place_on(h, t, ticker, event, probability="0.55", **intent_options):
@@ -177,42 +182,64 @@ def test_settlements_that_disagree_with_the_ledger_are_not_recorded(tmp_path, ov
     assert h.executor.needs_reconcile
 
 
-def test_operator_resolutions_clear_foreign_unreadable_and_mismatched_records(tmp_path):
+def test_operator_resolutions_clear_foreign_unreadable_and_fee_records(tmp_path):
     h, held = holding_one_fill(tmp_path)
     assert h.executor.reconcile(now=h.at(20)).clean
     h.double.settle(ELSEWHERE, "yes")  # a market this ledger never traded
-    h.double.settle("SYN-26OCT19EEEFFF-EEE", "void")  # a result we cannot map
-    record = h.double.settle(TICKER, "yes", fee_cost="0.0100")  # an unmodelled fee
+    h.double.settle(VOID, "void")  # a result we cannot map
+    h.double.settle(TICKER, "yes", fee="0.01")  # an unmodelled settlement fee
     report = h.executor.reconcile(now=h.at(3700))
-    unreadable = "settlement_unreadable:SYN-26OCT19EEEFFF-EEE"
     assert {
         "settlement_foreign:" + ELSEWHERE,
-        unreadable,
+        "settlement_unreadable:" + VOID,
         "settlement_fee:" + TICKER,
     } <= set(report.unresolved)
     cursor = h.ledger.processed(SETTLEMENTS_CURSOR)
-    # The operator investigates, acknowledges the two records outside this ledger and
-    # records the fee-bearing settlement as a correction-capable ledger settlement.
-    for token in (ELSEWHERE, "SYN-26OCT19EEEFFF-EEE"):
-        h.ledger.mark_processed(
-            settlement_ack_key(token), {"actor": "operator", "note": "not ours"}, h.at(3750)
-        )
+    # The operator investigates, acknowledges the two records outside this ledger, and
+    # records the fee-bearing settlement and its fee through the ledger.
+    for token in (ELSEWHERE, VOID):
+        acknowledge_settlement(h.ledger, token, actor="operator", note="not ours", at=h.at(3750))
     h.ledger.append_settlement(
         Settlement("operator:" + TICKER, TICKER, "yes", "1", "operator:investigated", at(3600))
     )
-    report = h.executor.reconcile(now=h.at(3800))
-    assert not any(r.startswith("settlement") for r in report.unresolved), report.unresolved
+    h.ledger.append_cash_event(
+        CashEvent("operator:settlement-fee", "adjustment", D("-0.01"), at(3750), "venue fee")
+    )
+    settled_cleanly(h, 3800)
     assert h.ledger.processed(SETTLEMENTS_CURSOR) != cursor  # moved past the records
-    assert record["fee_cost"] == "0.0100"
+
+
+def test_any_recorded_acknowledgement_counts_and_needs_a_reason(tmp_path):
+    h, held = holding_one_fill(tmp_path)
+    assert h.executor.reconcile(now=h.at(20)).clean
+    h.double.settle(VOID, "void")
+    assert h.executor.reconcile(now=h.at(3700)).unresolved == ("settlement_unreadable:" + VOID,)
+    with pytest.raises(ValueError):
+        acknowledge_settlement(h.ledger, VOID, actor="operator", note=" ", at=h.at(3750))
+    h.ledger.mark_processed(settlement_ack_key(VOID), None, h.at(3750))  # data-less, still an ack
+    assert h.executor.reconcile(now=h.at(3800)).clean
+
+
+def test_two_records_for_one_ticker_block_only_that_ticker(tmp_path):
+    h, held = holding_one_fill(tmp_path)
+    assert h.executor.reconcile(now=h.at(20)).clean
+    first = h.double.settle(ELSEWHERE, "yes")
+    h.double.settlement_log.append(first | {"market_result": "no"})
+    h.double.settle(TICKER, "yes")
+    report = h.executor.reconcile(now=h.at(3700))
+    assert report.unresolved == ("settlement_unreadable:" + ELSEWHERE,)
+    assert len(h.ledger.settlements()) == 1  # ours is recorded
+    acknowledge_settlement(h.ledger, ELSEWHERE, actor="operator", note="two records", at=h.at(3750))
+    settled_cleanly(h, 3800)
 
 
 def test_an_unreadable_record_does_not_hide_this_ledgers_settlement(tmp_path):
     h, held = holding_one_fill(tmp_path)
     assert h.executor.reconcile(now=h.at(20)).clean
-    h.double.settle("SYN-26OCT19EEEFFF-EEE", "void")
+    h.double.settle(VOID, "void")
     h.double.settle(TICKER, "yes")
     report = h.executor.reconcile(now=h.at(3700))
-    assert report.unresolved == ("settlement_unreadable:SYN-26OCT19EEEFFF-EEE",)
+    assert report.unresolved == ("settlement_unreadable:" + VOID,)
     assert len(h.ledger.settlements()) == 1
     assert h.ledger.projection().portfolio.cash == h.double.cash
 

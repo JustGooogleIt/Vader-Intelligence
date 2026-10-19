@@ -113,11 +113,11 @@ and balance mismatches indefinitely (safe, since buys stop, but never resolved).
 - **Read.** `GET /portfolio/settlements` is allowlisted with `min_ts`, `limit` and
   `cursor` only. `KalshiGateway.settlements_since(cursor)` reads every page from a
   watermark (the fills cursor scheme and overlap) and returns `VenueSettlement`s
-  (`trading/gateway.py`); two different records for one ticker in one listing raise.
-  Results `yes` and `no` settle at 1 and 0 per YES contract, `scalar` at `value` cents
-  (ledger result `fair`). A record with any other result or a missing field comes back
-  as an `UnreadableSettlement` named by its ticker (or a digest), without hiding the
-  other records. `source_ref` carries the parsed settlement instant, so another
+  (`trading/gateway.py`). Results `yes` and `no` settle at 1 and 0 per YES contract,
+  `scalar` at `value` cents (ledger result `fair`). A record with any other result or a
+  missing field, and two different records for one ticker (`conflicting_records`), come
+  back as an `UnreadableSettlement` named by its ticker (or a digest), without hiding
+  the other records. `source_ref` carries the parsed settlement instant, so another
   spelling of the same time is the same record.
 - **Record.** `Executor.reconcile` reads settlements only after a clean fills
   reconciliation (otherwise `settlements_deferred`), and before positions and balance.
@@ -132,17 +132,22 @@ and balance mismatches indefinitely (safe, since buys stop, but never resolved).
      holding's payout (`settlement_mismatch`).
 
   A market the ledger already settled (by the executor or an operator's correction)
-  only has to agree on result and value (`settlement_conflict` otherwise). On any
+  only has to agree on result and value (`settlement_conflict` otherwise); any other
+  later change to the venue record surfaces only through the positions and balance
+  checks. On any
   reason (also `settlement_unreadable`), nothing is recorded for that record, the
   others are still processed, and the cursor is kept so the next reconciliation reads
   the record again. Gateways without `settlements_since` (simulator, dry run) are
   unchanged.
 - **Operator resolution.** A record that keeps a reason is resolved through the ledger,
   never by the adapter: append the settlement (or a correction superseding the current
-  one) with the venue's result and value, after which the record agrees; or, for a
-  record that does not belong in this ledger or cannot be read, acknowledge it with
-  `ledger.mark_processed(settlement_ack_key(token), {...}, at)` (an insert-once,
-  auditable record; `token` is the name in the reason). Either lets the cursor move on.
+  one) with the venue's result and value, after which the record agrees (a settlement
+  fee is recorded as a cash adjustment); or, for a record that does not belong in this
+  ledger or cannot be read, acknowledge it with `acknowledge_settlement(ledger, token,
+  actor=..., note=..., at=...)` (an insert-once, auditable record; any recorded key
+  counts; `token` is the name in the reason). For this ledger's own market an
+  unreadable record needs both. Either lets the cursor move on. A `fill_conflict` (which
+  defers settlements for every market) has no automated remedy.
 - **Late fills.** A fill that arrives after its market's settlement was recorded stays
   refused by the ledger (`fill on a settled market` → `fill_conflict`). Under the rule
   above, every order on the market was terminal or filled with all venue-reported fills
@@ -155,4 +160,8 @@ and balance mismatches indefinitely (safe, since buys stop, but never resolved).
   settlement while fills were known to be missing when they netted to zero contracts,
   could not clear a conflict after an operator correction, treated another spelling of
   the settlement time as a different record, and let one unreadable record block every
-  settlement. All four were confirmed by probes and are fixed as described above.
+  settlement. All four were confirmed by probes and are fixed as described above. A
+  second read-only pass found no sequence that records a settlement with venue fills
+  missing, and four minor gaps (a data-less acknowledgement ignored, two records for one
+  ticker still blocking every market, and runbook remedies for fees, own unreadable
+  records and `fill_conflict`), fixed as described above.
