@@ -692,6 +692,26 @@ class ShadowConfigurationTests(ShadowFixture):
         with self.assertRaises(ValueError):
             validate(config)  # the whole root is forbidden, so the database inside it is too
 
+    def test_optional_model_registry_is_validated_and_passed_to_the_tick(self):
+        from ops.common import tick_command
+
+        registry = self.root / "registry"
+        registry.mkdir()
+        config = dict(self.config, shadow=dict(self.config["shadow"], model_registry=str(registry)))
+        validated = validate(config)
+        argv = tick_command(validated)
+        self.assertEqual(argv[argv.index("--model-registry") + 1], str(registry))
+        self.assertNotIn("--model-registry", tick_command(validate(self.config)))
+        missing = dict(config, shadow=dict(config["shadow"], model_registry=str(self.root / "no")))
+        with self.assertRaises(ValueError):
+            validate(missing)
+        banned = self.production / "registry"
+        banned.mkdir()
+        inside = dict(config, shadow=dict(config["shadow"], model_registry=str(banned)))
+        with self.assertRaises(ValueError) as caught:
+            validate(inside)
+        self.assertIn("forbidden production path", str(caught.exception))
+
     def test_configure_writes_the_shadow_block(self):
         args = argparse.Namespace(
             **dict(

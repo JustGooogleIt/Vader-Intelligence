@@ -38,6 +38,9 @@ def parser():
     )
     configure.add_argument("--tick-budget", type=int, default=15)
     configure.add_argument(
+        "--shadow-model-registry", help="research registry holding the protocol's forecasters"
+    )
+    configure.add_argument(
         "--forbid",
         action="append",
         default=[],
@@ -95,6 +98,9 @@ def configure(args):
             "tick_budget": getattr(args, "tick_budget", 15),
             "forbidden_paths": [str(absolute(item).resolve()) for item in forbid],
         }
+        registry = getattr(args, "shadow_model_registry", None)
+        if registry:
+            config["shadow"]["model_registry"] = str(absolute(registry).resolve())
     elif forbid:
         raise ValueError("--forbid applies only with --shadow-research-config")
     validate(config)
