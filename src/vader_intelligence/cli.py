@@ -292,11 +292,33 @@ def parser():
         "evaluate",
         "candidate",
         "holdout",
+        "autopilot",
     ):
         sub = pods_commands.add_parser(name)
         sub.add_argument("--root", required=True, help="orchestration root directory")
         if name in ("snapshot", "execution-snapshot", "accept", "evaluate", "holdout"):
             sub.add_argument("--registry", required=True)
+        if name == "autopilot":
+            sub.add_argument("--registry", help="required with --accept-best")
+            sub.add_argument("--pod", required=True)
+            sub.add_argument("--snapshot", required=True, help="snapshot sha256 (pods snapshot)")
+            sub.add_argument(
+                "--planner",
+                choices=("heuristic", "vendor"),
+                default="heuristic",
+                help="vendor: a real provider, which raises (paid calls are disabled)",
+            )
+            sub.add_argument("--vendor", default="unspecified")
+            sub.add_argument("--rounds", type=int, default=3)
+            sub.add_argument("--max-tasks", type=int, default=12)
+            sub.add_argument("--max-tasks-per-round", type=int, default=4)
+            sub.add_argument("--deadline-seconds", type=float, default=3600.0)
+            sub.add_argument("--seed", type=int, default=0)
+            sub.add_argument(
+                "--accept-best",
+                action="store_true",
+                help="accept the best model by development score; the evaluator decides",
+            )
         if name in ("snapshot", "execution-snapshot"):
             sub.add_argument("--dataset", required=True)
             sub.add_argument("--development-through", required=True)
@@ -327,7 +349,7 @@ def parser():
             sub.add_argument("--task", required=True)
         if name in ("evaluate", "candidate", "holdout"):
             sub.add_argument("--candidate", required=True)
-        if name == "evaluate":
+        if name in ("evaluate", "autopilot"):
             sub.add_argument("--min-n", type=int, default=100)
             sub.add_argument("--metric", choices=("log_loss", "brier"), default="log_loss")
             sub.add_argument("--baseline", default="market:mid_c")
@@ -904,13 +926,13 @@ def _backtest(args):
 def _pods(args):
     """Research pods: approved operations only, no paid calls, no live state."""
     from .datasets.splits import SplitDefinition
-    from .pods import evaluator
+    from .pods import autopilot, evaluator, planner
     from .pods.candidates import candidate_record
-    from .pods.contracts import Budgets, ExperimentManifest, PodSpec, TaskSpec
+    from .pods.contracts import Budgets, PodSpec
     from .pods.coordinator import Coordinator
+    from .pods.providers import UnwiredVendorProvider
     from .pods.snapshot import feature_set_version, load
     from .pods.store import open_store, status
-    from .provenance import source_hash
     from .research.registry import Registry
 
     store = open_store(args.root)
@@ -953,23 +975,36 @@ def _pods(args):
             return {"status": "complete", "execution_inputs_sha256": sha}
         if command == "submit":
             params = json.loads(args.params)
-            snapshot = load(store.artifacts.get_bytes(params["dataset_manifest_hash"]))
-            manifest = ExperimentManifest(
-                dataset_manifest_hash=params["dataset_manifest_hash"],
-                feature_set_versions={snapshot.feature_set: feature_set_version(snapshot.manifest)},
-                split={
-                    "development": {"through": snapshot.split.development_through},
-                    "validation": {"through": snapshot.split.validation_through},
-                },
-                code_hash=source_hash(),
-                operation=args.operation,
-                params=params,
-                seed=int(params.get("seed", 0)),
-                budget={"pod": args.pod},
+            task_id = autopilot.submit_operation(
+                store, args.pod, args.operation, params, max_attempts=args.max_attempts
             )
-            manifest_sha = store.put_experiment_manifest(manifest)
-            task = TaskSpec(args.pod, args.operation, params, manifest_sha, 0, args.max_attempts)
-            return {"status": "complete", "task_id": store.submit(task)}
+            return {"status": "complete", "task_id": task_id}
+        if command == "autopilot":
+            if args.accept_best and registry is None:
+                raise ValueError("--accept-best requires --registry")
+            if args.planner == "heuristic":
+                chosen = planner.HeuristicPlanner(seed=args.seed)
+            else:
+                chosen = planner.ProviderPlanner(UnwiredVendorProvider(args.vendor), seed=args.seed)
+            criteria = evaluator.Criteria(
+                baseline=args.baseline, metric=args.metric, min_n=args.min_n
+            )
+            with Coordinator(store) as coordinator:
+                summary = autopilot.run(
+                    store,
+                    registry,
+                    pod_id=args.pod,
+                    snapshot_sha=args.snapshot,
+                    planner=chosen,
+                    coordinator=coordinator,
+                    rounds=args.rounds,
+                    max_tasks=args.max_tasks,
+                    max_tasks_per_round=args.max_tasks_per_round,
+                    deadline_seconds=args.deadline_seconds,
+                    accept_best=args.accept_best,
+                    criteria=criteria,
+                )
+            return {"status": "complete"} | summary
         if command == "run":
             with Coordinator(store) as coordinator:
                 report = coordinator.run(args.max_steps, args.deadline_seconds)
