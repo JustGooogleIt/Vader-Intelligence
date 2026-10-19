@@ -294,7 +294,8 @@ def build_summary(
         "request": outcome.request,
         "policy": {
             "parser_version": PARSER_VERSION,
-            "mapping_version": 1,
+            "mapping_version": 2 if "rule-v2" in config.eligibility_rules else 1,
+            "eligibility_rules": list(config.eligibility_rules),
             "predicate": "scope.eligible",
             "code_hash": code_hash,
             "collection_protocol": COLLECTION_PROTOCOL,

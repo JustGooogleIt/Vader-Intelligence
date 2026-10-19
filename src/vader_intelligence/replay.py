@@ -1,6 +1,5 @@
 import hashlib
 import json
-from dataclasses import asdict
 from pathlib import Path
 
 from .normalize import normalizer
@@ -75,7 +74,7 @@ def import_fixture(store, path, config):
         raise ValueError("fixture cannot modify a live run")
     if row is None:
         store.start_run(
-            RunProvenanceV1(run_id, "fixture", source_hash(), asdict(config)),
+            RunProvenanceV1(run_id, "fixture", source_hash(), config.provenance()),
             manifest["started_at"],
         )
     for index, entry in enumerate(manifest["responses"]):
