@@ -37,7 +37,17 @@ Specification: `docs/specs/live-adapter-v1.md`. API facts and their verification
 7. A fresh live ledger: `Ledger(path, "live")`, then
    - one `adjustment` cash event equal to the venue balance (`balance_dollars`);
    - the operator's complete `RiskLimits` (`ledger.record_limits(...)`; `require_complete`
-     must pass) — note the returned limits hash for the config;
+     must pass) — note the returned limits hash for the config. Size them within the
+     activation file's caps (step 9): `max_order_cost` at or below `max_order_notional`
+     and `max_order_contracts` at the canary size. The risk engine's order cost includes
+     the fee bound, so an approved order's notional then fits the cap. With
+     `RiskEngine("live", clip_to_limits=True)` a larger Kelly size is clipped down; without
+     clipping it is refused as `order_cost_limit`. Otherwise the risk engine approves a
+     size that the gateway refuses as `local:order_notional_cap`. That is fail closed,
+     since nothing is sent, but no canary order is placed. The 2026-10-19 dry run on a real
+     forward decision shows this: under the simulation limits for 1000, 8 contracts at
+     0.42 (notional 3.36) were approved and then refused by a 1.00 cap. A smaller bankroll
+     is not a substitute: with 20, the Kelly target was below one contract (`size_zero`);
    - an explicit operator disengage of the kill switch (`ledger.set_kill_switch(False,
      reason, actor, at)`; a live ledger starts engaged).
 8. Market metadata for the canary ticker re-checked from the public market endpoint:
