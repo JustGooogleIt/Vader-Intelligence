@@ -696,4 +696,5 @@ def test_evaluate_and_inspect_through_the_cli(tmp_path, monkeypatch):
         "1": 1,
         "2": 0,
         "3": 0,
+        "4": 0,
     }

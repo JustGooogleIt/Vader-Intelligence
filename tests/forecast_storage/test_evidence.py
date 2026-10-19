@@ -249,6 +249,7 @@ def test_contract_one_receipt_contributes_nothing_whatever_time_it_claims(archiv
         "1": 1,
         "2": 0,
         "3": 1,
+        "4": 0,
     }
 
 

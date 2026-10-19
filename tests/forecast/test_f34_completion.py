@@ -383,6 +383,7 @@ def test_reconstruct_through_the_cli(tmp_path):
         "1": 0,
         "2": 0,
         "3": 2,
+        "4": 0,
     }
 
 

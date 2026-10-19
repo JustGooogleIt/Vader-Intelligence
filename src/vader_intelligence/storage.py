@@ -52,7 +52,7 @@ class Store:
             )
             self.db.row_factory = sqlite3.Row
             self.db.execute("PRAGMA query_only=ON")
-            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5):
+            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5, 6):
                 self.db.close()
                 raise RuntimeError("unsupported database schema")
             if self.db.execute("PRAGMA user_version").fetchone()[0] >= 3:
@@ -109,7 +109,7 @@ class Store:
 
     def _validated_schema_version(self):
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, 4, 5):
+        if version not in (0, 1, 2, 3, 4, 5, 6):
             raise RuntimeError(f"unsupported database schema version {version}")
         if version >= 3:
             from .forecast.schema import check_contracts, check_schema

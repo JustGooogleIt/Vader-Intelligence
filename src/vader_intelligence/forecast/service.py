@@ -454,6 +454,7 @@ def decide_opportunity(
     namespace,
     dataset=None,
     source_ceiling=None,
+    runner=None,
 ):
     """Compute and persist the cutoff decision for one prepared binding at its C.
 
@@ -466,6 +467,7 @@ def decide_opportunity(
     db = store.db
     dataset = protocol.dataset if dataset is None else dataset
     evidence_mode = "forward_shadow" if mode == "historical_reconstruction" else mode
+    contract = decision_contract(store, protocol, runner)
     binding = load_binding(db, binding_id)
     facts = cutoff_facts(db, binding=binding, namespace=namespace, evidence_mode=evidence_mode)
     projection, renewal, inputs = facts.projection, facts.renewal, facts.inputs
@@ -536,7 +538,7 @@ def decide_opportunity(
 
     envelope = {
         "schema_version": 1,
-        "contract_version": 3,
+        "contract_version": contract,
         "run_id": run_id,
         "created_at": created_at,
         "code_hash": code_hash,
@@ -565,6 +567,13 @@ def decide_opportunity(
         "source_ceiling": source_ceiling,
         "supersedes_id": None,
     }
+    if contract == 4:
+        # Registered forecasters (D-004) from evidence witnessed by C only.
+        envelope["forecasters"] = runner.descriptors() if runner is not None else []
+        if runner is not None:
+            envelope["results"] |= runner.results(
+                db, binding=binding, facts=facts, namespace=namespace, evidence_mode=evidence_mode
+            )
     decision_id, decision_digest = store.append_forecast("forecast_decisions", envelope)
     return DecisionResult(
         decision_id=decision_id,
@@ -575,6 +584,25 @@ def decide_opportunity(
         midpoint_probability=facts.midpoint_probability,
         midpoint_reasons=tuple(facts.midpoint_reasons),
     )
+
+
+def decision_contract(store, protocol, runner):
+    """Contract of new decisions: 4 on schema 6 (forecasters, possibly none), else 3.
+    A protocol that registers forecasters needs schema 6 and the matching artifacts."""
+    version = store.schema_version()
+    if protocol.forecasters:
+        if version < 6:
+            raise ValueError(
+                "registered forecasters require decision contract 4: "
+                "vader forecast migrate --record-contract 4"
+            )
+        if runner is None:
+            raise ValueError("registered forecasters require their model artifacts (registry)")
+    if runner is not None:
+        loaded = sorted(d["artifact_sha256"] for d in runner.descriptors())
+        if loaded != list(protocol.forecasters):
+            raise ValueError("loaded artifacts differ from the protocol's forecasters")
+    return 4 if version >= 6 else 3
 
 
 def redecide(db, decision_id, namespace):

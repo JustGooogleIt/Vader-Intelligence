@@ -115,9 +115,9 @@ def validate_links(db, table, p, rules="current"):
     if rules not in RULES:
         raise ValueError("unknown rule set")
     current = rules == "current"
-    contract = contracts.version(table, p) if table in contracts.CONTRACT_TABLES else 1
-    if contract == 3 and not current:
-        raise ValueError("contract 3 has only the current rule set")
+    contract = contracts.version(table, p)
+    if not current and not legacy_capable(table, contract):
+        raise ValueError(f"contract {contract} of {table} has only the current rule set")
     run = db.execute("SELECT kind,provenance_json FROM runs WHERE id=?", (p["run_id"],)).fetchone()
     if run is None or (run[0] == "fixture" and p["mode"] != "synthetic"):
         raise ValueError("missing run or synthetic lineage mismatch")
@@ -193,14 +193,16 @@ def validate_links(db, table, p, rules="current"):
             for receipt_id in cited_receipts(p):
                 if receipt_id is None or record_contract(db, "forecast_receipts", receipt_id) != 2:
                     raise ValueError("contract-2 decision cannot cite a contract-1 receipt")
-        elif contract == 3:
+        elif contract >= 3:
             from .evidence import receipt_is_proof
 
             for receipt_id in cited_receipts(p):
                 # Contract 3 cites operational proof only: a contract-3 receipt, or a
                 # contract-2 receipt that satisfies the operational-witness predicate.
                 if receipt_id is None or not receipt_is_proof(db, receipt_id):
-                    raise ValueError("contract-3 decision may cite operational receipts only")
+                    raise ValueError(
+                        f"contract-{contract} decision may cite operational receipts only"
+                    )
         if p["supersedes_id"] is not None:
             prior = json.loads(row_dict(db, table, {"id": p["supersedes_id"]})["payload_json"])
             if prior["dataset"] == p["dataset"] or any(
@@ -296,12 +298,21 @@ def validate_links(db, table, p, rules="current"):
         )
         if p["run_id"] != evaluation["run_id"] or p["config_hash"] != evaluation["config_hash"]:
             raise ValueError("evaluation item provenance mismatch")
+        if contracts.version(table, p) != contracts.version("evaluation_runs", evaluation):
+            raise ValueError("evaluation item contract differs from its evaluation")
+        names = set(contracts.BASELINES) | set(
+            contracts.forecaster_ids(evaluation.get("forecasters", []))
+        )
+        if set(p["scores"]) != names:
+            raise ValueError("evaluation item scores differ from the evaluation's forecasters")
         if p["decision_id"] is not None:
             decision = json.loads(
                 parent(db, "forecast_decisions", p["decision_id"], p["mode"])["payload_json"]
             )
             if decision["game_id"] != p["game_id"] or decision["horizon"] != p["horizon"]:
                 raise ValueError("evaluation opportunity mismatch")
+            if decision.get("forecasters", []) != evaluation.get("forecasters", []):
+                raise ValueError("evaluation forecasters differ from the decision's")
             if any(decision[k] != evaluation[k] for k in ("dataset", "protocol", "config_hash")):
                 raise ValueError("evaluation decision cohort mismatch")
             for name, score in p["scores"].items():
@@ -374,21 +385,48 @@ def validate_links(db, table, p, rules="current"):
                 raise ValueError("forward score needs publication evidence")
 
 
+def legacy_capable(table, contract):
+    """Whether a row of this table and contract can have been written by the draft code
+    (and so be validated under the frozen draft rules): contract 1 rows and contract-2
+    receipts/decisions only (D-001)."""
+    return contract == 1 or (contract == 2 and table in contracts.CONTRACT_TABLES)
+
+
+# The contract each table's NEW rows must declare, by schema version (D-001, D-004).
+OPEN_CONTRACT = {
+    "forecast_receipts": {4: None, 5: 3, 6: 3},
+    "forecast_decisions": {4: None, 5: 3, 6: 4},
+    "evaluation_runs": {6: 2},
+    "evaluation_items": {6: 2},
+}
+
+
 def require_contract_schema(db, table, p):
-    """Gate for NEW rows (decision D-001): contract 3 needs schema 5; contract 2 is frozen
-    and accepts no new row anywhere; contract 1 is closed for new receipts/decisions from
-    schema 4. Exact retries of stored rows return before this gate."""
+    """Gate for NEW rows (D-001, D-004), in order: contract 2 is frozen everywhere; a
+    versioned contract needs the schema that opened it; once a schema opened a contract for
+    a table, that table's new rows declare exactly it (receipts 3 from schema 5; decisions
+    3 on schema 5 and 4 on schema 6; evaluations 2 on schema 6); contract-1 receipts and
+    decisions are closed from schema 4. Exact retries of stored rows return before this."""
+    from .schema import CONTRACT_SCHEMA
+
     contract = contracts.version(table, p)
     version = db.execute("PRAGMA user_version").fetchone()[0]
-    if contract == 3 and version < 5:
-        raise ValueError(
-            "contract-3 records require explicit migration: "
-            "vader forecast migrate --record-contract 3"
-        )
-    if contract == 2:
+    if contract == 2 and table in contracts.CONTRACT_TABLES:
         raise ValueError(
             "record contract 2 is frozen (decision D-001); new receipts and decisions are"
-            " contract 3: vader forecast migrate --record-contract 3"
+            " contract 3 or later: vader forecast migrate --record-contract 3"
+        )
+    if contract > 1 and version < CONTRACT_SCHEMA[(table, contract)]:
+        target = 3 if CONTRACT_SCHEMA[(table, contract)] == 5 else 4
+        raise ValueError(
+            f"contract-{contract} {table} records require explicit migration: "
+            f"vader forecast migrate --record-contract {target}"
+        )
+    opened = OPEN_CONTRACT.get(table, {}).get(version)
+    if opened is not None and contract != opened:
+        raise ValueError(
+            f"contract {contract} is closed for new {table} on schema {version};"
+            f" new rows there are contract {opened}"
         )
     if contract == 1 and version >= 4 and table in contracts.CONTRACT_TABLES:
         raise ValueError(f"contract 1 is closed for new receipts and decisions on schema {version}")
@@ -546,8 +584,7 @@ def classify_with_reason(db, table, p):
         validate_links(db, table, p)
         return "current", None
     except ValueError as current_error:
-        contract = contracts.version(table, p) if table in contracts.CONTRACT_TABLES else 1
-        if contract == 3:
+        if not legacy_capable(table, contracts.version(table, p)):
             raise
         try:
             validate_links(db, table, p, rules="draft")
@@ -570,7 +607,7 @@ def integrity(db):
     """
     check_schema(db)
     schema_version = db.execute("PRAGMA user_version").fetchone()[0]
-    counts = {table: {"1": 0, "2": 0, "3": 0} for table in COLUMNS}
+    counts = {table: {"1": 0, "2": 0, "3": 0, "4": 0} for table in COLUMNS}
     classes = {table: {"current": 0, "legacy_draft": 0} for table in COLUMNS}
     legacy_examples = []
     legacy_evaluations = []
@@ -585,7 +622,9 @@ def integrity(db):
                 contract = contracts.version(table, p)
             except ValueError as exc:
                 raise ValueError(f"{table} row {identity}: {exc}") from exc
-            minimum = {2: 4, 3: 5}.get(contract, 0)
+            from .schema import CONTRACT_SCHEMA
+
+            minimum = CONTRACT_SCHEMA.get((table, contract), 0)
             if schema_version < minimum:
                 raise ValueError(
                     f"{table} row {identity}: contract-{contract} record in a schema-"

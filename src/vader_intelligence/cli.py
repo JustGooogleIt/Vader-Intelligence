@@ -40,9 +40,10 @@ def parser():
     migrate.add_argument(
         "--record-contract",
         type=int,
-        choices=[2, 3],
-        help="3: explicit migration 005 (and 004 from schema 3) opening record contract 3;"
-        " 2 is frozen (no-op at schema 4/5, refused on schema 3)",
+        choices=[2, 3, 4],
+        help="3: migration 005 (record contract 3, schema 5); 4: migration 006 (decision"
+        " contract 4 with registered forecasters, schema 6); earlier markers first; 2 is"
+        " frozen (no-op at schema >= 4, refused on schema 3)",
     )
     tick = forecast_commands.add_parser("tick", help="finite forecast tick; no daemon")
     tick.add_argument("--research-config", help="research protocol TOML ([research] only)")
@@ -209,7 +210,7 @@ def execute(args):
             probe = sqlite3.connect(Path(config.database).resolve().as_uri() + "?mode=ro", uri=True)
             try:
                 version = probe.execute("PRAGMA user_version").fetchone()[0]
-                if version not in (2, 3, 4, 5):
+                if version not in (2, 3, 4, 5, 6):
                     raise ValueError(
                         "forecast migrate requires schema 2; run settlement migrate first"
                     )
@@ -232,7 +233,7 @@ def execute(args):
                 return {
                     "status": "complete",
                     "schema_version": store.schema_version(),
-                    "record_contract": {5: 3, 4: 2}.get(store.schema_version(), 1),
+                    "record_contract": {6: 4, 5: 3, 4: 2}.get(store.schema_version(), 1),
                     "migrated": changed,
                     "database": str(store.path),
                 }

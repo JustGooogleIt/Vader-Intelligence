@@ -27,7 +27,7 @@ def unsupported(request, tmp_path):
         db = old_layout(path, payloads)
     else:
         db = legacy(path)
-        db.execute("PRAGMA user_version=6")  # 4/5 are record contracts 2/3
+        db.execute("PRAGMA user_version=7")  # 4-6 are record contracts 2-4
     try:
         assert db.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
     finally:

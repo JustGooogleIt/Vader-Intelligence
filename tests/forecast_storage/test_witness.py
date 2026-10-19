@@ -287,6 +287,7 @@ def test_fixture_lineage_stays_synthetic_and_replay_creates_no_receipt(store, co
         "1": 0,
         "2": 0,
         "3": 7,
+        "4": 0,
     }
     assert receipts(store) == before  # C4
     assert store.verify_integrity() == []

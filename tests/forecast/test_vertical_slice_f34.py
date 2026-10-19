@@ -71,7 +71,7 @@ def test_vertical_slice_through_real_entry_points(tmp_path):
     replayed = cli(path, "replay")
     assert replayed["forecast_storage"]["replay"] == "preserved_not_reconstructed"
     counts = replayed["forecast_storage"]["record_contracts"]
-    assert counts["forecast_decisions"] == {"1": 0, "2": 0, "3": 1}
+    assert counts["forecast_decisions"] == {"1": 0, "2": 0, "3": 1, "4": 0}
     assert counts["forecast_bindings"]["1"] == 1
     assert _decision_digest(path) == before  # immutable across replay
 

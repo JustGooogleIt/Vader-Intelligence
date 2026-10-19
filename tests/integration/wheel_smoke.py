@@ -182,6 +182,7 @@ def main():
             "1": 1,
             "2": 0,
             "3": 0,
+            "4": 0,
         }
         assert_schema(database, 5)
         ops = [str(repo / "ops/manage.py")]
@@ -195,17 +196,19 @@ def main():
             "1": 0,
             "2": 0,
             "3": facts["contracts"]["forecast_receipts"][3],
+            "4": 0,
         }
         assert report["research"]["record_contracts"]["evaluation_runs"] == {
             "1": 1,
             "2": 0,
             "3": 0,
+            "4": 0,
         }
         assert_schema(restored, 5)
         assert archive_facts(restored)["contracts"] == facts["contracts"]
         future_core = ["-m", "vader_intelligence.cli", "--db", str(restored)]
         with sqlite3.connect(restored) as db:
-            db.execute("PRAGMA user_version=6")  # 1-5 are known; 6 is unknown
+            db.execute("PRAGMA user_version=7")  # 1-6 are known; 7 is unknown
         assert "unsupported" in invoke(future_core + ["db-init"], 1)["error"]
         assert "supported" in invoke(ops + ["inspect", "--database", str(restored)], 1)["error"]
         # An invalid record contract in an archive is refused before any mutation.
@@ -244,7 +247,12 @@ def main():
         assert_schema(legacy, 5)
         legacy_replay = invoke(legacy_core + ["replay"])["forecast_storage"]
         assert legacy_replay["legacy_rows"] == 25, legacy_replay
-        assert legacy_replay["record_contracts"]["forecast_receipts"] == {"1": 0, "2": 22, "3": 0}
+        assert legacy_replay["record_contracts"]["forecast_receipts"] == {
+            "1": 0,
+            "2": 22,
+            "3": 0,
+            "4": 0,
+        }
         invoke(ops + ["backup", "--source", str(legacy), "--destination", str(root / "lb.sqlite3")])
     print(
         json.dumps(

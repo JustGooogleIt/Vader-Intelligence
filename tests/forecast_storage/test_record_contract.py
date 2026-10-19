@@ -244,7 +244,7 @@ def test_record_contract_flag_requires_schema_three(tmp_path):
             schema.migrate(db, record_contract=record_contract)
     assert snapshot(db) == before and db.execute("PRAGMA user_version").fetchone()[0] == 2
     with pytest.raises(ValueError, match="unsupported record contract"):
-        schema.migrate(db, record_contract=4)
+        schema.migrate(db, record_contract=5)
     db.close()
 
 
@@ -305,7 +305,7 @@ def test_legacy_fetch_receipt_stays_valid_under_contract_one_and_counted(archive
     assert db.execute("SELECT * FROM forecast_receipts WHERE id=2").fetchone() == row
     result = journal.integrity(db)
     assert result["integrity"] == "verified"
-    assert result["record_contracts"]["forecast_receipts"] == {"1": 2, "2": 0, "3": 0}
+    assert result["record_contracts"]["forecast_receipts"] == {"1": 2, "2": 0, "3": 0, "4": 0}
     # The legacy receipt's digest is the raw body hash: valid under contract 1 only.
     assert (
         payload["subject_digest"]
@@ -320,9 +320,9 @@ def test_mixed_archive_counts_each_row_under_its_own_contract(archive3):
     journal.append(db, "forecast_receipts", pass_receipt(db, p, 1))
     journal.append(db, "forecast_decisions", pinned_decision(db, p, 1))
     result = journal.integrity(db)
-    assert result["record_contracts"]["forecast_receipts"] == {"1": 2, "2": 0, "3": 2}
-    assert result["record_contracts"]["forecast_decisions"] == {"1": 1, "2": 0, "3": 1}
-    assert result["record_contracts"]["discovery_passes"] == {"1": 1, "2": 0, "3": 0}
+    assert result["record_contracts"]["forecast_receipts"] == {"1": 2, "2": 0, "3": 2, "4": 0}
+    assert result["record_contracts"]["forecast_decisions"] == {"1": 1, "2": 0, "3": 1, "4": 0}
+    assert result["record_contracts"]["discovery_passes"] == {"1": 1, "2": 0, "3": 0, "4": 0}
     assert result["legacy_rows"] == 0 and result["admissibility"] == "current"
     # Nothing was converted: the contract-1 rows are byte-identical to their fixtures.
     assert (
@@ -778,7 +778,12 @@ def test_evaluation_cannot_mix_contract_one_and_contract_three_decisions(archive
         journal.append_evaluation(db, report, items)
     assert snapshot(db) == before
     # The pre-existing contract-1 evaluation of the contract-1 decision stays valid.
-    assert journal.integrity(db)["record_contracts"]["evaluation_runs"] == {"1": 1, "2": 0, "3": 0}
+    assert journal.integrity(db)["record_contracts"]["evaluation_runs"] == {
+        "1": 1,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+    }
 
 
 def test_research_hash_change_is_distinct_from_collector_provenance(archive3):

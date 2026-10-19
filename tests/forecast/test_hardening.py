@@ -162,6 +162,7 @@ def test_backup_and_restore_preserve_interpretation_and_provenance(
             "1": 1,
             "2": 0,
             "3": 0,
+            "4": 0,
         }
     finally:
         reopened.close()

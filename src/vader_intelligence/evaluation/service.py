@@ -254,7 +254,7 @@ def evaluate(
     clock=None,
     monotonic=None,
     budget=30.0,
-    record_contract=3,
+    record_contract=None,
 ):
     """Materialize one evaluation. Returns a summary dict; status complete | inconclusive
     (no paired binary outcomes) | partial (budget exhausted, nothing written) | existing.
@@ -277,8 +277,13 @@ def evaluate(
         raise ValueError(
             "evaluate requires record contract 3: vader forecast migrate --record-contract 3"
         )
-    if record_contract not in (2, 3):
-        raise ValueError("record_contract must be 3 (current) or 2 (legacy cohort)")
+    schema_version = store.schema_version()
+    if record_contract is None:
+        record_contract = 4 if schema_version >= 6 else 3
+    if record_contract not in (2, 3, 4) or (record_contract == 4 and schema_version < 6):
+        raise ValueError("record_contract must be 4 (schema 6), 3, or 2 (legacy cohort)")
+    # Evaluation contract 2 (D-004) on schema 6: scores every registered forecaster.
+    evaluation_contract = 2 if schema_version >= 6 else 1
     as_of = utc(outcomes_as_of)
     dataset = protocol.dataset if dataset is None else dataset
     namespace = protocol.observer_namespace
@@ -306,6 +311,11 @@ def evaluate(
             excluded.append({"id": decision_id, "contract": 2, "reason": "pre_renewal_semantics"})
         else:
             decisions.append((decision_id, d))
+    forecaster_sets = {json.dumps(d.get("forecasters", [])) for _, d in decisions}
+    if len(forecaster_sets) > 1:
+        raise ValueError("the cohort's decisions declare different forecaster sets")
+    forecasters = json.loads(forecaster_sets.pop()) if forecaster_sets else []
+    names = list(BASELINES) + [f["id"] for f in forecasters]
     modes = {d["mode"] for _, d in decisions}
     if len(modes) > 1:
         raise ValueError(f"dataset {dataset!r} mixes record modes {sorted(modes)}; not pooled")
@@ -455,10 +465,12 @@ def evaluate(
                 "kalshi_id": None,
                 "payout": None,
                 "y": None,
-                "scores": {name: None for name in BASELINES},
-                "clipped": {name: False for name in BASELINES},
+                "scores": {name: None for name in names},
+                "clipped": {name: False for name in names},
                 "paired_delta": None,
             }
+            if evaluation_contract == 2:
+                item["contract_version"] = 2
             annotation = {"origin": origin, "cutoff": annotation_cutoff}
             if origin == "decision":
                 ticker, yes_team = record["ticker"], record["yes_team_id"]
@@ -481,7 +493,7 @@ def evaluate(
                     publication_refs[("receipt", receipt_id)] = reference(
                         db, "forecast_receipts", {"id": receipt_id}
                     )
-                probabilities = {name: record["results"][name]["probability"] for name in BASELINES}
+                probabilities = {name: record["results"][name]["probability"] for name in names}
                 annotation["midpoint_reasons"] = record["results"]["midpoint-v1"]["reasons"]
             elif origin == "unattempted":
                 ticker, yes_team = record["ticker"], record["yes_team_id"]
@@ -505,7 +517,7 @@ def evaluate(
                     "midpoint_available": facts.midpoint_probability is not None,
                     "midpoint_reasons": list(facts.midpoint_reasons),
                 }
-                probabilities = {name: None for name in BASELINES}
+                probabilities = {name: None for name in names}
             else:
                 ticker, yes_team = None, None
                 item["cutoff_status"] = "no_binding"
@@ -517,7 +529,7 @@ def evaluate(
                     publication_reasons=["binding_missing"],
                 )
                 annotation["eligibility_reasons"] = record["reasons"]
-                probabilities = {name: None for name in BASELINES}
+                probabilities = {name: None for name in names}
             outcome = (
                 outcomes.join(
                     db,
@@ -568,7 +580,7 @@ def evaluate(
             )
             if scorable:
                 item["y"] = outcome.y
-                for name in BASELINES:
+                for name in names:
                     if probabilities[name] is not None:
                         item["scores"][name], item["clipped"][name] = scoring.score_pair(
                             probabilities[name], outcome.y
@@ -606,6 +618,7 @@ def evaluate(
             unresolved_candidates,
         )
         report["record_contract"] = record_contract
+        report["forecasters"] = forecaster_report(items, forecasters)
         report["excluded_decisions"] = excluded[:1000]
         publication_manifest = [
             publication_refs[k]
@@ -632,6 +645,9 @@ def evaluate(
             "supersedes_id": None,
             "correction_reason": None,
         }
+        if evaluation_contract == 2:
+            payload["contract_version"] = 2
+            payload["forecasters"] = forecasters
         existing = db.execute(
             "SELECT id, json_extract(payload_json,'$.status') FROM evaluation_runs"
             " WHERE idempotency_key=?",
@@ -852,6 +868,46 @@ def _report(
         "cost": {"external_calls": "0", "local_compute": "unmeasured"},
     }
     return report
+
+
+def forecaster_report(items, forecasters):
+    """Per registered forecaster: scored N and means, and the paired comparison with the
+    midpoint baseline on the items where both were scored (D-004). Same population and
+    dispositions as the baselines; nothing is averaged across forecasters."""
+    out = {}
+    for forecaster in forecasters:
+        name = forecaster["id"]
+        scored = [i for i in items if i["scores"].get(name) is not None]
+        common = [i for i in scored if i["scores"]["midpoint-v1"] is not None]
+        with scoring.arithmetic():
+            deltas = {
+                metric: scoring.mean(
+                    format(
+                        scoring.Decimal(i["scores"][name][metric])
+                        - scoring.Decimal(i["scores"]["midpoint-v1"][metric]),
+                        "f",
+                    )
+                    for i in common
+                )
+                if common
+                else None
+                for metric in ("brier", "log_loss")
+            }
+        out[name] = {
+            "artifact_sha256": forecaster["artifact_sha256"],
+            "family": forecaster["family"],
+            "feature_set": forecaster["feature_set"],
+            "n": len(scored),
+            "mean_brier": scoring.mean(i["scores"][name]["brier"] for i in scored),
+            "mean_log_loss": scoring.mean(i["scores"][name]["log_loss"] for i in scored),
+            "paired_with_midpoint": {
+                "n": len(common),
+                "mean_brier_delta": deltas["brier"],
+                "mean_log_loss_delta": deltas["log_loss"],
+            },
+            "clipped": sum(1 for i in items if i["clipped"].get(name)),
+        }
+    return out
 
 
 def inspect_evaluation(db, evaluation_id, *, items=False):

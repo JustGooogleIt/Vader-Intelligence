@@ -153,6 +153,14 @@ def text_report(db, evaluation_id):
         "Record contract: "
         + (str(contract) if contract is not None else "unrecorded (evaluated before D-001)")
     )
+    for name, f in sorted((r.get("forecasters") or {}).items()):
+        paired = f["paired_with_midpoint"]
+        lines.append(
+            f"Forecaster {name} ({f['family']}, {f['feature_set']}) n={f['n']}: Brier "
+            f"{rounded(f['mean_brier'])} log loss {rounded(f['mean_log_loss'])} | vs midpoint "
+            f"(n={paired['n']}) Brier delta {rounded(paired['mean_brier_delta'])} log loss "
+            f"delta {rounded(paired['mean_log_loss_delta'])} | clipped {f['clipped']}"
+        )
     if r.get("excluded_decisions"):
         excluded = {}
         for entry in r["excluded_decisions"]:
@@ -182,6 +190,10 @@ def compare(db, first_id, second_id):
         raise ValueError("evaluations use different research protocol configurations")
     if ea["report"].get("record_contract") != eb["report"].get("record_contract"):
         raise ValueError("evaluations cover different record contracts; never pooled or compared")
+    if sorted(ea["report"].get("forecasters") or {}) != sorted(
+        eb["report"].get("forecasters") or {}
+    ):
+        raise ValueError("evaluations score different forecaster sets; never pooled or compared")
     keys_a, keys_b = set(a["items"]), set(b["items"])
     scored_a = {k for k, i in a["items"].items() if i["paired_delta"] is not None}
     scored_b = {k for k, i in b["items"].items() if i["paired_delta"] is not None}

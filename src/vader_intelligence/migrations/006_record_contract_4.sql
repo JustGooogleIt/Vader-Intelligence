@@ -1,0 +1,9 @@
+-- Record contract 4 for decisions and contract 2 for evaluations (decision D-004). This
+-- migration changes no table and touches no row. Its only effect is the
+-- schema_migrations ledger row and user_version 6, written by forecast.schema.migrate in
+-- the same transaction (after 004 and 005 when migrating from an older schema).
+--
+-- Decision contract 4 adds registered forecasters beside the baseline pair; evaluation
+-- contract 2 scores them. On schema 6 new decisions are contract 4 and new evaluations
+-- contract 2; receipts stay contract 3. Earlier rows stay valid and byte-for-byte
+-- preserved; every binary that predates contract 4 refuses a schema-6 archive at open.
