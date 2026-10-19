@@ -31,6 +31,33 @@ spreads; the wide-spread slice has 4 rows): each candidate is worse than mid on 
 estimate. Dropping `mid_c` from the logistic and gradient-boosting inputs makes them
 worse still (+0.0076 and +0.0164).
 
+## 1b. Two seasons: develop on 2025, validate on 2026
+
+The follow-up acquisition added the 2025 season (2,201 events, 2,101 identified, 8,404
+candle requests, none failed). 2025 rules carry no start time, so every 2025 row comes
+from the opt-in `history-date-only` identity rule: the start is the official schedule's,
+not corroborated by the contract text (`start_corroborated = false` on all 2,101 rows).
+Dataset `8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f`
+(`mlb-2025-2026-history-fs-market-v1`, 4,506 rows). Split: development ≤ 2025-12-31
+(2,101 rows, all of 2025), validation 2026-01-02..2026-08-31 (2,027 rows), holdout after
+2026-09-01 (363 rows, **not read**; same dates as above). Snapshot
+`701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904`. Commands and
+outputs: `docs/evidence/real-data-pods-2025-2026-20261019.json`.
+
+| Candidate | Validation log loss | Market mid | Paired delta (95% CI) | Halves (split 2026-06-13) | Decision |
+|---|---|---|---|---|---|
+| logistic (`d9d84aa4…`, C = 0.01) | 0.68247 | 0.68207 | +0.00040 (−0.00307, +0.00388) | −0.0026, +0.0034 | rejected |
+| gradient boosting (`86646fec…`) | 0.69154 | 0.68207 | +0.00947 (+0.00347, +0.01584) | +0.0051, +0.0138 | rejected: significantly worse |
+| symbolic (`1ee191c4…`, `logit_mid_c`, 3,212 candidates) | 0.68165 | 0.68207 | −0.00042 (−0.00172, +0.00104) | −0.0017, +0.0009 | rejected: CI crosses zero, halves disagree |
+
+With five times the validation rows the conclusion sharpens rather than changes: the
+logistic model is indistinguishable from the market, the gradient-boosting model is
+significantly worse, and the symbolic search's best expression is a recalibration of the
+market's own log-odds (a 0.04% improvement that is not significant and reverses in the
+second half). Robustness slices by month agree (logistic: negative in April–June, positive
+in July–August; gradient boosting positive every month). No candidate reached
+`validated`, so no holdout was consumed (D-009).
+
 ## 2. Candle vs collected book at C (postseason)
 
 `tests/integration/candle_vs_book_check.py` compared candle-based features at C (history
