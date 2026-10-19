@@ -233,9 +233,51 @@ def parser():
     lready.add_argument("--activation-config", required=True, help="live activation TOML")
     lready.add_argument("--acknowledge", required=True, help="SHA-256 of the config file")
     lready.add_argument("--ledger", required=True, help="live ledger path")
+    ldry = live_commands.add_parser(
+        "dry-run", help="forward-shadow forecasts -> would-be order requests; nothing is sent"
+    )
+    ldry.add_argument("--archive", required=True, help="evidence archive (opened read-only)")
+    ldry.add_argument("--forecaster", required=True, help="registered forecaster id")
+    ldry.add_argument("--ledger", required=True, help="new PAPER ledger for the dry run")
+    ldry.add_argument("--kalshi-environment", choices=("demo", "production"), default="demo")
+    ldry.add_argument("--cash", default="1000")
+    ldry.add_argument("--min-edge", default="0.02")
+    ldry.add_argument(
+        "--sign-with-throwaway-key",
+        action="store_true",
+        help="sign with an in-memory key generated for this run (never a real credential)",
+    )
     minspect = model_commands.add_parser("inspect")
     minspect.add_argument("--registry", required=True)
     minspect.add_argument("--id", help="one model; omit to list")
+    backtest = commands.add_parser(
+        "backtest", help="historical paper backtest of a registered model (simulated)"
+    )
+    backtest_commands = backtest.add_subparsers(dest="backtest_command", required=True)
+    brun = backtest_commands.add_parser("run")
+    brun.add_argument("--registry", required=True)
+    brun.add_argument("--history-db", required=True, help="history archive (opened read-only)")
+    brun.add_argument("--dataset", required=True)
+    brun.add_argument("--model", required=True)
+    brun.add_argument("--development-through", required=True)
+    brun.add_argument("--validation-through", required=True)
+    brun.add_argument("--embargo-days", type=int, default=1)
+    brun.add_argument(
+        "--segment", choices=("development", "validation", "holdout"), default="validation"
+    )
+    brun.add_argument(
+        "--acknowledge-holdout",
+        action="store_true",
+        help="required for --segment holdout: the run is recorded in the holdout ledger",
+    )
+    brun.add_argument("--min-edge", default="0.02")
+    brun.add_argument("--fee-schedule", default="kalshi-2026-02-general")
+    brun.add_argument("--initial-cash", default="1000")
+    brun.add_argument(
+        "--assumed-depth", action="append", default=[], help="SCENARIO depth (repeatable)"
+    )
+    brun.add_argument("--ledger", help="single run into this new paper ledger (else: grid)")
+    brun.add_argument("--seed", type=int, default=0)
     return p
 
 
@@ -305,6 +347,8 @@ def execute(args):
         return _ledger(args)
     if args.command == "live":
         return _live(args)
+    if args.command == "backtest":
+        return _backtest(args)
     with nullcontext() if args.command == "health" else writer_lock(config.database):
         store = Store(
             config.database, min_free_bytes=config.min_free_bytes, readonly=args.command == "health"
@@ -740,6 +784,60 @@ def _symbolic(args):
         registry.close()
 
 
+def _backtest(args):
+    """Historical paper backtest (simulated; never an order)."""
+    from decimal import Decimal
+
+    from .datasets.splits import SplitDefinition
+    from .research import backtest
+    from .research.registry import Registry
+    from .trading.fees import PROVISIONAL_SCHEDULES
+    from .trading.marketdata import open_archive
+    from .trading.simulator import LatencyModel, PaperConfig, StrategyConfig
+
+    if args.segment == "holdout" and not args.acknowledge_holdout:
+        raise ValueError("--segment holdout requires --acknowledge-holdout (ledger-recorded)")
+    fees = [f for f in PROVISIONAL_SCHEDULES if f.version == args.fee_schedule]
+    if not fees:
+        raise ValueError(f"unknown fee schedule {args.fee_schedule!r}")
+    depths = [Decimal(d) for d in args.assumed_depth]
+    config = PaperConfig(
+        initial_cash=Decimal(args.initial_cash),
+        seed=args.seed,
+        strategy=StrategyConfig(min_edge=Decimal(args.min_edge)),
+        fee_schedule=fees[0],
+        assumed_depth=depths[0] if args.ledger and depths else None,
+    )
+    grid = None
+    if not args.ledger:
+        grid = {
+            "fee_schedules": tuple(PROVISIONAL_SCHEDULES),
+            "extra_slippage_ticks": (0, 1),
+            "latency": (config.latency, LatencyModel(submit_ms=(1250, 1250))),
+            "maker_fill_model": ("none",),
+            "assumed_depth": (None, *depths),
+        }
+    split = SplitDefinition(args.development_through, args.validation_through, args.embargo_days)
+    registry = Registry(args.registry)
+    db = open_archive(args.history_db)
+    try:
+        result = backtest.run(
+            registry,
+            db,
+            args.dataset,
+            args.model,
+            split,
+            config,
+            segment=args.segment,
+            grid=grid,
+            ledger_path=args.ledger,
+        )
+    finally:
+        db.close()
+        registry.close()
+    return {"status": "complete"} | result
+
+
 def _ledger(args):
     """Operator paths of the trading ledger. Nothing here submits an order or reads a
     credential; a live ledger starts with its kill switch engaged."""
@@ -815,6 +913,9 @@ def _live(args):
     request. Activation itself is a separate, reviewed user decision (runbook)."""
     from datetime import datetime, timezone
 
+    if args.live_command == "dry-run":
+        return _live_dry_run(args)
+
     from .trading.kalshi.activation import check_gates
     from .trading.ledger import Ledger
 
@@ -839,6 +940,39 @@ def _live(args):
         "gates": gates,
         "note": "readiness never loads the key, contacts the exchange or places an order",
     }
+
+
+def _live_dry_run(args):
+    """Dry run of the live adapter from forward-shadow decisions: a paper ledger, a
+    `DryRunGateway`, no credential and no network transport."""
+    from decimal import Decimal
+
+    from .trading import shadow_dryrun
+    from .trading.marketdata import open_archive
+    from .trading.simulator import StrategyConfig
+
+    signer = None
+    if args.sign_with_throwaway_key:
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+
+        from .trading.kalshi.auth import Signer
+
+        throwaway = ed25519.Ed25519PrivateKey.generate()  # in memory only, discarded
+        signer = Signer("00000000-0000-4000-8000-000000000000", throwaway)
+    db = open_archive(args.archive)
+    try:
+        result = shadow_dryrun.run(
+            db,
+            forecaster_id=args.forecaster,
+            ledger_path=args.ledger,
+            kalshi_environment=args.kalshi_environment,
+            cash=args.cash,
+            strategy=StrategyConfig(min_edge=Decimal(args.min_edge)),
+            signer=signer,
+        )
+    finally:
+        db.close()
+    return {"status": "complete" if result["decisions"] else "inconclusive"} | result
 
 
 def main():
