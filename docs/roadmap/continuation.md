@@ -1,45 +1,57 @@
 # Roadmap run continuation note
 
-Durable checkpoint for the research-to-trading roadmap run (started 2026-10-18; user
-asked for Opus 5.5 for this work, including subagents). Resume from here; the backlog
-(`backlog.md`), decision log (`decisions.md`) and evidence index (`evidence-index.md`)
-hold the detail. This note always names the exact next action.
+Durable checkpoint for the research-to-trading roadmap run (started 2026-10-18; the user
+asked for Opus 5.5 for this work, including subagents, never Fable). Resume from here;
+the backlog (`backlog.md`), decision log (`decisions.md`), evidence index
+(`evidence-index.md`) and review packets (`review-packets.md`) hold the detail. This note
+always names the exact next action.
 
 ## Where the work lives
 
 | Item | Value |
 |---|---|
-| Main worktree | `/Users/ashwin/Documents/github-repos/Vader-Intelligence-roadmap` (attached to the `-claude` checkout; `uv sync --locked`, uv 0.12.19 at `../Vader-Intelligence/.venv/bin/uv`, Python 3.11.6) |
+| Main worktree | `/Users/ashwin/Documents/github-repos/Vader-Intelligence-roadmap` (`uv sync --locked`, uv 0.12.19 at `../Vader-Intelligence/.venv/bin/uv`, Python 3.11.6) |
 | Stack base | PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c31` |
-| Parallel worktrees | `-wt-execution-risk` (`feat/execution-risk`, done: `479cf7f`, `ed67bc6`, `220aec3`), `-wt-symbolic-engine` (`feat/symbolic-engine`, done: `1d36973`, `f614594`, `b2f184d`), `-wt-research-pods-core` (`feat/research-pods-core`, done: `b0b3288`, `0feb693`, `3c0a79a`), `-wt-models-library` (`feat/models-library`, agent running), `-wt-live-adapter` (`feat/live-adapter` from `feat/execution-risk`, agent running); all originally from `wip/deps` `2d6a98f` |
-| Pinned run worktrees | `-live-v2` (detached `622caad`, live shadow driver), `-history-run` (detached `f7d3263`, historical acquisition) |
-| Production | Read-only queries only; disk ~7 GiB free; no full copy of the 1.5 GB archive |
+| Pinned run worktrees | `-live-v2` (detached `622caad`, live shadow driver), `-history-run` / `-history-run2` (pinned acquisition code) |
+| Finished subagent worktrees (cleanup) | `-wt-deps`, `-wt-execution-risk`, `-wt-symbolic-engine`, `-wt-research-pods-core`, `-wt-models-library`, `-wt-live-adapter` |
+| Research data (outside the repo) | `/Users/ashwin/Documents/Vader-Intelligence-research/{history,registry,pods-2026,demo}` |
+| Production | `~/Documents/Vader-Intelligence-operations/20260930-first-deployment/production.sqlite3`: read-only queries only; never copied (disk ~10 GiB free) |
 
-## PR ledger (all drafts, none merged)
+## PR ledger (all drafts, none merged, none reviewed yet)
 
-| PR | Branch | Head | Scope |
-|---|---|---|---|
-| #17 | `fix/record-contract-3` | `f8642bf` | D-001 contract 3 / schema 5, contract 2 frozen, legacy archives from old code |
-| #18 | `feat/eligibility-rule-v2` | `622caad` | D-002 rule v2 (date-only postseason rules, ticker corroboration), mapping policy 2 |
-| #19 | `feat/schedule-revisions` | `74a60a8` | D-003 schedule changes after C unscored; evaluator v2 |
-| #20 | `feat/historical-acquisition` | `2f99f61` | A4 public historical acquisition (history profile, resumable) |
-| (next) | `feat/datasets-models` | `549d073`+ | B features, datasets, registry, holdout ledger; models library and training to integrate |
+| PR | Branch | Scope |
+|---|---|---|
+| #17 | `fix/record-contract-3` | D-001 contract 3 / schema 5, contract 2 frozen, legacy archives |
+| #18 | `feat/eligibility-rule-v2` | D-002 rule v2 for date-only postseason rules |
+| #19 | `feat/schedule-revisions` | D-003 schedule changes after C unscored |
+| #20 | `feat/historical-acquisition` | A4 public historical acquisition |
+| #21 | `feat/datasets-models` | B features, datasets, registry, models, training |
+| #22 | `feat/registered-forecasters` | D-004 decision contract 4, evaluation contract 2 |
+| #23 | `feat/symbolic-search` | C bounded symbolic regression |
+| #24 | `feat/paper-execution-risk` | D/E ledger, simulator, risk, Kelly |
+| #25 | `feat/kalshi-live-adapter` | F live adapter, disabled by default |
+| #26 | `feat/history-backtest` | D/H historical paper backtest, live-adapter dry run |
+| #27 | `feat/research-pods` | G orchestration, real operations, protected evaluator |
+| #28 | `feat/integration-demos` | H demos (E2E, recovery, real data, candle-vs-book) and run docs |
 
-## Background processes (bounded; they terminate by themselves)
+Full SHAs are in the final handoff (`docs/handoffs/roadmap-handoff.md`).
+
+## Background processes (bounded; they end by themselves)
 
 | What | Where | Ends |
 |---|---|---|
-| Live forward-shadow driver, rule v2, test label, no launchd | `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/driver.sh` (cycles 22:30:10–23:20 UTC on 2026-10-19 around C = 23:08:00Z of `KXMLBGAME-26OCT192008CLETB`, then `shadow-evaluate` at 05:00 UTC 2026-10-20) | ≈05:05 UTC 2026-10-20 |
-| Historical acquisition 2025 then 2026 (default identity rules) | `/Users/ashwin/Documents/Vader-Intelligence-research/history/run-acquisition.sh` → `history.sqlite3` | ≈2 h after 05:10 UTC 2026-10-19 |
-
-Follow-up acquisitions planned after it finishes (same archive, sequential): 2025 with
-`--identity-rules default,history-date-only --post-cutoff-seconds 900`; 2026 with
-`--no-pre-cutoff --post-cutoff-seconds 900` (execution-only windows).
+| Live forward-shadow driver (rule v2, test label, no launchd) | `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/driver.sh`; decision at C = 23:08:00Z for `KXMLBGAME-26OCT192008CLETB`, `shadow-evaluate` at 05:00 UTC 2026-10-20 | ≈05:05 UTC 2026-10-20 |
+| Follow-up acquisition: 2025 (`default,history-date-only`, post windows) then 2026 post-only windows | `/Users/ashwin/Documents/Vader-Intelligence-research/history/run-acquisition-2.sh` → `history.sqlite3`; log `acquisition-log.jsonl` | after both runs (≤ 3 h each) |
 
 ## Next action
 
-Integrate the models library (when its agent reports) into `feat/datasets-models`: training
-pipeline (`models/train.py`) on registry datasets with chronological CV, OOF calibration,
-validation and one-time holdout via the ledger; CLI `vader dataset build|inspect`,
-`vader model train|evaluate`; then open the B PR. Then stack C (symbolic engine +
-integration), D/E (execution-risk), F (live adapter), G (pods), H (integration).
+1. When the 2026 post-only acquisition finishes: run
+   `tests/integration/real_data_demo.py backtest ...` (paper-backtest pods and
+   coordinator backtests on real validation candles) and record the results in
+   `docs/evidence/real-data-demo-20261019.md`.
+2. When the 2025 acquisition is in: build the 2025 dataset (identity rules
+   `default,history-date-only`; report the `start_uncorroborated` stratum separately),
+   register it, and decide whether a two-season split changes the B/G conclusions.
+3. After 05:05 UTC 2026-10-20: read `driver-log.jsonl`, `cycle-*.json` and
+   `shadow-evaluate.json` in the shadow directory and record the live rule-v2 evidence.
+4. Final handoff with every PR's full SHA, test results and cleanup list.
