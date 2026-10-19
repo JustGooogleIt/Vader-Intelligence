@@ -103,7 +103,9 @@ Read first: `docs/roadmap/decisions.md` (D-001..), `docs/roadmap/evidence-index.
       run? Can a malformed artifact still stop a tick? Can a case or alias variant of a
       production path pass the ops guard?
 16. **Live settlements (#34).** Can a venue settlement be recorded while the ledger's
-    holding, payout or orders on that market disagree with it? Can a record for a market
+    holding, payout or orders on that market disagree with it, or while any fill the
+    venue reported (in `reconciled` events) is missing, including fills that net to zero
+    contracts? Can an operator correction or acknowledgement fail to clear a reason? Can a record for a market
     this ledger never traded, or a second record for a settled market, change the
     ledger? Can the settlements cursor advance past a record that was not recorded? Can
     a fill after a recorded settlement change cash? (`tests/trading/kalshi/test_kalshi_settlements.py`)
