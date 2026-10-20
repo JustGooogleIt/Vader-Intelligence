@@ -20,7 +20,6 @@ permitted only for the `diagnostics` role.
 
 import hashlib
 import json
-import math
 import os
 import stat
 import subprocess
@@ -41,7 +40,9 @@ from .contracts import (
     ROLES,
     ArtifactRef,
     ContractError,
+    finite_number,
     from_mapping,
+    integer,
     normalize_fields,
     require,
     to_plain,
@@ -356,24 +357,18 @@ class TrainModelParams:
         require(not unknown, f"unknown hyperparameters {unknown}")
         h = self.hyperparameters
         require(h.get("calibration", "platt") in CALIBRATIONS, "unknown calibration")
-        require(2 <= h.get("n_folds", 4) <= 10, "n_folds must be in 2..10")
-        require(1 <= h.get("max_configs", 24) <= 256, "max_configs must be in 1..256")
-        seconds = h.get("search_seconds", DEFAULT_SEARCH_SECONDS)
+        folds, configs = h.get("n_folds", 4), h.get("max_configs", 24)
+        require(integer(folds) and 2 <= folds <= 10, "n_folds must be an integer in 2..10")
         require(
-            isinstance(seconds, int | float)
-            and not isinstance(seconds, bool)
-            and 0 < seconds <= 86400,
-            "search_seconds out of range",
+            integer(configs) and 1 <= configs <= 256, "max_configs must be an integer in 1..256"
         )
+        seconds = h.get("search_seconds", DEFAULT_SEARCH_SECONDS)
+        require(finite_number(seconds) and 0 < seconds <= 86400, "search_seconds out of range")
         grid = h.get("grid", {})
         require(isinstance(grid, dict), "grid must be an object of lists")
         require(all(isinstance(v, list) and v for v in grid.values()), "grid values: lists")
         require(
-            all(
-                isinstance(x, int | float) and not isinstance(x, bool) and math.isfinite(x)
-                for v in grid.values()
-                for x in v
-            ),
+            all(finite_number(x) for v in grid.values() for x in v),
             "grid values must be finite numbers",
         )
 

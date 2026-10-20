@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 
 from ..models.search import FAMILIES as SEARCH_FAMILIES
 from ..provenance import json_text
-from .contracts import ContractError, content_hash
+from .contracts import ContractError, content_hash, finite_number
 from .operations import (
     TRAIN_HYPERPARAMETERS,
     UnknownOperation,
@@ -89,7 +89,7 @@ class Plan:
 
 def score(result, operation):
     value = result.get(SCORE_FIELDS.get(operation, ""))
-    return value if isinstance(value, int | float) and math.isfinite(value) else None
+    return value if finite_number(value) else None
 
 
 def context(store, pod_id, snapshot_sha, *, tasks_remaining, rounds_remaining):
@@ -155,10 +155,7 @@ def _check_grid(params):
     if unknown or missing:
         raise ContractError(f"grid keys: unknown {unknown}, missing {missing}")
     for name, values in grid.items():
-        numbers = all(
-            isinstance(v, int | float) and not isinstance(v, bool) and math.isfinite(v) and v > 0
-            for v in values
-        )
+        numbers = all(finite_number(v) and v > 0 for v in values)
         if not numbers:
             raise ContractError(f"grid {name}: values must be positive finite numbers")
         if len(values) > 8:
@@ -185,7 +182,7 @@ def validate(ctx, proposal):
         _check_grid(normalized)
     except ContractError:
         raise
-    except (TypeError, ValueError, AttributeError, KeyError) as exc:
+    except (TypeError, ValueError, AttributeError, KeyError, ArithmeticError) as exc:
         raise ContractError(f"invalid params: {type(exc).__name__}") from None
     return normalized
 

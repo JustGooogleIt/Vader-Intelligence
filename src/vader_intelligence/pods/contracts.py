@@ -89,6 +89,22 @@ def require(condition: bool, message: str) -> None:
         raise ContractError(message)
 
 
+def finite_number(value: Any) -> bool:
+    """A non-bool int or float with a finite float value. A JSON integer too large for a
+    float is not one: `math.isfinite` would raise OverflowError (reviews F42, F45)."""
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def integer(value: Any) -> bool:
+    """A real integer, not a bool and not a float (review F43)."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def strict_json(raw: bytes, limit: int, where: str) -> Any:
     """Decode bounded UTF-8 JSON; refuse NaN/Infinity and duplicate object keys."""
     require(isinstance(raw, bytes | bytearray), f"{where} must be bytes")
@@ -195,7 +211,7 @@ def from_mapping(cls: type, data: Any, where: str):
         return cls(**values)
     except ContractError:
         raise
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, ArithmeticError) as exc:
         raise ContractError(f"{where}: {exc}") from None
 
 
