@@ -122,17 +122,41 @@ def validate_shadow(config):
         "research_config": research.resolve(),
     }
     if "model_registry" in shadow:
-        registry = absolute(shadow["model_registry"])
-        if not registry.is_dir():
-            raise ValueError("shadow model_registry must be an existing absolute directory")
-        own["model_registry"] = registry.resolve()
+        if not isinstance(shadow["model_registry"], str):
+            raise ValueError("shadow model_registry must be an absolute directory path")
+        # Existence is checked when configuring; a lifecycle action (stop, uninstall)
+        # must still load the configuration if the registry was removed later.
+        own["model_registry"] = absolute(shadow["model_registry"]).resolve()
     for name, path in own.items():
         for banned in resolved:
-            if path == banned or banned in path.parents:
+            if _targets(path, banned):
                 raise ValueError(
                     f"shadow {name} {path} targets a forbidden production path {banned}"
                 )
     return shadow
+
+
+def _targets(path, banned):
+    """True when `path` is `banned` or lies inside it: lexically, case-insensitively (the
+    Mac's default volume ignores case), or by file identity of the path or any existing
+    ancestor (which also defeats case changes and hard-link or symlink aliases)."""
+    if path == banned or banned in path.parents:
+        return True
+    folded, banned_folded = str(path).casefold(), str(banned).casefold()
+    if folded == banned_folded or folded.startswith(banned_folded.rstrip("/") + "/"):
+        return True
+    try:
+        target = banned.stat()
+    except OSError:
+        return False
+    for candidate in (path, *path.parents):
+        try:
+            info = candidate.stat()
+        except OSError:
+            continue
+        if (info.st_dev, info.st_ino) == (target.st_dev, target.st_ino):
+            return True
+    return False
 
 
 def validate(config):
@@ -229,7 +253,11 @@ def tick_command(config):
         "--budget",
         str(shadow["tick_budget"]),
         # Registered forecasters (D-004) load their artifacts from the research registry.
-        *(["--model-registry", shadow["model_registry"]] if "model_registry" in shadow else []),
+        *(
+            ["--model-registry", str(absolute(shadow["model_registry"]).resolve())]
+            if "model_registry" in shadow
+            else []
+        ),
     ]
 
 

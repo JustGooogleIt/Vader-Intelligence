@@ -48,8 +48,11 @@ _BUILTIN = {
 _REGISTERED = {}
 
 
-class ArtifactError(Exception):
-    """An artifact failed verification or does not match its inputs; never a fallback."""
+class ArtifactError(ValueError):
+    """An artifact failed verification or does not match its inputs; never a fallback.
+
+    A `ValueError`, so every caller that turns invalid inputs into an abstention or a
+    deterministic failure handles it too (a forward tick never stops on one model)."""
 
 
 def register_family(name, raw_score_fn):
