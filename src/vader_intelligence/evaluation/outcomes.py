@@ -11,13 +11,18 @@ Binary labels come solely from `evaluation.settlement.finalized_binary` on the
 selected contract's own Kalshi record; the MLB result is an independent annotation
 and never selects or replaces a label. The settlement mapping, when present, must
 confirm the frozen game identity for a binary label to score.
+
+Attempts follow the evaluation's lineage: a forward-shadow or reconstruction evaluation
+sees only attempts of settlement runs whose durable source lineage is live, so synthetic
+bytes in the same archive can neither label nor shadow its outcomes; a synthetic
+evaluation may use either lineage.
 """
 
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ..forecast.references import reference
+from ..forecast.references import reference, run_source_mode
 from ..settlement.models import kalshi_result
 from .scoring import arithmetic
 from .settlement import finalized_binary
@@ -35,6 +40,7 @@ DISPOSITIONS = (
     "outcome_not_observed",
 )
 COMPLETED = ("ok", "parse_error", "error")
+MODES = ("synthetic", "forward_shadow", "historical_reconstruction")
 EXCEPTIONAL = {"not_binary_payout", "result_payout_conflict"}
 
 
@@ -89,8 +95,13 @@ def _target_mapping(db, mapping_id, anchor_fetch_id, outcomes_as_of, source_ceil
     ).fetchone()
 
 
-def join(db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling, scheduled_start=None):
+def join(
+    db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling, mode, scheduled_start=None
+):
     """Outcome disposition for one opportunity. `outcomes_as_of` is an aware datetime.
+
+    `mode` is the evaluation's evidence mode: other than `synthetic`, only attempts of
+    live-lineage settlement runs exist for the join.
 
     `scheduled_start` is the start the opportunity was decided for. When the settlement
     mapping confirms the same game but at another start (a postponement or time change
@@ -98,21 +109,28 @@ def join(db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling, sc
     forecast of that game: the disposition is `schedule_changed_after_decision`,
     explicit and never scored. A mapping without a start cannot confirm the horizon.
     """
+    if mode not in MODES:
+        raise ValueError("unknown evaluation mode")
     if ticker is None:
         return Outcome("identity_unresolved", ("no_selected_contract",))
-    attempt = db.execute(
+    attempts = db.execute(
         "SELECT f.id, f.seq, f.state, f.retrieved_at, t.mapping_version_id,"
-        " COALESCE(t.schedule_fetch_id, t.event_fetch_id, t.market_fetch_id) FROM fetches f"
-        " JOIN requests r ON r.id=f.request_id"
+        " COALESCE(t.schedule_fetch_id, t.event_fetch_id, t.market_fetch_id), r.run_id"
+        " FROM fetches f JOIN requests r ON r.id=f.request_id"
         " JOIN settlement_targets t ON t.id=r.request_key AND t.run_id=r.run_id"
         " WHERE r.stage='settlement-market' AND t.ticker=? AND f.retrieved_at IS NOT NULL"
         " AND f.retrieved_at<=? AND f.seq<=? AND f.state IN ('ok','parse_error','error')"
-        " ORDER BY f.seq DESC LIMIT 1",
+        " ORDER BY f.seq DESC",
         (ticker, outcomes_as_of.isoformat(), source_ceiling),
-    ).fetchone()
+    ).fetchall()
+    # Synthetic bytes are never evidence for a live evaluation (M1): their attempts are
+    # skipped, not "the latest attempt" that labels or invalidates the outcome.
+    attempt = next(
+        (a for a in attempts if mode == "synthetic" or run_source_mode(db, a[6]) == "live"), None
+    )
     if attempt is None:
         return Outcome("outcome_not_observed", ("no_settlement_attempt_in_view",))
-    fetch_id, _seq, state, retrieved_at, target_mapping_id, mapping_anchor = attempt
+    fetch_id, _seq, state, retrieved_at, target_mapping_id, mapping_anchor, _run = attempt
     base = {"fetch_id": fetch_id, "retrieved_at": retrieved_at}
     if state != "ok":
         return Outcome("outcome_fetch_failed", (f"latest_attempt_{state}",), **base)

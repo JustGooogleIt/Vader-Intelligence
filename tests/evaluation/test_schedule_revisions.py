@@ -79,6 +79,7 @@ def test_outcome_join_without_a_decided_start_keeps_the_old_disposition(store, c
         yes_team_id=117,
         outcomes_as_of=at(23, 30),
         source_ceiling=ceiling,
+        mode="synthetic",
     )
     assert joined.status == "binary_scorable"
     decided = outcomes.join(
@@ -88,6 +89,7 @@ def test_outcome_join_without_a_decided_start_keeps_the_old_disposition(store, c
         yes_team_id=117,
         outcomes_as_of=at(23, 30),
         source_ceiling=ceiling,
+        mode="synthetic",
         scheduled_start=at(19, 5),
     )
     assert decided.status == "schedule_changed_after_decision" and not decided.scorable

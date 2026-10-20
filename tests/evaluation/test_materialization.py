@@ -611,6 +611,7 @@ def test_outcome_join_dispositions_directly(store, config, monkeypatch):
             yes_team_id=117,
             outcomes_as_of=AS_OF,
             source_ceiling=10**6,
+            mode="synthetic",
         ).status
         == "identity_unresolved"
     )
@@ -622,6 +623,7 @@ def test_outcome_join_dispositions_directly(store, config, monkeypatch):
             yes_team_id=117,
             outcomes_as_of=AS_OF,
             source_ceiling=10**6,
+            mode="synthetic",
         ).status
         == "outcome_not_observed"
     )
@@ -633,6 +635,7 @@ def test_outcome_join_dispositions_directly(store, config, monkeypatch):
         yes_team_id=117,
         outcomes_as_of=AS_OF,
         source_ceiling=10**6,
+        mode="synthetic",
     )
     assert joined.scorable and joined.y == 1 and joined.mlb_agrees is True
     # A frozen game that the mapping contradicts cannot score.
@@ -643,6 +646,7 @@ def test_outcome_join_dispositions_directly(store, config, monkeypatch):
         yes_team_id=117,
         outcomes_as_of=AS_OF,
         source_ceiling=10**6,
+        mode="synthetic",
     )
     assert changed.status == "identity_changed"
     # A ceiling below the settlement attempt hides it.
@@ -654,6 +658,7 @@ def test_outcome_join_dispositions_directly(store, config, monkeypatch):
             yes_team_id=117,
             outcomes_as_of=AS_OF,
             source_ceiling=1,
+            mode="synthetic",
         ).status
         == "outcome_not_observed"
     )

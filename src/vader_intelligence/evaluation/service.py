@@ -542,6 +542,7 @@ def evaluate(
                     yes_team_id=yes_team,
                     outcomes_as_of=as_of,
                     source_ceiling=source_ceiling,
+                    mode=mode,
                     scheduled_start=None
                     if record.get("scheduled_start") is None
                     else utc(datetime.fromisoformat(record["scheduled_start"])),
