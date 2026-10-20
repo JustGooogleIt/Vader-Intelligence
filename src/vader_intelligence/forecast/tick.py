@@ -12,10 +12,11 @@ publication record yet, at this tick's actual time: a decision whose publication
 never committed (crash between the two records) is published by a later tick at that
 later time, which is `allowed` inside the window or `missed` after it. It is never
 backdated and never a more favorable time. Immediately before an allowed record is
-committed, the latest already-available operational evidence for the contract is
-checked: a post-cutoff eligibility decision showing the game no longer pregame or the
-market closed vetoes publication with that evidence; it never changes the cutoff
-decision (specification §2, "three independent decisions").
+committed, the latest operational evidence for the contract already witnessed in this
+namespace and mode is checked: a post-cutoff eligibility decision showing the game no
+longer pregame or the market closed vetoes publication with that evidence, at its
+witness time; it never changes the cutoff decision (specification §2, "three
+independent decisions").
 """
 
 import json
@@ -293,24 +294,35 @@ def _unpublished_decisions(db, protocol, mode):
     return [(row[0], row[1], json.loads(row[2])) for row in rows]
 
 
-def operational_veto(db, payload, now):
+def operational_veto(db, payload, now, namespace):
     """Latest already-available post-cutoff evidence for the selected contract.
 
     Reads the newest committed eligibility decision for the contract made after the one
     the cutoff decision renewed on (it must already be in the archive: no request is
-    made). A decision showing the game not pregame or the market no longer open vetoes
-    publication; the veto carries that row's observation time and its typed schedule
-    and event references. Returns None when no such evidence exists.
+    made) that is operational evidence of this cohort: it belongs to a discovery pass
+    with a trusted operational witness receipt (evidence.PROOF) in this namespace and the
+    decision's mode, observed by `now`. A decision showing the game not pregame or the
+    market no longer open vetoes publication; the veto carries the witness's first
+    observation of that pass and the row's typed schedule and event references. Returns
+    None when no such evidence exists.
     """
     renewed = (payload["manifest"].get("renewal") or {}).get("eligibility_id") or 0
-    row = db.execute(
-        "SELECT id, eligible, reason, checked_at, schedule_fetch_id, market_fetch_id"
-        " FROM eligibility WHERE ticker=? AND id>? AND checked_at<=? ORDER BY id DESC LIMIT 1",
-        (payload["ticker"], renewed, now.isoformat()),
-    ).fetchone()
+    rows = db.execute(
+        "SELECT e.id, e.eligible, e.reason, r.observed_at, e.schedule_fetch_id,"
+        " e.market_fetch_id FROM eligibility e JOIN discovery_passes p ON p.run_id=e.run_id"
+        " AND e.id>json_extract(p.payload_json,'$.eligibility_after_id')"
+        " AND e.id<=json_extract(p.payload_json,'$.eligibility_through_id')"
+        " JOIN forecast_receipts r ON r.discovery_id=p.id"
+        " WHERE e.ticker=? AND e.id>? AND e.checked_at<=? AND"
+        + PROOF
+        + " AND json_extract(r.payload_json,'$.clock_status')='trusted'"
+        " AND json_extract(r.payload_json,'$.mode')=? ORDER BY e.id DESC, r.id",
+        (payload["ticker"], renewed, now.isoformat(), namespace, payload["mode"]),
+    ).fetchall()
+    row = next((r for r in rows if utc(datetime.fromisoformat(r[3])) <= now), None)
     if row is None:
         return None
-    eligibility_id, eligible, reason, checked_at, schedule_fetch_id, market_fetch_id = row
+    eligibility_id, eligible, reason, observed_at, schedule_fetch_id, market_fetch_id = row
     if eligible or reason not in VETO_REASONS:
         return None
     references = []
@@ -321,7 +333,7 @@ def operational_veto(db, payload, now):
             pass  # a pending/absent attempt cannot be a typed reference; the row still vetoes
     return {
         "reason": reason,
-        "observed_at": utc(datetime.fromisoformat(checked_at)),
+        "observed_at": utc(datetime.fromisoformat(observed_at)),
         "eligibility_id": eligibility_id,
         "references": references,
     }
@@ -332,7 +344,7 @@ def _publish(
 ):
     db = store.db
     scheduled_start = utc(datetime.fromisoformat(payload["scheduled_start"]))
-    veto = operational_veto(db, payload, now)
+    veto = operational_veto(db, payload, now, protocol.observer_namespace)
     classification, verdict = publication.decide(
         scheduled_start=scheduled_start,
         attempted_at=now,
