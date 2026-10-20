@@ -28,19 +28,30 @@ def forecaster_id(sha):
 
 
 def witnessed_listing(db, ticker, cutoff, namespace, mode):
-    """QuoteSeries of listing observations retrieved and witnessed by C (bounded lookback)."""
+    """QuoteSeries of listing observations retrieved and witnessed by C (bounded lookback).
+    Retrieval times are compared as instants (review F27); the SQL text bounds are only a
+    prefilter widened past any UTC offset a stored stamp may carry."""
+    from ..storage import retrieval_instant, retrieval_text_bound
+
     rows = db.execute(
         "SELECT f.id, f.retrieved_at, o.data_json FROM observations o JOIN fetches f"
         " ON f.id=o.fetch_id WHERE o.ticker=? AND o.kind='market' AND f.state='ok'"
         " AND f.retrieved_at<=? AND f.retrieved_at>=? ORDER BY f.seq",
-        (ticker, cutoff.isoformat(), (cutoff - LOOKBACK).isoformat()),
+        (
+            ticker,
+            retrieval_text_bound(cutoff, "upper"),
+            retrieval_text_bound(cutoff - LOOKBACK, "lower"),
+        ),
     ).fetchall()
     kept = []
     for fetch_id, retrieved_at, data_json in rows:
+        moment = retrieval_instant(retrieved_at)
+        if moment is None or not cutoff - LOOKBACK <= moment <= cutoff:
+            continue
         availability = evidence.fetch_availability(db, fetch_id, namespace=namespace, mode=mode)
         if availability.status != "witnessed" or availability.observed_at > cutoff:
             continue
-        kept.append((datetime.fromisoformat(retrieved_at), json.loads(data_json), fetch_id))
+        kept.append((moment, json.loads(data_json), fetch_id))
     return quotes.from_listing(ticker, kept)
 
 

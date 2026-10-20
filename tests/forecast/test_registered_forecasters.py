@@ -132,6 +132,39 @@ def test_only_quotes_witnessed_by_the_cutoff_feed_a_model(store, config):
     assert witnessed.quotes and all(q.at <= cutoff for q in witnessed.quotes)
 
 
+def restamp_fetches(db, hours):
+    """Rewrite every retrieval time as the same instant at another UTC offset."""
+    from datetime import datetime, timedelta, timezone
+
+    zone = timezone(timedelta(hours=hours))
+    for fetch_id, stamp in db.execute(
+        "SELECT id, retrieved_at FROM fetches WHERE retrieved_at IS NOT NULL"
+    ).fetchall():
+        moved = datetime.fromisoformat(stamp).astimezone(zone).isoformat()
+        db.execute("UPDATE fetches SET retrieved_at=? WHERE id=?", (moved, fetch_id))
+    db.commit()
+
+
+@pytest.mark.parametrize("hours", [2, 14])
+def test_witnessed_listing_compares_retrieval_instants(store, config, hours):
+    """Review F27: the C and C - LOOKBACK bounds compare instants, not offset text. A
+    retrieval at 18:03Z stamped 20:03+02:00 is inside the window; one at 15:00Z (before
+    C - 2 h = 16:05Z) stamped 17:00+02:00 is outside it."""
+    to_schema6(store)
+    runner, proto = runner_and_protocol()
+    collect(store, config, origin=at(15, 0))
+    tick_at_runner(store, proto, at(15, 0, 30), runner)  # witnessed, but too old
+    collect(store, config, origin=at(18, 3))
+    tick_at_runner(store, proto, at(18, 3, 30), runner)
+    cutoff, ticker = at(18, 5), "KXMLBGAME-26SEP271505HOUATH-HOU"
+    utc = witnessed_listing(store.db, ticker, cutoff, "local-witness-v1", "synthetic")
+    assert utc.quotes and all(at(16, 5) <= q.at <= cutoff for q in utc.quotes)
+    restamp_fetches(store.db, hours)
+    moved = witnessed_listing(store.db, ticker, cutoff, "local-witness-v1", "synthetic")
+    assert [q.ref for q in moved.quotes] == [q.ref for q in utc.quotes]
+    assert [q.at for q in moved.quotes] == [q.at for q in utc.quotes]
+
+
 def test_research_only_feature_sets_cannot_run_forward():
     sha, data = stub_artifact("fs-full-v1")
     with pytest.raises(ValueError, match="not forward capable"):
