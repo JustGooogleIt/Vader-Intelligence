@@ -135,7 +135,14 @@ def parser():
     hacquire.add_argument("--from", dest="start", required=True, help="first game date")
     hacquire.add_argument("--through", required=True, help="last game date (max 250 days)")
     hacquire.add_argument("--resume", help="resume this unfinished historical-acquire run")
-    hacquire.add_argument("--max-requests", type=int, default=8000)
+    hacquire.add_argument(
+        "--max-requests",
+        type=int,
+        default=8000,
+        help="bound on logical requests started by this invocation (requests_made); each"
+        " may retry up to the configured max_attempts, so HTTP attempts (attempts_made)"
+        " can exceed it",
+    )
     hacquire.add_argument("--budget", type=float, default=7200.0, help="seconds")
     hacquire.add_argument("--window-seconds", type=int, default=3600)
     hacquire.add_argument(
