@@ -3,6 +3,7 @@ and incomplete limits refused, the credential read only after every other gate, 
 only `activate_live` can create a network transport. No network request is made."""
 
 import ast
+import base64
 import hashlib
 import os
 from dataclasses import replace
@@ -14,7 +15,7 @@ import httpx
 import pytest
 from _trading_synthetic import D, at
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 
 import vader_intelligence
 from vader_intelligence.trading.kalshi.activation import (
@@ -22,6 +23,7 @@ from vader_intelligence.trading.kalshi.activation import (
     ActivationRefused,
     activate_live,
     check_gates,
+    contains_key_material,
 )
 from vader_intelligence.trading.kalshi.client import LiveTransportRefused
 from vader_intelligence.trading.kalshi.gateway import KalshiGateway
@@ -280,3 +282,92 @@ def test_only_activation_creates_a_network_transport(tmp_path):
     assert users["KalshiClient"] == activation
     assert users["KalshiGateway"] == activation
     assert users["_NETWORK_TRANSPORT_KEY"] == activation | {"trading/kalshi/client.py"}
+
+
+def _pasted_forms():
+    """Ways an operator might paste a private key into the activation file (keys are
+    generated here and never leave the test)."""
+    ser = serialization
+    ed = ed25519.Ed25519PrivateKey.generate()
+    rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    der = ed.private_bytes(ser.Encoding.DER, ser.PrivateFormat.PKCS8, ser.NoEncryption())
+    pkcs1 = rsa_key.private_bytes(
+        ser.Encoding.DER, ser.PrivateFormat.TraditionalOpenSSL, ser.NoEncryption()
+    )
+    encrypted = ed.private_bytes(
+        ser.Encoding.DER, ser.PrivateFormat.PKCS8, ser.BestAvailableEncryption(b"pw")
+    )
+    pem_text = pem(ed)
+    body = b"".join(line for line in pem(rsa_key).splitlines() if b"-----" not in line)
+    wrapped = b"\\\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+    # Ed25519 PKCS#8 DER is 48 bytes, so its base64 is 64 characters with no padding:
+    # split into lines shorter than a run, it merges with the next token of the file
+    # ("enabled") once the layout is removed. The RSA body above does the same whenever
+    # its DER length is a multiple of 3.
+    short = base64.b64encode(der)
+    assert not short.endswith(b"=")
+    lines = body_lines(rsa_key)
+    damaged = bytearray(b"".join(lines))
+    damaged[len(damaged) // 2] = ord("A") if damaged[len(damaged) // 2] != ord("A") else ord("B")
+    openssh = ed.private_bytes(ser.Encoding.PEM, ser.PrivateFormat.OpenSSH, ser.NoEncryption())
+    return {
+        "rsa_body_in_a_toml_array": b"[\n" + b",\n".join(b'"' + x + b'"' for x in lines) + b"]",
+        "rsa_body_truncated": b"\n".join(lines[:12]),
+        "rsa_body_one_character_damaged": bytes(damaged),
+        "openssh_body": b"\n".join(x for x in openssh.splitlines() if b"-----" not in x),
+        "ed25519_der_base64_unpadded_lines": short[:32] + b"\\\n" + short[32:],
+        "ed25519_der_base64_after_a_character": b"x" + short,
+        "ed25519_der_hex_after_a_digit": b"5" + der.hex().encode(),
+        "ed25519_der_base64": base64.b64encode(der),
+        "rsa_pkcs1_der_base64": base64.b64encode(pkcs1),
+        "encrypted_der_base64": base64.b64encode(encrypted),
+        "pem_body_wrapped": wrapped,  # armour removed, TOML line continuations
+        "pem_base64": base64.b64encode(pem_text),
+        "pem_hex": pem_text.hex().encode(),
+        "der_hex": der.hex().encode(),
+    }
+
+
+def body_lines(key):
+    """The base64 lines of a key's PEM without its armour."""
+    return [line for line in pem(key).splitlines() if b"-----" not in line]
+
+
+def test_a_body_pasted_as_comments_is_refused(tmp_path):
+    # TOML ignores comments, so no other gate sees them: this gate is the only defence.
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    for case, prefix in enumerate(("# ", "#", "#\t")):
+        comments = "".join(f"{prefix}{line.decode()}\n" for line in body_lines(key))
+        directory = tmp_path / f"case{case}"
+        directory.mkdir()
+        setup = Setup(directory)
+        setup.write(extra=comments)
+        assert setup.refused().failed == ("no_key_material",)
+
+
+def test_public_keys_are_not_key_material():
+    for key in (
+        ed25519.Ed25519PrivateKey.generate(),
+        rsa.generate_private_key(public_exponent=65537, key_size=2048),
+    ):
+        der = key.public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        for blob in (base64.b64encode(der), der.hex().encode()):
+            assert not contains_key_material(b'note = """\n' + blob + b'\n"""\n')
+
+
+@pytest.mark.parametrize("form", sorted(_pasted_forms()))
+def test_encoded_key_material_is_refused(tmp_path, form):
+    blob = _pasted_forms()[form].decode()
+    setup = Setup(tmp_path)
+    setup.write(extra=f'note = """\n{blob}\n"""\n')
+    assert "no_key_material" in setup.refused().failed
+
+
+def test_hashes_and_paths_are_not_key_material():
+    text = (
+        f'risk_limits_hash = "{"ab" * 32}"\nkey_id = "{KEY_ID}"\n'
+        'path = "/Users/operator/Documents/AbsolutelyLongDirectoryName/kalshi/key.pem"\n'
+    ).encode()
+    assert not contains_key_material(text)

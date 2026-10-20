@@ -103,6 +103,23 @@ ledger), and the explicit statement that activation is a separate user decision.
   - A fill whose fee exceeds the order's fee bound is refused, so trading stops rather
     than reservations being silently underfunded.
   - A live approval must cite complete, recorded limits.
+- **Key material in the activation file.** `no_key_material` first detected only PEM
+  armour. It now also refuses any base64 or hex run, including one wrapped across lines
+  or quotes, that decodes to PEM text or to a DER private key, encrypted or not. Once
+  the layout is removed, a run can absorb a neighbouring token (after an unpadded run)
+  or a character before it. So every base64 alignment and hex nibble alignment is
+  decoded, and a DER key is found wherever it starts, bounded by its own length header.
+  After an independent adversarial review, the gate also covers:
+  - comment markers and array punctuation, which count as layout (a body pasted as
+    commented-out lines passed every other gate);
+  - the opening bytes of PKCS#1, PKCS#8 RSA, Ed25519 and PBES2 structures, so a
+    truncated or damaged body is refused;
+  - OpenSSH keys.
+
+  RSA validation is skipped when loading, since only the shape matters and validation
+  of a crafted structure took up to a minute. A SHA-256 digest, a path or a public key
+  is not refused. (A later repair: the #24/#25 pre-review
+  listed this as documented, not changed.)
 
 ## Revision: venue settlements (2026-10-19)
 

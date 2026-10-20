@@ -18,7 +18,9 @@ Gates (stable codes, evaluated in this order):
     key_id                  a key id reference (UUID); no key material in the file
     secret_provider         [secret] provider = "file" (absolute path) or "keychain"
                             (service, account)
-    no_key_material         the file contains no PEM block / private key text
+    no_key_material         the file contains no private key: no PEM text, and no
+                            base64 or hex run that decodes to PEM text or a DER
+                            private key
     notional_caps           max_order_notional, max_daily_notional: positive decimal
                             strings, per-order <= daily
     markets                 [[markets]] allowed series/tickers with price grids
@@ -57,6 +59,8 @@ Config file (no key material; the key id is an identifier, not a secret):
 activation: `price_ranges` is the source of truth.)
 """
 
+import base64
+import binascii
 import hashlib
 import hmac
 import re
@@ -66,6 +70,7 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
+from cryptography.hazmat.primitives import serialization
 
 from ..money import dec, utc
 from ..risk import LimitsIncomplete
@@ -114,6 +119,110 @@ _SECRET_KEYS = frozenset({"provider", "path", "service", "account"})
 _MARKET_KEYS = frozenset({"series", "exchange_index", "tickers", "price_ranges"})
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _KEY_MATERIAL = (b"-----BEGIN", b"PRIVATE KEY")
+_BASE64_RUN = re.compile(rb"[A-Za-z0-9+/]{40,}={0,2}")
+_HEX_RUN = re.compile(rb"[0-9A-Fa-f]{40,}")
+# Whitespace, quotes, TOML line continuations, comment markers and array punctuation: a
+# body pasted as commented-out lines or split across an array is still one run.
+_LAYOUT = re.compile(rb"[\s\"'\\#,\[\]]+")
+# Markers in decoded bytes: PEM text, an OpenSSH private key, and the opening bytes of
+# key structures, so a truncated or damaged body (which still exposes key components)
+# is found without a complete, loadable DER.
+_DECODED_MARKERS = (*_KEY_MATERIAL, b"openssh-key-v1\x00")
+_KEY_PREFIXES = re.compile(
+    rb"\x30\x82..\x02\x01\x00\x02\x82"  # PKCS#1 RSAPrivateKey: version 0, then n
+    rb"|\x02\x01\x00\x30\x0d\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01"  # PKCS#8 RSA
+    rb"|\x06\x03\x2b\x65\x70\x04\x22\x04\x20"  # PKCS#8 Ed25519: OID, then the seed
+    rb"|\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x05\x0d",  # PBES2 (encrypted PKCS#8)
+    re.DOTALL,
+)
+
+
+def _loads_as_private_key(der):
+    # Only the shape matters here, and RSA validation (primality tests) on a crafted
+    # structure can take a minute; skipping it also accepts a damaged key.
+    try:
+        serialization.load_der_private_key(der, password=None, unsafe_skip_rsa_key_validation=True)
+    except TypeError:  # an encrypted private key: still key material
+        return True
+    except Exception:  # not a DER private key
+        return False
+    return True
+
+
+def _der_end(blob, start):
+    """End of the DER SEQUENCE that starts at `start`, from its own length header, or
+    None when the header is not a plausible private key's (at least 32 content bytes)."""
+    if start + 2 > len(blob):
+        return None
+    first = blob[start + 1]
+    if first < 0x80:
+        header, size = 2, first
+    elif 0x81 <= first <= 0x83:
+        count = first & 0x7F
+        if start + 2 + count > len(blob):
+            return None
+        header, size = 2 + count, int.from_bytes(blob[start + 2 : start + 2 + count], "big")
+    else:
+        return None
+    end = start + header + size
+    return end if size >= 32 and end <= len(blob) else None
+
+
+def _decodes_to_key(blob):
+    """PEM text anywhere in `blob`, or a DER private key starting anywhere in it. A DER
+    key is bounded by its own length header, so bytes decoded from neighbouring text that
+    merged into the same run (a token after an unpadded run, a character before it) do
+    not hide it."""
+    if any(marker in blob for marker in _DECODED_MARKERS) or _KEY_PREFIXES.search(blob):
+        return True
+    start = blob.find(0x30)  # SEQUENCE
+    while start != -1:
+        end = _der_end(blob, start)
+        if end is not None and _loads_as_private_key(blob[start:end]):
+            return True
+        start = blob.find(0x30, start + 1)
+    return False
+
+
+def _base64_decodings(run):
+    """The run decoded at each of the four alignments (merged leading text shifts it)."""
+    core = run.rstrip(b"=")
+    for offset in range(4):
+        part = core[offset:]
+        if len(part) % 4 == 1:
+            part = part[:-1]
+        try:
+            yield base64.b64decode(part + b"=" * (-len(part) % 4), validate=True)
+        except (binascii.Error, ValueError):
+            continue
+
+
+def _hex_decodings(run):
+    for offset in range(2):
+        part = run[offset:]
+        yield bytes.fromhex(part[: len(part) // 2 * 2].decode())
+
+
+def contains_key_material(data):
+    """True when `data` holds a private key in any form an operator might paste: PEM text,
+    or a base64 or hex run (also across line breaks, quotes, comment markers and arrays)
+    that decodes to PEM text, an OpenSSH key, the opening bytes of a key structure (so a
+    truncated body counts) or a DER private key. A run may absorb neighbouring characters
+    once the layout is removed, so every alignment is decoded and a DER key is found
+    wherever it starts. A SHA-256 hex digest decodes to 32 bytes that hold none of these.
+    Any text containing `-----BEGIN` or `PRIVATE KEY` is refused too, comments
+    included."""
+    if any(marker in data for marker in _KEY_MATERIAL):
+        return True
+    stripped = _LAYOUT.sub(b"", data)
+    for text in (data, stripped) if stripped != data else (data,):
+        for match in _BASE64_RUN.finditer(text):
+            if any(_decodes_to_key(blob) for blob in _base64_decodings(match.group())):
+                return True
+        for match in _HEX_RUN.finditer(text):
+            if any(_decodes_to_key(blob) for blob in _hex_decodings(match.group())):
+                return True
+    return False
 
 
 class ActivationRefused(Exception):
@@ -260,7 +369,7 @@ def check_gates(config_path, *, acknowledge_hash, ledger, now):
         gate("acknowledge_hash", acknowledged)
 
         def no_material():
-            if any(marker in data for marker in _KEY_MATERIAL):
+            if contains_key_material(data):
                 raise ValueError("the config file must not contain key material")
 
         gate("no_key_material", no_material)
