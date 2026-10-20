@@ -107,7 +107,9 @@ def candle_historical(end):
     }
 
 
-def handler_factory(calls, *, page_size_pages=2, fail_ticker=None, schedule=None):
+def handler_factory(
+    calls, *, page_size_pages=2, fail_ticker=None, schedule=None, unavailable_ticker=None
+):
     def handler(request):
         calls.append(request)
         path = request.url.path.removeprefix("/trade-api/v2")
@@ -127,6 +129,8 @@ def handler_factory(calls, *, page_size_pages=2, fail_ticker=None, schedule=None
             ticker = path.split("/")[-2]
             if ticker == fail_ticker:
                 return response(status=404, data={"error": "not found"})
+            if ticker == unavailable_ticker:
+                return response(status=503, data={"error": "unavailable"})
             end, start = int(query["end_ts"]), int(query["start_ts"])
             maker = candle_historical if path.startswith("/historical/") else candle_live
             return response(
@@ -370,3 +374,22 @@ def test_an_unparseable_official_start_is_one_unresolved_event(store, config, st
     records = interpret.events(interpret.markets(store.db))["KXMLBGAME-26SEP201310PHINYM"]
     found = interpret.identify(records, games | {900009: twin})
     assert found == {"status": "unresolved", "reason": "unparseable_start"}
+
+
+def test_the_request_bound_counts_logical_requests_and_reports_http_attempts(store, config, capsys):
+    """Review N-20b: --max-requests bounds logical requests, and each may be retried up
+    to max_attempts; HTTP attempts are reported separately as attempts_made."""
+    calls = []
+    unavailable = "KXMLBGAME-26SEP201310PHINYM-NYM"
+    result = acquire(
+        store, config, calls, max_requests=9, handler={"unavailable_ticker": unavailable}
+    )
+    assert result["status"] == "partial" and result["candle_requests"]["failed"] == 1
+    assert result["requests_made"] == 9
+    assert len(calls) == 9 - 1 + config.max_attempts == 11
+    assert result["attempts_made"] == len(calls)
+    assert store.db.execute("SELECT COUNT(*) FROM fetches").fetchone()[0] == len(calls)
+    with pytest.raises(SystemExit):
+        parser().parse_args(["history", "acquire", "--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "logical requests" in help_text and "attempts_made" in help_text

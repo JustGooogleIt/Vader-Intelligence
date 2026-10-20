@@ -62,7 +62,17 @@ class Acquisition:
         self.monotonic = monotonic or time.monotonic
 
     # ------------------------------------------------------------------ helpers
+    def _attempts(self, run_id):
+        """HTTP attempts archived for this run so far (every attempt is one fetch row)."""
+        return self.store.db.execute(
+            "SELECT COUNT(*) FROM fetches f JOIN requests q ON q.id=f.request_id WHERE q.run_id=?",
+            (run_id,),
+        ).fetchone()[0]
+
     def _get(self, run_id, stage, key, url, params, apply):
+        """`max_requests` bounds logical requests started by this invocation
+        (`requests_made`); the reader may retry each up to `max_attempts` times, so HTTP
+        attempts (`attempts_made`, reported separately) can exceed the bound."""
         done = self.store.db.execute(
             "SELECT done FROM requests WHERE run_id=? AND stage=? AND request_key=?",
             (run_id, stage, key),
@@ -157,12 +167,14 @@ class Acquisition:
                 timestamp(self.reader.now()),
             )
         self.made = 0
+        attempts_before = self._attempts(run_id)
         self.deadline = self.monotonic() + self.budget
         summary = {
             "run_id": run_id,
             "evidence_kind": "historical_retrieval",
             "configuration": configuration,
             "requests_made": 0,
+            "attempts_made": 0,
             "pages": {},
             "listing_complete": {},
             "markets_in_range": 0,
@@ -286,6 +298,7 @@ class Acquisition:
         if status == "complete" and summary["candle_requests"]["failed"]:
             status = "partial"
         summary["requests_made"] = self.made
+        summary["attempts_made"] = self._attempts(run_id) - attempts_before
         summary["status"] = status
         self.store.finish_run(run_id, status, json_text_safe(summary))
         return summary
