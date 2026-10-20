@@ -176,6 +176,27 @@ def test_research_only_feature_sets_cannot_run_forward():
         ForecasterRunner({"0" * 64: data}, predict_mid)
 
 
+@pytest.mark.parametrize(
+    "document",
+    [
+        [1, 2],
+        "artifact",
+        None,
+        {"training": ["fs-market-v1"]},
+        {"training": "fs-market-v1", "feature_names": NAMES},
+        {"training": {"feature_set": ["fs-market-v1"]}, "feature_names": NAMES},
+    ],
+)
+def test_a_malformed_artifact_document_is_a_configuration_error(document):
+    """N-33b: a digest-valid artifact whose JSON is not an object, or whose training is
+    not an object (or names an unhashable feature set), is refused with ValueError like
+    its neighbouring checks, never an AttributeError or TypeError."""
+    data = json.dumps(document).encode()
+    sha = hashlib.sha256(data).hexdigest()
+    with pytest.raises(ValueError, match=sha[:12]):
+        ForecasterRunner({sha: data}, predict_mid)
+
+
 def test_forecasters_need_schema_six_and_their_artifacts(store, config):
     from _f34 import to_schema4
 

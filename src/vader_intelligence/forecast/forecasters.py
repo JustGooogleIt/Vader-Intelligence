@@ -89,8 +89,9 @@ class ForecasterRunner:
         """`artifacts`: {sha256: artifact JSON bytes, or None when the registry has no such
         artifact}. A missing artifact, or one that fails `verify`, is kept as an
         unavailable forecaster that abstains on every decision (D-004), a missing one with
-        the reason `missing`; a digest mismatch or a feature set that is unknown or not
-        forward capable is a configuration error refused here, before any write."""
+        the reason `missing`; a digest mismatch, a document that is not an object with a
+        training object, or a feature set that is unknown or not forward capable is a
+        configuration error (ValueError) refused here, before any write."""
         self.predict = predict
         self.models = {}
         for sha, data in sorted(artifacts.items()):
@@ -106,8 +107,10 @@ class ForecasterRunner:
             if hashlib.sha256(data).hexdigest() != sha:
                 raise ValueError(f"artifact {sha} failed verification")
             artifact = json.loads(data)
+            if not isinstance(artifact, dict) or not isinstance(artifact.get("training", {}), dict):
+                raise ValueError(f"artifact {sha[:12]} is not an object with a training object")
             feature_set = artifact.get("training", {}).get("feature_set")
-            if feature_set not in definitions.FEATURE_SETS:
+            if not isinstance(feature_set, str) or feature_set not in definitions.FEATURE_SETS:
                 raise ValueError(f"artifact {sha[:12]} names no known feature set")
             if not definitions.describe_set(feature_set)["forward_capable"]:
                 raise ValueError(
