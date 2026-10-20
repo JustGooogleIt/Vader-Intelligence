@@ -40,10 +40,13 @@ Specification: `docs/specs/live-adapter-v1.md`. API facts and their verification
      must pass) — note the returned limits hash for the config. Size them within the
      activation file's caps (step 9): `max_order_cost` at or below `max_order_notional`
      and `max_order_contracts` at the canary size. The risk engine's order cost includes
-     the fee bound, so an approved order's notional then fits the cap. With
-     `RiskEngine("live", clip_to_limits=True)` a larger Kelly size is clipped down; without
-     clipping it is refused as `order_cost_limit`. Otherwise the risk engine approves a
-     size that the gateway refuses as `local:order_notional_cap`. That is fail closed,
+     the fee bound, so an approved order's notional then fits the per-order cap. The
+     daily cap (`max_daily_notional`) is checked separately by the gateway. With
+     `RiskEngine("live", clip_to_limits=True)` a larger Kelly size is clipped down to the
+     lots that fit. If not even one lot fits, it is refused as `order_cost_limit`.
+     Without clipping, a larger size is refused (`order_cost_limit`, and
+     `order_contracts_limit` above `max_order_contracts`). Otherwise the risk engine
+     approves a size that the gateway refuses as `local:order_notional_cap`. That is fail closed,
      since nothing is sent, but no canary order is placed. The 2026-10-19 dry run on a real
      forward decision shows this: under the simulation limits for 1000, 8 contracts at
      0.42 (notional 3.36) were approved and then refused by a 1.00 cap. A smaller bankroll
