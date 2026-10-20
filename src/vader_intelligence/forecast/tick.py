@@ -220,6 +220,12 @@ def tick(store, protocol, *, clock=None, monotonic=None, budget=30.0, runner=Non
         summary["errors"].append(str(exc)[:200])
         store.finish_run(run_id, "interrupted", summary | {"status": "interrupted"})
         raise
+    # A witness phase reports a storage or integrity failure in its summary instead of
+    # raising; the tick fails with it rather than reading as an empty universe.
+    for phase, result in summary["witness"].items():
+        if result["status"] == "failed":
+            status = "failed"
+            summary["errors"].append(f"witness {phase}: " + "; ".join(result["errors"])[:200])
     if summary["errors"] and status == "complete":
         status = "partial"
     if (

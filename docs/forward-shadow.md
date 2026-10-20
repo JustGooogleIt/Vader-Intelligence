@@ -93,7 +93,8 @@ is at most 19 s; `configure` refuses more. The launchd install preflight is unch
    committed fetches and discovery summary, prepares and witnesses bindings, computes due
    decisions from evidence available at C, attempts publication for eligible decisions
    lacking a record, records missed, exits. Exit 0 complete, 3 inconclusive (no due
-   decision), 1 partial/failed, 130 interrupted. Its deadline is `tick_budget + grace`.
+   decision), 1 partial/failed (a failed witness phase fails the tick), 130 interrupted.
+   Its deadline is `tick_budget + grace`.
 2. `collect --once`: the unchanged two-phase collection (discovery, immutable summary,
    books), deadline as configured.
 
