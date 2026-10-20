@@ -139,6 +139,9 @@ def train_model(params: TrainModelParams, ctx):
         "configs_tried": len(result.results),
         "grid": grid,
         "development_rows": len(snapshot.development),
+        # Chronological cross-validation on development rows only: what a planner may
+        # see (`pods.planner`); the validation diagnostic below never reaches it.
+        "development_cv_log_loss": result.results[result.selected]["mean_log_loss"],
         "diagnostic_validation_log_loss": diagnostics["model"]["log_loss"],
         "evidence": NOT_EVIDENCE,
     }
@@ -205,6 +208,8 @@ def symbolic_search_op(params: SymbolicSearchParams, ctx):
         "model_sha256": model.sha256,
         "expression": record["selected"]["description"],
         "complexity": record["selected"]["complexity"],
+        # The search's inner validation split lies inside development (`inner_split`).
+        "development_inner_log_loss": record["selected"]["validation_log_loss"],
         "parity": fitted["parity"],
         "diagnostic_validation_log_loss": diagnostics["model"]["log_loss"],
     }
