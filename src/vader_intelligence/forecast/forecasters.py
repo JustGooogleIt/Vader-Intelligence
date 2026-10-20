@@ -14,6 +14,7 @@ how a model family is evaluated.
 
 import hashlib
 import json
+import numbers
 from datetime import datetime, timedelta
 
 from ..features import definitions, quotes
@@ -124,7 +125,12 @@ class ForecasterRunner:
         ]
 
     def results(self, db, *, binding, facts, namespace, evidence_mode):
-        """{forecaster id: {probability, reasons, inputs}} for one decision at its cutoff."""
+        """{forecaster id: {probability, reasons, inputs}} for one decision at its cutoff.
+
+        A model output that is not a probability in [0, 1] (NaN, infinite, out of range,
+        not a number) makes that forecaster abstain (`model_output_invalid`); it is never
+        clipped into a forecast and never fails the decision. Outputs in [0, 1] are
+        clipped to [1e-6, 1 - 1e-6] and written with six places."""
         out = {}
         if not facts.cutoff_eligible:
             for d in self.descriptors():
@@ -185,6 +191,14 @@ class ForecasterRunner:
                     "inputs": {},
                 }
                 continue
+            invalid = output_problem(probability)
+            if invalid is not None:
+                out[key] = {
+                    "probability": None,
+                    "reasons": ["model_output_invalid:" + invalid[:80]],
+                    "inputs": {},
+                }
+                continue
             low, high = 10**-PROBABILITY_PLACES, 1 - 10**-PROBABILITY_PLACES
             clipped = min(max(float(probability), low), high)
             out[key] = {
@@ -198,6 +212,20 @@ class ForecasterRunner:
                 },
             }
         return out
+
+
+def output_problem(probability):
+    """None when a model output is a probability: a real number (not a bool) in [0, 1].
+    Otherwise a short description of it (NaN fails the range test). Only values in
+    [0, 1] are clipped to [1e-6, 1 - 1e-6] by the caller; nothing else is repaired."""
+    if isinstance(probability, bool) or not isinstance(probability, numbers.Real):
+        return type(probability).__name__
+    if 0 <= probability <= 1:
+        return None
+    try:
+        return f"{float(probability):.6g}"
+    except (OverflowError, ValueError):
+        return "out of range"
 
 
 _LOADED = {}
