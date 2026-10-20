@@ -76,14 +76,34 @@ def test_a_confident_forecast_becomes_a_signed_request_that_is_never_sent(
     (outcome,) = result["outcomes"]
     assert outcome["outcome"] == "submitted_dry", outcome
     assert outcome["side"] == "yes" and outcome["book_as_of"] <= outcome["cutoff"]
-    (request,) = result["requests"]
-    assert request["method"] == "POST"
+    request, cancel = result["requests"]  # the order, then its cancel (no phantom exposure)
+    assert request["method"] == "POST" and cancel["method"] == "DELETE"
+    assert outcome["canceled_after_dry_run"] == "canceled"
+    assert int(outcome["approved_quantity"]) >= 1 and outcome["sizing"]
+    assert "activation gates" in result["checks"]["not_checked"]
     assert request["url"].startswith("https://external-api.demo.kalshi.co/")
     assert request["headers"]["KALSHI-ACCESS-SIGNATURE"].startswith("sha256:")
     body = json.loads(request["body"])
     assert body["ticker"] == outcome["ticker"] and body["side"] == "bid"
     assert result["ledger_verification"] == []
     assert result["notice"].startswith("Dry run")
+    db = open_archive(config.database)
+    try:
+        with pytest.raises(ValueError, match="new paper ledger"):  # no silent replays
+            shadow_dryrun.run(db, forecaster_id=forecaster, ledger_path=tmp_path / "dryrun.sqlite3")
+        capped = shadow_dryrun.run(
+            db,
+            forecaster_id=forecaster,
+            ledger_path=tmp_path / "capped.sqlite3",
+            max_order_notional="0.10",
+        )
+    finally:
+        db.close()
+    (outcome,) = capped["outcomes"]
+    assert (
+        outcome["outcome"] == "refused" and outcome["submit_reason"] == "local:order_notional_cap"
+    )
+    assert capped["requests"] == [] and capped["checks"]["max_order_notional"] == "0.10"
 
 
 def test_a_forecast_without_edge_produces_no_request(store, config, tmp_path, no_network):
@@ -122,4 +142,4 @@ def test_cli_dry_run_signs_with_a_throwaway_key(store, config, tmp_path, no_netw
     result = execute(args)
     assert result["status"] == "complete" and result["signed"] is True
     assert [o["outcome"] for o in result["outcomes"]] == ["submitted_dry"]
-    assert len(result["requests"]) == 1
+    assert [r["method"] for r in result["requests"]] == ["POST", "DELETE"]

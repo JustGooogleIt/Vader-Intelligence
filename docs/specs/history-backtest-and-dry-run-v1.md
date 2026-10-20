@@ -32,9 +32,28 @@ scenario grid: both provisional fee schedules × slippage {0, 1} tick × latency
 1250 ms} × maker model `none` × assumed depth {none, each `--assumed-depth`}.
 
 Segments: `development` (in-sample), `validation` (selection-biased: it compares
-models) and `holdout`. A holdout run requires `--acknowledge-holdout` and is recorded in
-the registry's holdout ledger (the first use consumes it; later uses are reuses and are
-never reported as untouched).
+models) and `holdout`.
+
+**Holdout runs (revised after review, D-014).**
+- The holdout run requires `--acknowledge-holdout`.
+- The dataset's final holdout is *pinned* in the registry (`holdout_pins`; `vader dataset
+  pin-holdout`, or the first writable training or snapshot use), and the run's split must
+  hold out exactly from the pin.
+- The ledger entry is keyed by the pin (`from=<date>`). It is recorded *before* anything
+  is simulated or written, and a model already evaluated on that holdout is refused
+  before any holdout row is read.
+- The first use consumes the holdout. A later use by another model is a reuse, reported
+  as `selection_biased: true`.
+- A holdout needs at least `MIN_EVALUATION_ROWS` rows.
+
+**Other segments.** A split must end before the pinned holdout. A read-only registry
+(non-holdout CLI runs) refuses an unpinned dataset.
+
+**Archive check.** The history archive must be the one the dataset was built from: the
+fetch at the dataset's recorded ceiling must have the recorded digest.
+
+**Counting.** `markets_with_execution_data` counts markets with at least one quote in the
+window; `markets` counts all of them.
 
 What a backtest is not: candle closes are one-minute summaries, not executable books;
 historical retrieval happened after the fact; nothing here is evidence of edge or of
@@ -54,9 +73,27 @@ registered forecaster:
    the live adapter's market rules and mapping and, with `--sign-with-throwaway-key`,
    signs it with an in-memory Ed25519 key generated for the run. It has no HTTP client.
 
-The output lists every decision's outcome (no intent with its reason, a risk refusal
-with its reasons, or `submitted_dry`), the would-be requests (signatures replaced by
-their SHA-256) and the ledger verification. The ledger is a paper ledger, so a dry run
-can never reach a live ledger. A dry run shows that a forward-shadow forecast can become
-a well-formed order request under every local check; it does not show that the exchange
-would accept it, that it would fill, or any profit.
+**Output.** The report lists:
+- every decision's outcome: no intent with its reason, a risk refusal with its reasons,
+  or `submitted_dry`, with the approved quantity and the risk engine's sizing record;
+- the would-be requests, with signatures replaced by their SHA-256;
+- the checks applied and not applied;
+- the ledger verification.
+
+**Revised after review:**
+- each dry order is canceled right after it is recorded (a `DELETE` request is built
+  too), so no phantom open exposure distorts later decisions;
+- the ledger must be new;
+- with `--max-order-notional` / `--max-daily-notional`, the live gateway's local notional
+  caps are applied.
+
+**Scope.** The ledger is a paper ledger, so a dry run can never reach a live ledger.
+
+A dry run shows that a forward-shadow forecast can become a well-formed order request:
+- sized by the paper risk engine under the labelled simulation limits;
+- checked by the adapter's market rules and request construction;
+- checked against the notional caps when they are given.
+
+It does not apply the canary's recorded risk limits or the activation gates (kill-switch
+disengage, startup reconciliation, live order prefix, credential). It does not show that
+the exchange would accept the request, that it would fill, or any profit.

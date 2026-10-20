@@ -133,6 +133,7 @@ def validation_metrics(artifact, manifest, validation, *, seed):
 def run(registry, dataset_id, *, split, config=None, clock=time.monotonic):
     config = config or SearchConfig()
     manifest = registry.dataset(dataset_id)
+    pin = splits.guard(registry, dataset_id, split, pin_if_missing=True)
     rows = registry.dataset_rows(dataset_id)
     development, validation = splits.development_and_validation(rows, split)
     if len(development) < training.MIN_DEVELOPMENT_ROWS:
@@ -181,7 +182,7 @@ def run(registry, dataset_id, *, split, config=None, clock=time.monotonic):
         "complexity": record["selected"]["complexity"],
         "search": _brief(record),
         "validation": metrics_,
-        "holdout": registry.holdout_status(dataset_id, split.key),
+        "holdout": registry.holdout_status(dataset_id, f"from={pin}"),
     }
 
 

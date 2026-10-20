@@ -170,6 +170,13 @@ def parser():
     dbuild.add_argument("--through", required=True)
     dbuild.add_argument("--name", required=True)
     dbuild.add_argument("--identity-rules", default="default")
+    dpin = dataset_commands.add_parser(
+        "pin-holdout", help="pin a dataset's final holdout start (recorded once, append-only)"
+    )
+    dpin.add_argument("--registry", required=True)
+    dpin.add_argument("--dataset", required=True)
+    dpin.add_argument("--from", dest="holdout_from", required=True, help="first holdout date")
+    dpin.add_argument("--actor", default="operator")
     dinspect = dataset_commands.add_parser("inspect", help="read-only dataset listing/manifest")
     dinspect.add_argument("--registry", required=True)
     dinspect.add_argument("--id", help="one dataset; omit to list")
@@ -247,6 +254,10 @@ def parser():
         action="store_true",
         help="sign with an in-memory key generated for this run (never a real credential)",
     )
+    ldry.add_argument(
+        "--max-order-notional", help="apply the live gateway's per-order notional cap"
+    )
+    ldry.add_argument("--max-daily-notional", help="apply the live gateway's daily notional cap")
     minspect = model_commands.add_parser("inspect")
     minspect.add_argument("--registry", required=True)
     minspect.add_argument("--id", help="one model; omit to list")
@@ -350,6 +361,11 @@ def parser():
         if name in ("evaluate", "candidate", "holdout"):
             sub.add_argument("--candidate", required=True)
         if name in ("evaluate", "autopilot"):
+            sub.add_argument(
+                "--allow-weaker-criteria",
+                action="store_true",
+                help="record a labelled decision under criteria weaker than the D-008 default",
+            )
             sub.add_argument("--min-n", type=int, default=100)
             sub.add_argument("--metric", choices=("log_loss", "brier"), default="log_loss")
             sub.add_argument("--baseline", default="market:mid_c")
@@ -711,6 +727,13 @@ def _dataset(args):
     """Datasets read archives through read-only connections and write only the registry."""
     from .research.registry import Registry
 
+    if args.dataset_command == "pin-holdout":
+        registry = Registry(args.registry)
+        try:
+            pinned = registry.pin_holdout(args.dataset, args.holdout_from, args.actor)
+            return {"status": "complete", "dataset": args.dataset, "holdout_from": pinned}
+        finally:
+            registry.close()
     if args.dataset_command == "inspect":
         registry = Registry(args.registry, readonly=True)
         try:
@@ -884,6 +907,8 @@ def _backtest(args):
     if not fees:
         raise ValueError(f"unknown fee schedule {args.fee_schedule!r}")
     depths = [Decimal(d) for d in args.assumed_depth]
+    if args.ledger and len(depths) > 1:
+        raise ValueError("a single --ledger run takes one --assumed-depth (the grid takes several)")
     config = PaperConfig(
         initial_cash=Decimal(args.initial_cash),
         seed=args.seed,
@@ -987,7 +1012,10 @@ def _pods(args):
             else:
                 chosen = planner.ProviderPlanner(UnwiredVendorProvider(args.vendor), seed=args.seed)
             criteria = evaluator.Criteria(
-                baseline=args.baseline, metric=args.metric, min_n=args.min_n
+                baseline=args.baseline,
+                metric=args.metric,
+                min_n=args.min_n,
+                allow_weaker=args.allow_weaker_criteria,
             )
             with Coordinator(store) as coordinator:
                 summary = autopilot.run(
@@ -1016,7 +1044,10 @@ def _pods(args):
             return {"status": "complete", "candidate": candidate_record(store, candidate)}
         if command == "evaluate":
             criteria = evaluator.Criteria(
-                baseline=args.baseline, metric=args.metric, min_n=args.min_n
+                baseline=args.baseline,
+                metric=args.metric,
+                min_n=args.min_n,
+                allow_weaker=args.allow_weaker_criteria,
             )
             return {"status": "complete"} | evaluator.evaluate(
                 store, registry, args.candidate, criteria
@@ -1163,6 +1194,8 @@ def _live_dry_run(args):
             cash=args.cash,
             strategy=StrategyConfig(min_edge=Decimal(args.min_edge)),
             signer=signer,
+            max_order_notional=args.max_order_notional,
+            max_daily_notional=args.max_daily_notional,
         )
     finally:
         db.close()

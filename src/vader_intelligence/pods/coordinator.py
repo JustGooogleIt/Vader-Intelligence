@@ -51,7 +51,7 @@ from pathlib import Path
 from .artifacts import ArtifactCorrupted, ArtifactMissing
 from .contracts import MAX_RESULT_MANIFEST_BYTES, ContractError, parse_result_manifest, to_plain
 from .operations import INPUT_DIR, INPUT_MANIFEST
-from .store import SHUTDOWN_REASON, OrchestrationStore, StaleAttempt
+from .store import RESERVED_ARTIFACT_KINDS, SHUTDOWN_REASON, OrchestrationStore, StaleAttempt
 from .worker import EXIT_CLAIM_REFUSED, EXIT_LEASE_LOST, MANIFEST_NAME
 
 WORKER_MODULE = "vader_intelligence.pods.worker"
@@ -588,6 +588,8 @@ class Coordinator:
             return self._quarantine(row, at, "identity_mismatch", None, detail)
         if not hmac.compare_digest(manifest.lease_token, row["lease_token"]):
             return self._quarantine(row, at, "lease_token_mismatch", None, detail)
+        if {ref.kind for ref in manifest.artifacts} & RESERVED_ARTIFACT_KINDS:
+            return self._quarantine(row, at, "reserved_artifact_kind", None, detail)
         attempt_id = row["attempt_id"]
         reported_cpu = manifest.worker.cpu_seconds
         if manifest.status == "failed":

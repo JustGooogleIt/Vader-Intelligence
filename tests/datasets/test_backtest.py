@@ -18,6 +18,7 @@ from datasets.test_training import SPLIT as SYNTHETIC_SPLIT
 from datasets.test_training import synthetic_dataset
 from vader_intelligence.cli import execute, parser
 from vader_intelligence.datasets import history as dataset_history
+from vader_intelligence.datasets import splits
 from vader_intelligence.datasets.splits import SplitDefinition
 from vader_intelligence.history.acquire import Acquisition
 from vader_intelligence.models.artifact import ModelArtifact
@@ -145,8 +146,24 @@ def test_backtest_run_reports_the_segment_and_refuses_mismatches(store, config, 
 
 def test_holdout_backtest_is_recorded_in_the_holdout_ledger(store, config, tmp_path):
     registry, dataset_id, model_id = registered(store, config, tmp_path, HOLDOUT)
+    grid = {
+        "fee_schedules": (PaperConfig().fee_schedule,),
+        "extra_slippage_ticks": (0,),
+        "latency": (PaperConfig().latency,),
+        "maker_fill_model": ("none",),
+        "assumed_depth": (None, Decimal(4)),
+    }
     try:
-        assert registry.holdout_status(dataset_id, HOLDOUT.key)["untouched"] is True
+        key = splits.holdout_key(registry, dataset_id, HOLDOUT)  # pins at first use
+        assert key == "from=2026-09-17" and registry.holdout_status(dataset_id, key)["untouched"]
+        ledger = tmp_path / "again.sqlite3"
+        with pytest.raises(ValueError, match="insufficient holdout rows"):
+            backtest.run(
+                registry, store.db, dataset_id, model_id, HOLDOUT, PaperConfig(),
+                segment="holdout", ledger_path=ledger,
+            )  # fmt: skip
+        assert not ledger.exists()
+        assert registry.holdout_status(dataset_id, key)["untouched"]  # the floor consumes nothing
         result = backtest.run(
             registry,
             store.db,
@@ -155,26 +172,56 @@ def test_holdout_backtest_is_recorded_in_the_holdout_ledger(store, config, tmp_p
             HOLDOUT,
             PaperConfig(),
             segment="holdout",
-            grid={
-                "fee_schedules": (PaperConfig().fee_schedule,),
-                "extra_slippage_ticks": (0,),
-                "latency": (PaperConfig().latency,),
-                "maker_fill_model": ("none",),
-                "assumed_depth": (None, Decimal(4)),
-            },
+            grid=grid,
+            min_holdout_rows=1,  # the SYNTHETIC archive has two holdout rows
         )
         assert result["selection_biased"] is False
         assert result["holdout_ledger"]["evaluations"] == 1
-        assert registry.holdout_status(dataset_id, HOLDOUT.key)["untouched"] is False
+        assert registry.holdout_status(dataset_id, key)["untouched"] is False
         rows = result["report"]["rows"]
         assert [r["scenario"]["assumed_depth"] for r in rows] == [None, "4"]
         assert rows[0]["fills"] == 0
+        # A second use by the same model is refused before anything is written.
+        with pytest.raises(ValueError, match="already evaluated"):
+            backtest.run(
+                registry,
+                store.db,
+                dataset_id,
+                model_id,
+                HOLDOUT,
+                PaperConfig(),
+                segment="holdout",
+                ledger_path=ledger,
+                min_holdout_rows=1,
+            )
+        assert not ledger.exists()
+    finally:
+        registry.close()
+
+
+def test_splits_reaching_the_pinned_holdout_are_refused(store, config, tmp_path):
+    registry, dataset_id, model_id = registered(store, config, tmp_path, VALIDATION)
+    try:
+        assert registry.holdout_from(dataset_id) is None
+        backtest.run(
+            registry, store.db, dataset_id, model_id, VALIDATION, PaperConfig(),
+            ledger_path=tmp_path / "v.sqlite3",
+        )  # fmt: skip
+        assert registry.holdout_from(dataset_id) == VALIDATION.first_holdout_date
+        late = SplitDefinition("2026-09-15", "2026-10-31", embargo_days=1)
+        with pytest.raises(ValueError, match="reaches the pinned holdout"):
+            splits.guard(registry, dataset_id, late, pin_if_missing=True)
+        with pytest.raises(ValueError, match="already pinned"):
+            registry.pin_holdout(dataset_id, "2026-11-01", "operator")
+        with pytest.raises(ValueError, match="holdout is pinned from"):
+            splits.holdout_key(registry, dataset_id, HOLDOUT)  # holds out from another date
     finally:
         registry.close()
 
 
 def test_cli_backtests_read_the_registry_read_only_except_the_holdout(store, config, tmp_path):
     registry, dataset_id, model_id = registered(store, config, tmp_path, VALIDATION)
+    registry.pin_holdout(dataset_id, VALIDATION.first_holdout_date, "test")
     registry.close()
     root = tmp_path / "research"
 
@@ -222,3 +269,33 @@ def test_cli_refuses_an_unacknowledged_holdout(tmp_path):
     )
     with pytest.raises(ValueError, match="acknowledge-holdout"):
         execute(args)
+
+
+def test_a_reused_holdout_is_selection_biased_and_archives_must_match(store, config, tmp_path):
+    registry, dataset_id, model_id = registered(store, config, tmp_path, HOLDOUT)
+    try:
+        artifact = ModelArtifact.from_dict(json.loads(registry.model_artifact(model_id)))
+        other = replace(artifact, training=artifact.training | {"variant": "second model"})
+        second = registry.register_model(
+            other.to_json(), family="logistic", dataset_id=dataset_id, summary={"test": True}
+        )
+        options = dict(segment="holdout", min_holdout_rows=1)
+        first = backtest.run(
+            registry, store.db, dataset_id, model_id, HOLDOUT, PaperConfig(),
+            ledger_path=tmp_path / "a.sqlite3", **options,
+        )  # fmt: skip
+        reused = backtest.run(
+            registry, store.db, dataset_id, second, HOLDOUT, PaperConfig(),
+            ledger_path=tmp_path / "b.sqlite3", **options,
+        )  # fmt: skip
+        assert first["selection_biased"] is False and reused["selection_biased"] is True
+        assert reused["holdout_ledger"]["evaluations"] == 2
+        assert first["markets_with_execution_data"] <= first["markets"]
+        manifest = registry.dataset(dataset_id)
+        backtest.check_archive(store.db, manifest)
+        forged = json.loads(json.dumps(manifest))
+        forged["source"]["archive"]["latest_fetch_digest"] = "0" * 64
+        with pytest.raises(ValueError, match="differs from the archive"):
+            backtest.check_archive(store.db, forged)
+    finally:
+        registry.close()

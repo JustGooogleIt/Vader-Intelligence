@@ -17,7 +17,7 @@ import hashlib
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from ..provenance import json_text
@@ -47,8 +47,12 @@ CREATE TABLE IF NOT EXISTS holdout_ledger (
     CHECK (kind IN ('consumed', 'reused')), at TEXT NOT NULL,
     UNIQUE(dataset_id, holdout_key, model_id)
 );
+CREATE TABLE IF NOT EXISTS holdout_pins (
+    dataset_id TEXT PRIMARY KEY REFERENCES datasets(id), holdout_from TEXT NOT NULL,
+    actor TEXT NOT NULL, at TEXT NOT NULL
+);
 """
-TABLES = ("datasets", "models", "experiments", "evaluations", "holdout_ledger")
+TABLES = ("datasets", "models", "experiments", "evaluations", "holdout_ledger", "holdout_pins")
 
 
 def digest_of(value):
@@ -61,6 +65,7 @@ def now_iso():
 
 class Registry:
     def __init__(self, root, *, readonly=False):
+        self.readonly = readonly
         self.root = Path(root).resolve()
         self.artifacts = self.root / "artifacts"
         self.path = self.root / "research.sqlite3"
@@ -258,6 +263,57 @@ class Registry:
                 ),
             )
         return self.holdout_status(dataset_id, holdout_key) | {"evaluation_id": evaluation_id}
+
+    def holdout_from(self, dataset_id):
+        """First official date of the dataset's pinned final holdout, or None."""
+        row = self.db.execute(
+            "SELECT holdout_from FROM holdout_pins WHERE dataset_id=?", (dataset_id,)
+        ).fetchone()
+        return None if row is None else row[0]
+
+    def pin_holdout(self, dataset_id, holdout_from, actor):
+        """Pin the dataset's final holdout to official dates on or after `holdout_from`.
+
+        Recorded once (append-only); pinning again to the same date is a no-op and to
+        another date is refused."""
+        date.fromisoformat(holdout_from)
+        if not isinstance(actor, str) or not actor:
+            raise ValueError("a pin needs an actor")
+        with self.transaction():
+            if (
+                self.db.execute("SELECT 1 FROM datasets WHERE id=?", (dataset_id,)).fetchone()
+                is None
+            ):
+                raise ValueError(f"unknown dataset {dataset_id}")
+            row = self.db.execute(
+                "SELECT holdout_from FROM holdout_pins WHERE dataset_id=?", (dataset_id,)
+            ).fetchone()
+            if row is not None:
+                if row[0] != holdout_from:
+                    raise ValueError(f"dataset holdout is already pinned from {row[0]}")
+                return holdout_from
+            self.db.execute(
+                "INSERT INTO holdout_pins(dataset_id,holdout_from,actor,at) VALUES (?,?,?,?)",
+                (dataset_id, holdout_from, actor, now_iso()),
+            )
+        return holdout_from
+
+    def holdout_evaluation(self, model_id, dataset_id, holdout_key):
+        """The recorded holdout evaluation of `model_id` (ledger row and metrics), or None."""
+        row = self.db.execute(
+            "SELECT h.kind, h.at, h.evaluation_id, e.metrics_json FROM holdout_ledger h "
+            "JOIN evaluations e ON e.id=h.evaluation_id "
+            "WHERE h.dataset_id=? AND h.holdout_key=? AND h.model_id=?",
+            (dataset_id, holdout_key, model_id),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "kind": row["kind"],
+            "at": row["at"],
+            "evaluation_id": row["evaluation_id"],
+            "metrics": json.loads(row["metrics_json"]),
+        }
 
     def holdout_status(self, dataset_id, holdout_key):
         rows = self.db.execute(

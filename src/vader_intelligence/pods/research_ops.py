@@ -55,22 +55,28 @@ def _emit_json(ctx, name, payload, kind):
     return ctx.emit(name, json_text(payload).encode(), kind)
 
 
-def _candidate_model(store, candidate_id):
+def snapshot_input(params, store):
+    return ((params.dataset_manifest_hash, SNAPSHOT_KIND),)
+
+
+def _candidate_spec(store, candidate_id):
     row = store.db.execute(
         "SELECT kind, spec_json FROM candidates WHERE candidate_id=?", (candidate_id,)
     ).fetchone()
     require(row is not None, f"unknown candidate {candidate_id}")
     require(row["kind"] == "model", "candidate is not a model")
-    return json.loads(row["spec_json"])["model_sha256"]
-
-
-def snapshot_input(params, store):
-    return ((params.dataset_manifest_hash, SNAPSHOT_KIND),)
+    return json.loads(row["spec_json"])
 
 
 def candidate_inputs(params, store):
-    model = _candidate_model(store, params.candidate_id)
-    return ((params.dataset_manifest_hash, SNAPSHOT_KIND), (model, MODEL_KIND))
+    spec = _candidate_spec(store, params.candidate_id)
+    # Diagnostics of a candidate run only on its own snapshot: another snapshot could
+    # hold rows that are holdout rows for this candidate.
+    require(
+        params.dataset_manifest_hash == spec["snapshot_sha256"],
+        "a candidate's diagnostics use its own snapshot",
+    )
+    return ((params.dataset_manifest_hash, SNAPSHOT_KIND), (spec["model_sha256"], MODEL_KIND))
 
 
 def backtest_inputs(params, store):
@@ -124,7 +130,7 @@ def train_model(params: TrainModelParams, ctx):
             deadline_seconds=float(h.get("search_seconds", DEFAULT_SEARCH_SECONDS)),
             calibration=h.get("calibration", "platt"),
         )
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         raise DeterministicFailure(str(exc)) from None
     model = _emit_json(ctx, "model.json", json.loads(artifact.to_json()), MODEL_KIND)
     diagnostics = training.validation_metrics(
@@ -203,7 +209,7 @@ def symbolic_search_op(params: SymbolicSearchParams, ctx):
         artifact, snapshot.manifest, snapshot.validation, seed=params.seed
     )
     _emit_json(ctx, "diagnostics.json", {"note": NOT_EVIDENCE, **diagnostics}, DIAGNOSTICS_KIND)
-    return output | {
+    result = output | {
         "status": "complete",
         "model_sha256": model.sha256,
         "expression": record["selected"]["description"],
@@ -213,6 +219,8 @@ def symbolic_search_op(params: SymbolicSearchParams, ctx):
         "parity": fitted["parity"],
         "diagnostic_validation_log_loss": diagnostics["model"]["log_loss"],
     }
+    # Stopped by wall time: not reproducible from its parameters, so reported as partial.
+    return Partial(result) if record["stop_reason"] == "max_seconds" else result
 
 
 # Candidate diagnostics -------------------------------------------------------------------
@@ -357,6 +365,9 @@ def paper_backtest(params: PaperBacktestParams, ctx):
         execution = backtest.load_execution(ctx.read_input(params.execution_inputs_hash))
     except ValueError as exc:
         raise DeterministicFailure(str(exc)) from None
+    tickers = {row["ticker"] for row in snapshot.validation}
+    if not {m["ticker"] for m in execution["markets"]} <= tickers:
+        raise DeterministicFailure("execution inputs cover markets outside the validation rows")
     model_json = ctx.read_input(model_sha)
     forecasts = backtest.forecasts(model_json, snapshot.manifest, snapshot.validation, model_sha)
     inputs = backtest.paper_inputs(

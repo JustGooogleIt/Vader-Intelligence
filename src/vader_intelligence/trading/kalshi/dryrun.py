@@ -13,7 +13,9 @@ Never pass a real credential's signer to a dry run.
 
 It is a `paper` gateway: the executor pairs it only with a paper ledger, so dry-run
 results are recorded as simulated events and can never reach a live ledger. Submissions
-return `submitted` and never fill; a cancel of a dry-run order returns `canceled`;
+return `submitted` and never fill; a cancel of a dry-run order returns `canceled`; with
+`max_order_notional` / `max_daily_notional` the live gateway's local notional caps are
+applied too (refusals `order_notional_cap` / `daily_notional_cap`);
 `lookup` reports dry-run orders of this instance as open and anything else as absent
 (nothing was ever placed); positions are empty and the balance is the caller's `cash`.
 """
@@ -23,7 +25,7 @@ from dataclasses import dataclass
 
 from ...storage import utc_now
 from ..gateway import CancelResult, OrderStatus, SubmitResult
-from ..money import ZERO, digest, nonnegative, plain
+from ..money import ZERO, digest, nonnegative, plain, positive
 from .auth import HEADER_SIGNATURE
 from .client import BASE_URLS, CREATE_ORDER_PATH, request_parts
 from .gateway import MarketRule, prepare
@@ -54,7 +56,17 @@ class DryRunRequest:
 class DryRunGateway:
     environment = "paper"
 
-    def __init__(self, kalshi_environment, *, markets, cash, signer=None, now=utc_now):
+    def __init__(
+        self,
+        kalshi_environment,
+        *,
+        markets,
+        cash,
+        signer=None,
+        now=utc_now,
+        max_order_notional=None,
+        max_daily_notional=None,
+    ):
         if kalshi_environment not in BASE_URLS:
             raise ValueError(f"unknown Kalshi environment {kalshi_environment!r}")
         markets = tuple(markets)
@@ -69,6 +81,13 @@ class DryRunGateway:
         self._now = now
         self._orders = {}  # client_order_id -> (exchange order id, ticker, status)
         self._halted = None
+        self.max_order_notional = (
+            None if max_order_notional is None else positive(max_order_notional, "order cap")
+        )
+        self.max_daily_notional = (
+            None if max_daily_notional is None else positive(max_daily_notional, "daily cap")
+        )
+        self._daily = {}  # order date -> notional submitted
 
     def __repr__(self):
         return f"DryRunGateway(environment={self.kalshi_environment!r})"
@@ -107,9 +126,18 @@ class DryRunGateway:
             self.refusals.append((coid, "halted"))
             return SubmitResult("rejected", reason="local:halted")
         request, refusal = prepare(order, self.markets)
+        notional = order.quantity * order.limit_price
+        day = order.created_at.date()
+        if refusal is None and self.max_order_notional is not None:
+            if notional > self.max_order_notional:
+                refusal = "order_notional_cap"
+        if refusal is None and self.max_daily_notional is not None:
+            if self._daily.get(day, ZERO) + notional > self.max_daily_notional:
+                refusal = "daily_notional_cap"
         if refusal is not None:
             self.refusals.append((coid, refusal))
             return SubmitResult("rejected", reason="local:" + refusal)
+        self._daily[day] = self._daily.get(day, ZERO) + notional
         self._record("POST", CREATE_ORDER_PATH, coid, body=request.body())
         order_id = digest({"dry_run_order": coid})[:32]
         self._orders[coid] = (order_id, order.ticker, "open")

@@ -44,8 +44,52 @@ class SplitDefinition:
             return "holdout"
         return "embargo"
 
+    @property
+    def first_holdout_date(self):
+        """The first official date this split assigns to its holdout."""
+        val = date.fromisoformat(self.validation_through)
+        return (val + timedelta(days=self.embargo_days + 1)).isoformat()
+
     def to_dict(self):
         return asdict(self) | {"key": self.key}
+
+
+def guard(registry, dataset_id, split, *, pin_if_missing):
+    """The dataset's pinned holdout start; refuse a split whose validation reaches it.
+
+    A dataset's final holdout is pinned once in the registry (official dates on or after
+    `holdout_from`), so a later split cannot move holdout rows into development or
+    validation. An unpinned dataset is pinned at this split's holdout start when
+    `pin_if_missing` (a writable first use), else refused."""
+    pin = registry.holdout_from(dataset_id)
+    if pin is None:
+        if not pin_if_missing:
+            raise ValueError(
+                f"dataset {dataset_id[:16]} has no pinned holdout; pin it first "
+                "(vader dataset pin-holdout) or train or snapshot it with a writable registry"
+            )
+        pin = registry.pin_holdout(dataset_id, split.first_holdout_date, "first split " + split.key)
+    if split.validation_through >= pin:
+        raise ValueError(
+            f"split {split.key} reaches the pinned holdout (official dates from {pin})"
+        )
+    return pin
+
+
+def holdout_key(registry, dataset_id, split):
+    """Holdout-ledger key for a final-holdout evaluation under `split`: the pinned boundary.
+
+    The split's holdout must start exactly at the pin, so every evaluation of the same
+    holdout rows shares one ledger key whatever development boundary it used."""
+    pin = registry.holdout_from(dataset_id)
+    if pin is None:
+        pin = registry.pin_holdout(dataset_id, split.first_holdout_date, "first split " + split.key)
+    if split.first_holdout_date != pin:
+        raise ValueError(
+            f"split {split.key} holds out from {split.first_holdout_date}, "
+            f"but the dataset's holdout is pinned from {pin}"
+        )
+    return f"from={pin}"
 
 
 def assign(rows, split):

@@ -8,6 +8,7 @@ market mid) only proves the wiring; it is not evidence about markets.
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -154,7 +155,9 @@ def test_pods_train_and_search_then_the_evaluator_decides(research, pods):
 
     # The evaluator recomputes from the registry. The planted sharpening beats raw mid on
     # the 120 validation rows, but the paired CI crosses zero: the default criteria reject.
-    decided = evaluator.evaluate(pods.store, registry, candidate, evaluator.Criteria(min_n=50))
+    decided = evaluator.evaluate(
+        pods.store, registry, candidate, evaluator.Criteria(min_n=50, allow_weaker=True)
+    )
     recomputed = decided["recomputed"]
     assert recomputed["validation_rows"] == len(
         load(pods.store.artifacts.get_bytes(snapshot_sha)).validation
@@ -184,7 +187,7 @@ def test_pods_train_and_search_then_the_evaluator_decides(research, pods):
     assert "too_few_paired_rows" in exits[0]["payload"]["reason"]
 
 
-def test_holdout_is_evaluated_once_and_recorded_in_both_ledgers(research, pods):
+def test_the_holdout_requires_a_validation_under_default_criteria(research, pods):
     registry, dataset_id, manifest, rows = research
     snapshot_sha = evaluator.snapshot_dataset(pods.store, registry, dataset_id, SPLIT)
     pods.pod("baseline", "baseline_models")
@@ -193,14 +196,77 @@ def test_holdout_is_evaluated_once_and_recorded_in_both_ledgers(research, pods):
     candidate = evaluator.accept_model(pods.store, registry, trained)
     with pytest.raises(ContractError):  # not validated yet: no holdout
         evaluator.evaluate_holdout(pods.store, registry, candidate)
-    lenient = evaluator.Criteria(min_n=10, ci_below_zero=False)
+    with pytest.raises(ContractError, match="weaker than the D-008 default"):
+        evaluator.evaluate(pods.store, registry, candidate, evaluator.Criteria(min_n=10))
+    lenient = evaluator.Criteria(min_n=10, ci_below_zero=False, allow_weaker=True)
     decided = evaluator.evaluate(pods.store, registry, candidate, lenient)
     assert decided["state"] == "validated"  # point estimate below mid in both halves
+    assert decided["criteria_weaker_than_default"] == ["min_n", "ci_below_zero"]
+    with pytest.raises(ContractError, match="D-008 default criteria"):
+        evaluator.evaluate_holdout(pods.store, registry, candidate)
+    assert holdout_status(pods.store, candidate)["consumed"] is False
+
+
+@pytest.fixture
+def strong(tmp_path):
+    """The E2E demo's SYNTHETIC dataset, on which a logistic model validates under the
+    default criteria (a planted relation, not market evidence)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "integration"))
+    from e2e_demo import demo_dataset
+
+    registry = Registry(tmp_path / "research-strong")
+    manifest, rows = demo_dataset()
+    dataset_id = registry.register_dataset(manifest, rows)
+    try:
+        yield registry, dataset_id, manifest
+    finally:
+        registry.close()
+
+
+def _validated(pods, registry, dataset_id, manifest):
+    snapshot_sha = evaluator.snapshot_dataset(pods.store, registry, dataset_id, SPLIT)
+    pods.pod("baseline", "baseline_models")
+    trained = submit(pods, "baseline", "train_model", train_params(snapshot_sha, manifest))
+    pods.coordinator().run(max_steps=20000, deadline_seconds=240)
+    candidate = evaluator.accept_model(pods.store, registry, trained)
+    assert evaluator.evaluate(pods.store, registry, candidate)["state"] == "validated"
+    return candidate
+
+
+def test_holdout_is_evaluated_once_and_recorded_in_both_ledgers(strong, pods):
+    registry, dataset_id, manifest = strong
+    candidate = _validated(pods, registry, dataset_id, manifest)
     result = evaluator.evaluate_holdout(pods.store, registry, candidate)
     assert result["registry_ledger"]["evaluations"] == 1
+    assert result["holdout_use"] == "consumed" and result["recovered"] is False
+    assert result["registry_ledger"]["holdout_key"] == "from=" + SPLIT.first_holdout_date
     assert holdout_status(pods.store, candidate)["consumed"] is True
     with pytest.raises(ContractError):
         evaluator.evaluate_holdout(pods.store, registry, candidate)
+
+
+class Crash(BaseException):
+    pass
+
+
+def test_a_crash_between_the_two_holdout_ledgers_is_recovered(strong, pods, monkeypatch):
+    registry, dataset_id, manifest = strong
+    candidate = _validated(pods, registry, dataset_id, manifest)
+
+    def crash(*args, **kwargs):
+        raise Crash
+
+    monkeypatch.setattr(evaluator, "record_holdout_evaluation", crash)
+    with pytest.raises(Crash):  # the registry entry is written, the pod ledger is not
+        evaluator.evaluate_holdout(pods.store, registry, candidate)
+    monkeypatch.undo()
+    key = "from=" + SPLIT.first_holdout_date
+    assert registry.holdout_status(dataset_id, key)["evaluations"] == 1
+    assert holdout_status(pods.store, candidate)["consumed"] is False
+    result = evaluator.evaluate_holdout(pods.store, registry, candidate)
+    assert result["recovered"] is True and result["holdout_use"] == "consumed"
+    assert holdout_status(pods.store, candidate)["consumed"] is True
+    assert registry.holdout_status(dataset_id, key)["evaluations"] == 1  # never twice
 
 
 def synthetic_execution(rows):
@@ -341,7 +407,16 @@ def test_cli_drives_a_pod_from_snapshot_to_decision(research, tmp_path):
     ran = run("run", "--deadline-seconds", "240")
     assert ran["run"]["stopped"] == "idle"
     candidate = run("accept", "--registry", reg, "--task", task)["candidate"]["candidate_id"]
-    decided = run("evaluate", "--registry", reg, "--candidate", candidate, "--min-n", "50")
+    decided = run(
+        "evaluate",
+        "--registry",
+        reg,
+        "--candidate",
+        candidate,
+        "--min-n",
+        "50",
+        "--allow-weaker-criteria",
+    )
     assert decided["state"] == "rejected"  # see the stability note above
     shown = run("candidate", "--candidate", candidate)["candidate"]
     assert [t["to"] for t in shown["transitions"]] == ["proposed", "rejected"]

@@ -46,6 +46,11 @@ from .contracts import (
 from .operations import UnknownOperation, get_operation, normalized_params
 
 SCHEMA_VERSION = 1
+# Artifact kinds only the coordinator stores (inputs and planning records); a worker
+# result declaring one is refused, so a pod can never forge a snapshot or input.
+RESERVED_ARTIFACT_KINDS = frozenset(
+    ("dataset_snapshot", "execution_inputs", "experiment_manifest", "planner_round")
+)
 DB_NAME = "orchestration.sqlite3"
 SHUTDOWN_REASON = "coordinator_shutdown"
 DAY_SECONDS = 86400
@@ -713,6 +718,8 @@ class OrchestrationStore:
         """
         if manifest.status not in ("succeeded", "partial"):
             raise ValueError("only succeeded or partial manifests carry results")
+        reserved = sorted({ref.kind for ref in manifest.artifacts} & RESERVED_ARTIFACT_KINDS)
+        require(not reserved, f"workers may not produce {reserved} artifacts")
         record = manifest.record()
         result_hash = manifest.result_hash()
         at = epoch_seconds(now)

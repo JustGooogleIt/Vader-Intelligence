@@ -185,6 +185,52 @@ search that stops on its time budget is still timing-dependent and is reported
 evaluate|candidate|holdout` (holdout requires `--acknowledge-final`), and `vader backtest
 run` (holdout segment requires `--acknowledge-holdout` and is ledger-recorded).
 
+## 8b. Revisions after the independent review of #26/#27 (2026-10-19)
+
+- **Pinned final holdout (D-014).** A dataset's final holdout start is recorded once in
+  the registry (`holdout_pins`).
+  - `snapshot_dataset` pins it at the first snapshot when it is absent, and refuses any
+    split whose validation reaches it.
+  - Snapshots are `vi-pod-dataset-v2`: they carry `holdout_from`, `load` refuses any row
+    on or after it, and v1 snapshots must be rebuilt.
+  - Holdout-ledger entries are keyed by the pin, so two splits with the same holdout
+    rows share one entry.
+  - Training, symbolic search and backtests apply the same guard.
+- **Inputs are coordinator-only.** A worker result declaring a reserved artifact kind
+  (`dataset_snapshot`, `execution_inputs`, `experiment_manifest`, `planner_round`) is
+  quarantined (`reserved_artifact_kind`) and refused by the store. `accept_model` requires
+  a snapshot stored by the coordinator whose pin matches the registry's.
+- **Candidate-bound inputs.**
+  - `evaluate_candidate`, `robustness_analysis` and `paper_backtest` must use the
+    candidate's own snapshot.
+  - Paper-backtest execution inputs may cover only the snapshot's validation markets.
+- **Criteria.**
+  - Baselines are whitelisted: `market:mid_c`, `market:pair_mid_c`, `constant`.
+  - Criteria weaker than D-008 (N < 100, no CI rule, constant baseline) are refused
+    unless `allow_weaker` (`--allow-weaker-criteria`). The decision and the evidence then
+    carry `criteria_weaker_than_default`, and such a candidate can never take the holdout.
+  - The evaluator records the model-producing tasks run on the snapshot next to the
+    proposal count.
+- **Decisions are made on the current state.** `promote(expected=...)` re-checks the
+  state inside its transaction.
+- **Paper evidence is bound to the candidate.** It needs a simulated, single-ledger
+  `historical-paper-backtest` of the candidate's own model and dataset on the validation
+  segment. A pod's own backtest never qualifies.
+- **Holdout crash safety.** If the registry entry exists but the pod ledger lacks it, a
+  retry records the same evaluation in the pod ledger (`recovered`) instead of failing
+  forever. `HoldoutEvaluationRecord.holdout_use` says whether this was a consumption or a
+  reuse.
+- **Reproducibility.**
+  - A symbolic search stopped by `max_seconds` is `partial` (wall-time dependent).
+  - Accepted partial results are flagged in the candidate spec (`partial`).
+  - Malformed grid values (non-numbers, booleans, non-finite) are refused by the
+    contract.
+  - A malformed input listing is a deterministic failure.
+- **Not a sandbox (restated).** Workers receive `VI_TASK_DB`, the orchestration database
+  path, and write their claim and heartbeat through it under the lease token. Approved
+  operations never touch anything else there, but nothing at the OS level prevents a
+  worker process from opening it. This is why only approved declarative operations run.
+
 ## 9. Autopilot: bounded planning of approved operations (2026-10-19)
 
 The pods so far run what an operator submits. The autopilot decides what a pod runs next.

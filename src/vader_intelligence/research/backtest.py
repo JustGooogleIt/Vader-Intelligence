@@ -18,13 +18,14 @@ never evidence of live profitability.
 
 import json
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import numpy as np
 
 from ..datasets import splits
+from ..forecast.references import digest as reference_digest
 from ..history import interpret
-from ..models.artifact import ModelArtifact, predict_proba
+from ..models.artifact import ArtifactError, ModelArtifact, check_inputs, predict_proba
 from ..provenance import source_hash
 from ..trading.instruments import Market
 from ..trading.marketdata import BookSnapshot
@@ -53,8 +54,27 @@ def _parse_time(value):
 def _quote(value):
     if value is None:
         return None
-    result = Decimal(value)
+    try:
+        result = Decimal(value)
+    except (InvalidOperation, TypeError, ValueError):
+        return None  # a malformed archived price is no quote, never a fill
     return result if Decimal(0) < result < Decimal(1) else None
+
+
+def check_archive(db, manifest):
+    """Refuse a history archive other than the one the dataset was built from: the fetch
+    at the dataset's recorded ceiling must have the recorded digest (later fetches, such
+    as post-cutoff execution windows, may follow it)."""
+    source = manifest.get("source") or {}
+    archive = source.get("archive") or {}
+    if source.get("kind") != "history_archive" or "fetch_ceiling" not in archive:
+        raise ValueError("backtests need a dataset built from a history archive")
+    row = db.execute(
+        "SELECT id, seq, body_sha256, retrieved_at FROM fetches WHERE seq=?",
+        (archive["fetch_ceiling"],),
+    ).fetchone()
+    if row is None or reference_digest(list(row)) != archive.get("latest_fetch_digest"):
+        raise ValueError("history archive differs from the archive the dataset was built from")
 
 
 def execution_inputs(
@@ -141,6 +161,10 @@ def forecasts(artifact_json, manifest, rows, model_id):
     names = [f["name"] for f in manifest["feature_set"]["features"]]
     if artifact.training.get("feature_set") != manifest["feature_set"]["name"]:
         raise ValueError("model and dataset use different feature sets")
+    try:
+        check_inputs(artifact, names)
+    except ArtifactError as exc:
+        raise ValueError(str(exc)) from None
     if not rows:
         return []
     X, _, _, _ = training.matrices(rows, names)
@@ -203,21 +227,35 @@ def paper_inputs(execution, forecast_inputs, label):
     return PaperInputs(label, markets, snapshots, kept, settlements)
 
 
-def summary(report_dict, *, segment, model_id, dataset_id, rows, n_forecasts, execution):
-    """The backtest envelope around a simulator report (or sensitivity table)."""
+def summary(
+    report_dict,
+    *,
+    segment,
+    model_id,
+    dataset_id,
+    rows,
+    n_forecasts,
+    execution,
+    selection_biased=None,
+):
+    """The backtest envelope around a simulator report (or sensitivity table).
+
+    `selection_biased` defaults to "not the holdout"; a reused holdout is biased too."""
     days = sorted(r["official_date"] for r in rows)
+    quoted = {s["ticker"] for s in execution["snapshots"]}
     return {
         "kind": "historical-paper-backtest",
         "simulated": True,
         "notice": NOTICE,
         "segment": segment,
-        "selection_biased": segment != "holdout",
+        "selection_biased": segment != "holdout" if selection_biased is None else selection_biased,
         "model_id": model_id,
         "dataset_id": dataset_id,
         "rows": len(rows),
         "period": {"start": days[0], "end": days[-1]} if days else None,
         "forecasts": n_forecasts,
-        "markets_with_execution_data": len(execution["markets"]),
+        "markets": len(execution["markets"]),
+        "markets_with_execution_data": len(quoted),
         "snapshots": len(execution["snapshots"]),
         "skipped": execution["skipped"],
         "execution_window_seconds": execution["window_seconds"],
@@ -234,6 +272,32 @@ def segment_rows(registry, dataset_id, split, segment):
     return development if segment == "development" else validation
 
 
+def _check_model(registry, dataset_id, model_id, split):
+    """The model's artifact JSON; refused when trained on another dataset or split."""
+    artifact_json = registry.model_artifact(model_id)
+    artifact = ModelArtifact.from_dict(json.loads(artifact_json))
+    if artifact.training.get("dataset_id") != dataset_id:
+        raise ValueError("model was trained on another dataset")
+    if artifact.training.get("split", {}).get("key") != split.key:
+        raise ValueError("backtest split differs from the model's training split")
+    return artifact_json
+
+
+def _guard_segment(registry, dataset_id, model_id, split, segment):
+    """Holdout: the pinned ledger key, refused when this model already used it. Other
+    segments: the split must end before the dataset's pinned holdout."""
+    if segment not in SEGMENTS:
+        raise ValueError(f"segment must be one of {SEGMENTS}")
+    if segment != "holdout":
+        readonly = getattr(registry, "readonly", False)
+        splits.guard(registry, dataset_id, split, pin_if_missing=not readonly)
+        return None
+    key = splits.holdout_key(registry, dataset_id, split)
+    if registry.holdout_evaluation(model_id, dataset_id, key) is not None:
+        raise ValueError("this model was already evaluated on this holdout")
+    return key
+
+
 def run(
     registry,
     history_db,
@@ -247,16 +311,18 @@ def run(
     ledger_path=None,
     directory=None,
     run_id=None,
+    min_holdout_rows=training.MIN_EVALUATION_ROWS,
 ):
     """Backtest a registered model on one segment of a registry dataset.
 
-    `holdout` is allowed only through this function's ledger entry: the run is recorded
-    in the registry's holdout ledger (first use consumes it, later uses are reuses).
-    With `grid`, a sensitivity table over disposable ledgers; otherwise one run into
-    `ledger_path`.
+    `holdout` is allowed only through this function's ledger entry, which is recorded
+    before any holdout result is computed or written (first use consumes the pinned
+    holdout, later uses by other models are reuses). With `grid`, a sensitivity table
+    over disposable ledgers; otherwise one run into `ledger_path`.
     """
-    if segment not in SEGMENTS:
-        raise ValueError(f"segment must be one of {SEGMENTS}")
+    _check_model(registry, dataset_id, model_id, split)
+    _guard_segment(registry, dataset_id, model_id, split, segment)
+    check_archive(history_db, registry.dataset(dataset_id))
     rows = segment_rows(registry, dataset_id, split, segment)
     execution = execution_inputs(history_db, rows, run_id=run_id)
     return simulate(
@@ -270,6 +336,7 @@ def run(
         grid=grid,
         ledger_path=ledger_path,
         directory=directory,
+        min_holdout_rows=min_holdout_rows,
     )
 
 
@@ -285,27 +352,34 @@ def simulate(
     grid=None,
     ledger_path=None,
     directory=None,
+    min_holdout_rows=training.MIN_EVALUATION_ROWS,
 ):
     """`run` on execution inputs already built (by `execution_inputs`, or a labelled
     synthetic payload); the same model, split, segment and holdout-ledger rules apply."""
-    if segment not in SEGMENTS:
-        raise ValueError(f"segment must be one of {SEGMENTS}")
     if (grid is None) == (ledger_path is None):
         raise ValueError("give exactly one of grid or ledger_path")
     execution = load_execution(execution)
     manifest = registry.dataset(dataset_id)
-    artifact_json = registry.model_artifact(model_id)
-    artifact = ModelArtifact.from_dict(json.loads(artifact_json))
-    if artifact.training.get("dataset_id") != dataset_id:
-        raise ValueError("model was trained on another dataset")
-    if artifact.training.get("split", {}).get("key") != split.key:
-        raise ValueError("backtest split differs from the model's training split")
+    artifact_json = _check_model(registry, dataset_id, model_id, split)
+    key = _guard_segment(registry, dataset_id, model_id, split, segment)
     rows = segment_rows(registry, dataset_id, split, segment)
+    if segment == "holdout" and len(rows) < min_holdout_rows:
+        raise ValueError(f"insufficient holdout rows: {len(rows)}")
     forecast_inputs = forecasts(artifact_json, manifest, rows, model_id)
     label = f"{execution['source']['interpretation']}:{segment}:{dataset_id[:16]}"
     inputs = paper_inputs(execution, forecast_inputs, label)
     if not inputs.forecasts:
         raise ValueError("no forecast has execution data")
+    entry = None
+    if segment == "holdout":
+        # Recorded before anything is simulated or written: a refused or crashed run
+        # can never leave holdout results without a ledger entry.
+        brief = {
+            "kind": "paper_backtest",
+            "summary_rows": len(rows),
+            "forecasts": len(inputs.forecasts),
+        }
+        entry = registry.evaluate_holdout(model_id, dataset_id, key, brief)
     if grid is None:
         report = run_paper(config, inputs, ledger_path).to_dict()
     else:
@@ -318,8 +392,9 @@ def simulate(
         rows=rows,
         n_forecasts=len(inputs.forecasts),
         execution=execution,
+        selection_biased=segment != "holdout" or entry["evaluations"] > 1,
     )
-    if segment == "holdout":
-        brief = {"kind": "paper_backtest", "summary_rows": len(rows), "forecasts": out["forecasts"]}
-        out["holdout_ledger"] = registry.evaluate_holdout(model_id, dataset_id, split.key, brief)
+    out["forecasts_dropped_non_finite"] = len(rows) - len(forecast_inputs)
+    if entry is not None:
+        out["holdout_ledger"] = entry
     return out
