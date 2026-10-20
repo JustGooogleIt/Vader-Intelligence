@@ -6,6 +6,10 @@ default and keep alternatives behind explicit configuration.
 
 ## D-001 Record contract 2 was amended in place; introduce contract 3 (2026-10-18)
 
+**Accepted by the owner on 2026-10-19** (comment on #17, 13:25 PDT) as the resolution of
+Q-M0-1. This settles the versioning decision only: the reviewer's open findings, F3 and
+F17 among them, still block merge (`docs/roadmap/review-findings.md`).
+
 Context. PR #12 (`27a3473`) changed the validity rules of contract-2 receipts (writer
 must be a `forecast-witness` run whose provenance names namespace and session), the
 derivation of typed-reference `source_mode` for two-phase runs (persisted/inferred
@@ -256,3 +260,150 @@ Decision (#26). `vader live dry-run` sizes with the paper risk engine and clips 
 limits instead of refusing: a canary sizes down, and a refused order would hide whether
 the request itself is well formed. The dry run writes only a paper ledger, signs only with
 an in-memory throwaway key on request, and has no HTTP client.
+
+## D-012 Reuse parsed committed ledger rows; keep the projection a full recomputation (2026-10-19)
+
+Context. Paper runs cost time quadratic in the input count. The profile of a real 401-row
+backtest put 185 of 207 seconds in `Ledger.projection()`, almost all of it re-reading
+and re-parsing rows (#28 evidence §3).
+
+Decision (#29). Full reads of the eight append-only record tables reuse rows parsed
+outside any transaction, and read only rows with a larger rowid. This is sound because
+triggers refuse UPDATE and DELETE and one writer commits at a time. Rows read inside a
+transaction are never kept, and `verify()` recomputes from disk. The projection itself
+stays a full fold over the records, now about 15 of 42 profiled seconds. An incremental
+projection would change how state is derived in the authoritative ledger; it is left as
+a separately reviewed follow-up. Result on the real scenario: the same report, with CPU
+time down from 78 s to 16 s. At season scale (2,027 forecasts, 547 fills) the report is
+again identical, and wall time falls from about 21 min to 4.3 min.
+
+## D-013 Pod autonomy: planners propose approved operations from development scores (2026-10-19)
+
+Context. G asks for autonomous research pods. Until #30, a pod ran only what an operator
+submitted. The security boundary (D-008) allows only declarative, approved operations,
+because worker processes are not a security sandbox.
+
+Decision (#30, spec §9).
+
+- **The planner.** A planner chooses the next operations from a development-only
+  context: the pod's own tasks, with allowlisted fields such as development
+  cross-validation or inner-split scores and the selected configuration. Validation
+  diagnostics, candidates and the holdout are excluded, so adaptive planning cannot
+  overfit the validation rows.
+- **Proposals.** Proposals pass the same typed contracts as operator submissions;
+  nothing a planner returns is executed as code. A provider planner (LLM) exists behind
+  the `ModelProvider` interface. It runs only against the scripted double; a real vendor
+  raises `PaidCallsDisabled`.
+- **The loop.** The loop is bounded by rounds, a total task budget per pod and snapshot,
+  and wall time; the bounds are checked before submission. It records each round as a
+  chained artifact *before* submitting the round's tasks, and resumes from the store
+  after a crash. Malformed provider output is a recorded rejection, never an exception
+  (fixes from an independent review, #30 `d744766`).
+- **Evaluation.** One candidate per pod (the best by development score) goes to the
+  protected evaluator, which recomputes the validation metrics and records the
+  snapshot's proposal count.
+
+## D-014 A dataset's final holdout is pinned once in the registry (2026-10-19)
+
+Context. An independent pre-review of #27 showed that the holdout was defined only by
+the split an operator typed. The holdout ledger was keyed by the full split key, so a
+later split could move final-holdout rows into validation, and a pod could score them,
+while the ledger still reported the holdout untouched. The real registry was never
+affected: it had no holdout entries, and every evaluation used validation ≤ 2026-08-31.
+Nothing enforced that, though.
+
+Decision (#31).
+- **The pin.** Each dataset's final holdout start is recorded once in an append-only
+  table (`holdout_pins`). It is set by `vader dataset pin-holdout`, or at the first
+  writable training or snapshot use.
+- **What it enforces.**
+  - Every split must end before the pin.
+  - A holdout evaluation must hold out exactly from the pin, and its ledger entry is
+    keyed by it, so every evaluation of the same rows shares one key.
+  - Pod snapshots (`vi-pod-dataset-v2`) carry the pin, and every reader refuses rows on
+    or after it.
+- **The real datasets.** The three real datasets that have models are pinned at
+  2026-09-02, the D-009 boundary, by operator action recorded in the registry.
+
+## D-015 `last_trade_gap_c` is not the same feature in history and forward (open, 2026-10-19)
+
+Context. An independent pre-review of #21 found that `last_trade_gap_c` in `fs-market-v1`
+has two meanings. The feature is the latest trade price within 60 minutes of C minus
+`mid_c` (`features/definitions.py`), and `None` when there is no such trade. What
+differs is the time the 60-minute window is measured from:
+- **From candles (history):** a trade price exists only in minutes that had trades, so
+  the window applies to the trade's own time.
+- **From live listings (forward):** `last_price_dollars` is the last trade ever, stamped
+  with the listing's retrieval time. The window then measures the retrieval's age, and
+  the feature is present even when the market has not traded for hours.
+
+The same quiet market therefore gives a value forward and `None` historically. Models
+trained on history see a different input distribution forward.
+
+Decision. Nothing is changed in this run. Changing the feature would change
+`fs-market-v1` under trained models and the running shadow. Instead:
+- tonight's forward shadow results for fs-market-v1 models carry this caveat;
+- the proposal is `fs-market-v2`, which either drops the feature or computes it only
+  from a witnessed trade time.
+
+This is open for the user, together with the next feature work.
+
+## D-016 The midpoint book selection departs from specification §4 (repaired opt-in in #36, 2026-10-20)
+
+Context. In both live forward shadows on 2026-10-19 the midpoint baseline abstained
+with `book_availability_after_cutoff` at C = 23:08:00Z
+(`docs/evidence/live-forward-20261019.md`).
+- Specification §4 (`docs/specs/forecast-evaluation-v1.md`) selects "the latest
+  attempted completed book retrieval … received and witnessed by C". If that attempt is
+  unusable, it abstains and does not search further back.
+- Its worked example expects `book_stale` when the newest book witnessed before C is
+  350 s old: "a book retrieved 18:59:00 but first witnessed 19:00:01 cannot rescue it."
+- `forecast/selection.py:select_inputs` (since F3.4) instead anchors on the latest
+  attempt *received* by C. It abstains when that attempt was witnessed after C, and
+  never considers the latest attempt that *was* witnessed by C. Its own module
+  docstring and the test `test_select_inputs_picks_the_latest_witnessed_pre_cutoff_book`
+  state the specified rule; no test covered the difference.
+- The specification also fixes the cycle order: tick (which witnesses), then collect.
+  The F3.3 plan §6 says "No extra witnessing phase is added", and §4.2 says "No
+  mid-collection or post-book witnessing phase exists". So the latest book retrieved by
+  C is witnessed by the next tick, after C, unless C falls between a cycle's tick and
+  that same cycle's book retrieval. That gap was about 3.9 s tonight, about 3% of phases
+  at a 120 s cadence. It can also be avoided when the last cycle before C made no
+  completed book attempt, for example after an incomplete discovery pass.
+- The combined effect is that the implemented midpoint abstains at almost every cutoff
+  in normal operation. That leaves forward evaluations without the market comparison
+  they exist for. Discovery passes and the registered models' quotes already use the
+  latest evidence witnessed by C.
+
+Tonight's timing: the book was retrieved at 23:06:15.8 and witnessed at 23:08:12.2.
+The previous book was retrieved at 23:04:15.6 and witnessed at 23:06:11.9. It is state
+`ok`, untruncated, 224 s old at C, and matches the game and its eligibility proof, so
+under §4 it is the anchor. No forecaster used anything witnessed after C.
+
+Decision. This is an implementation defect against the specification, so the repair is
+a foundational fix in its own PR (#36), versioned because real archives hold decisions
+made under the old rule (the D-001 principle):
+- **`selection_version = "selection-v2"`** implements §4 as written. Among completed
+  attempts received by C, the anchor is the latest whose first receipt is trusted and
+  observed by C. When none is, the reason is the latest attempt's availability reason,
+  exactly as before. Whatever it lands on is checked as is, with no further fallback.
+- **`selection-v1` stays the default and is unchanged**, so existing cohorts, their
+  configuration hashes and every stored decision recompute identically. `redecide`
+  uses the stored decision's own version.
+- Unknown versions are refused.
+- Read-only on tonight's archives at C: `selection-v1` reproduces the recorded
+  `book_availability_after_cutoff` in both shadows. `selection-v2` selects the
+  23:04:15 book (witnessed 23:06:11) with midpoint 0.4150.
+
+The cycle order and the 300 s freshness are unchanged; the repair adds no witnessing
+phase. Operators set `selection_version = "selection-v2"` for a new cohort
+(`docs/forward-shadow.md`). The version is part of the protocol hash, so it starts a
+separate cohort.
+
+Alternatives considered:
+- Changing the default: this would change every existing default cohort's hash.
+- Fixing in place under the `selection-v1` label: one label would then name two rules
+  in real files.
+- A witness pass after collection: this reverses the plan's explicit rule.
+
+Reversibility. selection-v2 is opt-in, and selection-v1 is untouched.
