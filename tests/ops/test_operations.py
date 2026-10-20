@@ -805,6 +805,31 @@ class ShadowRunnerTests(ShadowFixture):
         self.invoke(mode="partial", tick="complete")
         self.assertEqual(runner.health(self.config)["shadow"]["status"], "operational_failure")
 
+    def test_collection_supervision_failures_are_operational_failures(self):
+        for tick in ("complete", "inconclusive"):
+            with self.subTest(tick=tick):
+                result, code = self.invoke(mode="large", tick=tick)
+                self.assertEqual(result["status"], "output_limit_exceeded")
+                self.assertEqual(result["tick"]["status"], tick)
+                self.assertEqual(code, 1)
+                shadow = runner.health(self.config)["shadow"]
+                self.assertEqual(shadow["collection"], "output_limit_exceeded")
+                self.assertEqual(shadow["status"], "operational_failure")
+        # Every reason supervise() can give the collection, with and without a decision.
+        for reason in (
+            "deadline_exceeded",
+            "interrupted",
+            "log_write_failed",
+            "output_limit_exceeded",
+        ):
+            for decisions in (0, 1):
+                tick = {"status": "complete", "decisions_eligible": decisions}
+                with self.subTest(reason=reason, decisions=decisions):
+                    latest = {"tick": tick, "status": reason}
+                    self.assertEqual(
+                        runner.shadow_health(self.config, latest)["status"], "operational_failure"
+                    )
+
     def test_overlap_skips_the_whole_cycle(self):
         with lock(self.state.parent / (self.db.name + ".ops-run.lockfile")):
             result, code = self.invoke()

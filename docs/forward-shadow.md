@@ -133,7 +133,7 @@ archive access, so it works while a cycle holds the lock):
 | `no_eligible_markets` | Discovery completed with no eligible contracts; the tick had nothing due. Inconclusive, not a failure. An empty eligible live universe proves nothing. |
 | `waiting_for_cutoff` | Eligible games were collected; no decision cutoff was reached in the last tick. |
 | `forecasting` | The last tick recorded at least one decision or explicit abstention. |
-| `operational_failure` | The tick or the collection failed, timed out, produced invalid output or was interrupted. |
+| `operational_failure` | The tick or the collection failed, timed out, produced invalid output, exceeded its log output limit or was interrupted. |
 | `inconclusive` | Neither failure nor evidence of eligible markets. |
 | `never_invoked` | No shadow cycle has run. |
 
