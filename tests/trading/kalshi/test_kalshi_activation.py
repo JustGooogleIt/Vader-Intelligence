@@ -300,7 +300,16 @@ def _pasted_forms():
     pem_text = pem(ed)
     body = b"".join(line for line in pem(rsa_key).splitlines() if b"-----" not in line)
     wrapped = b"\\\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+    # Ed25519 PKCS#8 DER is 48 bytes, so its base64 is 64 characters with no padding:
+    # split into lines shorter than a run, it merges with the next token of the file
+    # ("enabled") once the layout is removed. The RSA body above does the same whenever
+    # its DER length is a multiple of 3.
+    short = base64.b64encode(der)
+    assert not short.endswith(b"=")
     return {
+        "ed25519_der_base64_unpadded_lines": short[:32] + b"\\\n" + short[32:],
+        "ed25519_der_base64_after_a_character": b"x" + short,
+        "ed25519_der_hex_after_a_digit": b"5" + der.hex().encode(),
         "ed25519_der_base64": base64.b64encode(der),
         "rsa_pkcs1_der_base64": base64.b64encode(pkcs1),
         "encrypted_der_base64": base64.b64encode(encrypted),

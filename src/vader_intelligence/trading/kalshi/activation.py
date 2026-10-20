@@ -124,11 +124,9 @@ _HEX_RUN = re.compile(rb"[0-9A-Fa-f]{40,}")
 _LAYOUT = re.compile(rb"[\s\"'\\]+")  # whitespace, quotes, TOML line continuations
 
 
-def _decodes_to_key(blob):
-    if any(marker in blob for marker in _KEY_MATERIAL):
-        return True
+def _loads_as_private_key(der):
     try:
-        serialization.load_der_private_key(blob, password=None)
+        serialization.load_der_private_key(der, password=None)
     except TypeError:  # an encrypted private key: still key material
         return True
     except Exception:  # not a DER private key
@@ -136,24 +134,74 @@ def _decodes_to_key(blob):
     return True
 
 
+def _der_end(blob, start):
+    """End of the DER SEQUENCE that starts at `start`, from its own length header, or
+    None when the header is not a plausible private key's (at least 32 content bytes)."""
+    if start + 2 > len(blob):
+        return None
+    first = blob[start + 1]
+    if first < 0x80:
+        header, size = 2, first
+    elif 0x81 <= first <= 0x83:
+        count = first & 0x7F
+        if start + 2 + count > len(blob):
+            return None
+        header, size = 2 + count, int.from_bytes(blob[start + 2 : start + 2 + count], "big")
+    else:
+        return None
+    end = start + header + size
+    return end if size >= 32 and end <= len(blob) else None
+
+
+def _decodes_to_key(blob):
+    """PEM text anywhere in `blob`, or a DER private key starting anywhere in it. A DER
+    key is bounded by its own length header, so bytes decoded from neighbouring text that
+    merged into the same run (a token after an unpadded run, a character before it) do
+    not hide it."""
+    if any(marker in blob for marker in _KEY_MATERIAL):
+        return True
+    start = blob.find(0x30)  # SEQUENCE
+    while start != -1:
+        end = _der_end(blob, start)
+        if end is not None and _loads_as_private_key(blob[start:end]):
+            return True
+        start = blob.find(0x30, start + 1)
+    return False
+
+
+def _base64_decodings(run):
+    """The run decoded at each of the four alignments (merged leading text shifts it)."""
+    core = run.rstrip(b"=")
+    for offset in range(4):
+        part = core[offset:]
+        if len(part) % 4 == 1:
+            part = part[:-1]
+        try:
+            yield base64.b64decode(part + b"=" * (-len(part) % 4), validate=True)
+        except (binascii.Error, ValueError):
+            continue
+
+
+def _hex_decodings(run):
+    for offset in range(2):
+        part = run[offset:]
+        yield bytes.fromhex(part[: len(part) // 2 * 2].decode())
+
+
 def contains_key_material(data):
     """True when `data` holds a private key in any form an operator might paste: PEM text,
     or a base64 or hex run (also across line breaks and quotes) that decodes to PEM text
-    or a DER private key. A SHA-256 hex digest decodes to 32 bytes that are neither."""
+    or a DER private key. A run may absorb neighbouring characters once the layout is
+    removed, so every alignment is decoded and a DER key is found wherever it starts. A
+    SHA-256 hex digest decodes to 32 bytes that hold neither."""
     if any(marker in data for marker in _KEY_MATERIAL):
         return True
     for text in (data, _LAYOUT.sub(b"", data)):
         for match in _BASE64_RUN.finditer(text):
-            run = match.group()
-            try:
-                blob = base64.b64decode(run + b"=" * (-len(run) % 4), validate=True)
-            except (binascii.Error, ValueError):
-                continue
-            if _decodes_to_key(blob):
+            if any(_decodes_to_key(blob) for blob in _base64_decodings(match.group())):
                 return True
         for match in _HEX_RUN.finditer(text):
-            run = match.group()
-            if _decodes_to_key(bytes.fromhex(run[: len(run) // 2 * 2].decode())):
+            if any(_decodes_to_key(blob) for blob in _hex_decodings(match.group())):
                 return True
     return False
 
