@@ -915,3 +915,25 @@ class ShadowMaintenanceTests(ShadowFixture):
                 ),
                 1,
             )
+
+    def test_shadow_evaluate_overlaps_each_write_their_own_report(self):
+        argv = ["--config", str(self.config_path), "shadow-evaluate"]
+        argv += ["--from", "2026-10-01", "--through", "2026-10-02"]
+        codes, reports = [], []
+        with lock(self.state.parent / (self.db.name + ".ops-run.lockfile")):
+            for extra in ([], [], ["--skip-settlement"]):
+                with (
+                    patch("sys.stdout", new_callable=io.StringIO) as out,
+                    patch("sys.stderr", new_callable=io.StringIO) as err,
+                ):
+                    codes.append(manage.main(argv + extra))
+                self.assertEqual(err.getvalue(), "")
+                reports.append(json.loads(out.getvalue()))
+        self.assertEqual(codes, [75, 75, 75])
+        self.assertEqual([r["status"] for r in reports], ["overlap_skipped"] * 3)
+        written = sorted(self.state.glob("shadow-evaluate-*.json"))
+        self.assertEqual(len(written), 3)
+        self.assertEqual(
+            sorted(json.dumps(json.loads(p.read_text()), sort_keys=True) for p in written),
+            sorted(json.dumps(r, sort_keys=True) for r in reports),
+        )

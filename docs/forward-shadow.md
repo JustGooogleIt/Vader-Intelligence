@@ -114,8 +114,10 @@ prevents the collection of that cycle.
 Runs `settlement refresh` (public read-only, bounded by limit/budget) and then
 `research run --view forward-shadow` for the date range with `outcomes_as_of` = now,
 each as a supervised child under the ops run lock, and writes
-`state/shadow-evaluate-<timestamp>.json`. A scheduled cycle that fires meanwhile skips
-as an overlap. Use `--skip-settlement` to re-evaluate without a refresh. Reports:
+`state/shadow-evaluate-<timestamp>-<pid>-<random>.json` (one new report per invocation,
+including one that skips as an overlap and exits 75). A scheduled cycle that fires
+meanwhile skips as an overlap. Use `--skip-settlement` to re-evaluate without a refresh.
+Reports:
 
 ```sh
 "$VADER_PY" -m vader_intelligence.cli --db "$SHADOW_DB" research inspect
