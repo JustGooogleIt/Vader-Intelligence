@@ -21,13 +21,22 @@ def digest(value):
     return hashlib.sha256(json_text(value).encode()).hexdigest()
 
 
+# Run kinds that wrote real collections before lineage was recorded: the collector's
+# discover/collect/live-check runs (lineage from PR #12) and the settlement refresh
+# (lineage from F3.5). Every other writer has always recorded its lineage.
+PRE_LINEAGE_COLLECTION_KINDS = ("discover", "collect", "live-check", "settlement-refresh")
+
+
 def run_source_mode(db, run_id):
     """Durable source lineage of a run: "synthetic" or "live" (F3.3 plan §9.3, M1/M2).
 
     A fixture run is synthetic. A run whose provenance records
-    ``tool_configuration.source_lineage`` carries that value. A two-phase collection
-    run written before lineage was recorded is synthetic when its own immutable
-    discovery summary says so; the inference only ever narrows (never promotes).
+    ``tool_configuration.source_lineage`` carries that value. A collection run of a
+    PRE_LINEAGE_COLLECTION_KINDS kind written before lineage was recorded is live, or
+    synthetic when it is a two-phase run whose own immutable discovery summary says so;
+    the inference only ever narrows (never promotes). Any other run without a recorded
+    lineage (an import, a harness, a future kind) has no evidence of being live and is
+    synthetic: it fails closed.
     """
     row = db.execute("SELECT kind, provenance_json FROM runs WHERE id=?", (run_id,)).fetchone()
     if row is None:
@@ -40,6 +49,8 @@ def run_source_mode(db, run_id):
         return lineage
     if lineage is not None:
         raise ValueError(f"unknown source lineage {lineage!r}")
+    if row[0] not in PRE_LINEAGE_COLLECTION_KINDS:
+        return "synthetic"
     if (
         tool.get("collection_protocol") is not None
         and db.execute("PRAGMA user_version").fetchone()[0] >= 3

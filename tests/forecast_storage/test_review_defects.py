@@ -112,6 +112,60 @@ def test_resume_cannot_change_a_run_source_lineage(store, config, fixture_data):
         reader.close()
 
 
+@pytest.mark.parametrize("kind", ["forecast-storage", "history-import", "test"])
+def test_run_without_lineage_or_protocol_is_not_live(tmp_path, kind):
+    """Stack review R2: a run that records no source lineage and is not a collector or
+    settlement run of the code that predates lineage (an import, a test harness, any
+    future run kind) carries no evidence of being live. It fails closed: its fetches are
+    synthetic evidence and can never be witnessed as forward evidence."""
+    path = tmp_path / "r2.sqlite3"
+    a = Archive(path)
+    a.run("unlabelled", kind=kind, protocol=None)
+    fetch_id, _ = a.fetch("unlabelled", "markets", T0)
+    a.db.close()
+    with writer_lock(path):
+        store = Store(path, min_free_bytes=1)
+        try:
+            assert run_source_mode(store.db, "unlabelled") == "synthetic"
+            assert reference(store.db, "fetches", {"id": fetch_id})["source_mode"] == "synthetic"
+            observed = witness(store)  # the system clock: a live witness run
+            assert observed["status"] == "complete" and observed["source_lineage"] == "live"
+            forward = evidence.fetch_availability(store.db, fetch_id)
+            assert forward.status == "availability_unproven"
+            synthetic = evidence.fetch_availability(store.db, fetch_id, mode="synthetic")
+            assert synthetic.status == "witnessed"
+        finally:
+            store.close()
+
+
+@pytest.mark.parametrize(
+    "kind, protocol",
+    [
+        ("collect", None),
+        ("discover", None),
+        ("live-check", None),
+        ("collect", "two-phase-v1"),
+        ("discover", "two-phase-v1"),
+        ("live-check", "two-phase-v1"),
+        ("settlement-refresh", None),
+    ],
+)
+def test_pre_lineage_collection_runs_keep_their_classification(tmp_path, kind, protocol):
+    """The runs older code wrote without a lineage field are real collections: the
+    collector's discover/collect/live-check runs (interleaved or two-phase) and the
+    settlement refresh. They stay live unless their own discovery summary says synthetic,
+    so typed references already stored for their evidence keep their digests."""
+    a = Archive(tmp_path / "pre-lineage.sqlite3")
+    a.run("old", kind=kind, protocol=protocol)
+    try:
+        assert run_source_mode(a.db, "old") == "live"
+        if protocol is not None:
+            a.pass_("old", T0, mode="synthetic")
+            assert run_source_mode(a.db, "old") == "synthetic"
+    finally:
+        a.db.close()
+
+
 # ------------------------------------------------------------------ finding 2
 
 
