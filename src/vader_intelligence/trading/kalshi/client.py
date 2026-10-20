@@ -7,8 +7,8 @@
 - Fixed endpoint allowlist (docs/specs/live-adapter-v1.md): POST /portfolio/events/orders;
   DELETE /portfolio/events/orders/{order_id}; GET /portfolio/orders,
   /portfolio/orders/{order_id}, /portfolio/fills, /portfolio/positions,
-  /portfolio/balance and /exchange/status. Any other method, path or query parameter
-  is refused before a request is built.
+  /portfolio/settlements, /portfolio/balance and /exchange/status. Any other method,
+  path or query parameter is refused before a request is built.
 - Token buckets (facts §5 [V:RL]): a read bucket (default 100 tokens/s, burst 100) and a
   write bucket (default 50 tokens/s, burst 50), half of the Basic tier (200 / 100), plus
   the balance endpoint's own bucket (default one request per 2 s; Basic allows 1/s with
@@ -140,6 +140,9 @@ ENDPOINTS = (
         "list_fills", "GET", r"/portfolio/fills", params=("min_ts", "order_id", "limit", "cursor")
     ),
     _endpoint("positions", "GET", r"/portfolio/positions", params=("limit", "cursor")),
+    _endpoint(
+        "list_settlements", "GET", r"/portfolio/settlements", params=("min_ts", "limit", "cursor")
+    ),
     _endpoint("balance", "GET", r"/portfolio/balance", balance=True),
     _endpoint("exchange_status", "GET", r"/exchange/status", auth=False),
 )

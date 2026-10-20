@@ -65,6 +65,7 @@ def test_allowlist_accepts_only_the_specified_endpoints():
         ("GET", f"/portfolio/orders/{ORDER_ID}", None, None),
         ("GET", "/portfolio/fills", {"min_ts": 1, "order_id": ORDER_ID}, None),
         ("GET", "/portfolio/positions", {"limit": 5, "cursor": "c"}, None),
+        ("GET", "/portfolio/settlements", {"min_ts": 1, "limit": 5, "cursor": "c"}, None),
         ("GET", "/portfolio/balance", None, None),
         ("GET", "/exchange/status", None, None),
     ]
@@ -79,7 +80,7 @@ def test_allowlist_accepts_only_the_specified_endpoints():
         ("POST", f"/portfolio/events/orders/{ORDER_ID}/amend", None, {"x": "1"}),
         ("POST", f"/portfolio/events/orders/{ORDER_ID}/decrease", None, {"x": "1"}),
         ("GET", "/portfolio/orders/queue_positions", None, None),
-        ("GET", "/portfolio/settlements", None, None),
+        ("GET", "/portfolio/settlements", {"ticker": "T"}, None),  # unknown parameter
         ("GET", "/markets", None, None),
         ("GET", "/historical/orders", None, None),
         ("POST", "/portfolio/intra_exchange_instance_transfer", None, {"x": "1"}),

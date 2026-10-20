@@ -18,7 +18,7 @@ order is never resubmitted.
 
 from dataclasses import dataclass, replace
 
-from .gateway import CancelResult, GatewayEvent, SubmitResult
+from .gateway import CancelResult, GatewayEvent, SubmitResult, UnreadableSettlement
 from .ledger import (
     CHECKPOINT_PREFIX,
     EnvironmentMismatch,
@@ -26,14 +26,33 @@ from .ledger import (
     LedgerError,
     build_order,
 )
-from .money import ZERO, dec, digest, text
+from .money import ONE, ZERO, dec, digest, in_exact, text
 from .orders import GATEWAY_SOURCE, Fill, OrderEvent
-from .portfolio import CashEvent
+from .portfolio import CashEvent, Settlement
 from .risk import Approval, Rejection, RiskContext
 
 MAX_FILL_PAGES = 1000
 FILLS_CURSOR = CHECKPOINT_PREFIX + "reconcile:fills_cursor"
+SETTLEMENTS_CURSOR = CHECKPOINT_PREFIX + "reconcile:settlements_cursor"
+# Insert-once processed key: an operator's acknowledgement that a venue settlement record
+# (named by `settlement_ack_key`) is resolved outside the executor and may be skipped.
+SETTLEMENT_ACK_PREFIX = "settlement_ack:"
 _VENUE_TERMINAL = ("canceled", "expired", "rejected", "not_found")
+
+
+def settlement_ack_key(token):
+    """Processed-input key by which an operator acknowledges a venue settlement record
+    (a ticker, or the token of an unreadable record) as resolved outside the executor."""
+    return SETTLEMENT_ACK_PREFIX + token
+
+
+def acknowledge_settlement(ledger, token, *, actor, note, at):
+    """Record an operator's acknowledgement (insert-once, auditable) that the venue
+    settlement records named `token` are resolved outside the executor, which then skips
+    them. Positions and balance are still reconciled."""
+    if not all(isinstance(v, str) and v.strip() for v in (token, actor, note)):
+        raise ValueError("an acknowledgement needs a token, an actor and a note")
+    return ledger.mark_processed(settlement_ack_key(token), {"actor": actor, "note": note}, at)
 
 
 @dataclass(frozen=True)
@@ -272,7 +291,8 @@ class Executor:
         )
 
     def reconcile(self, *, now):
-        """Resolve submissions, fetch missed fills, compare positions and balance.
+        """Resolve submissions, fetch missed fills, record venue settlements (gateways
+        that report them), compare positions and balance.
 
         Mismatches and venue failures become `unknown_reasons`, which block
         risk-increasing orders until a later reconciliation is clean.
@@ -327,7 +347,9 @@ class Executor:
                 reconciled.append(coid)
             if filled > state.filled_quantity:
                 gaps[coid] = filled
-        reasons.extend(self._reconcile_fills(now))
+        fill_reasons = self._reconcile_fills(now)
+        reasons.extend(fill_reasons)
+        reasons.extend(self._reconcile_settlements(now, deferred=bool(fill_reasons)))
         projection = ledger.projection()
         for coid, venue_filled in sorted(gaps.items()):
             if projection.orders[coid].filled_quantity < venue_filled:
@@ -370,6 +392,108 @@ class Executor:
                 return []
             cursor = next_cursor
         return ["fills_pagination_exceeded"]
+
+    def _reconcile_settlements(self, now, *, deferred=False):
+        """Record the venue's settlements of this ledger's markets.
+
+        Runs only after a clean fills reconciliation (otherwise `settlements_deferred`).
+        A settlement is recorded only when it agrees exactly with the ledger: the market
+        has ledger orders, none is still active, the ledger holds at least every fill the
+        venue reported for each of them (`reconciled` events), the YES and NO counts it
+        settled equal the ledger's holding, the cash it paid equals that holding's payout,
+        and it charged no fee (the ledger models none). A market already settled in the
+        ledger (by the executor or an operator's correction) only has to agree on result
+        and value. Otherwise nothing is recorded, the reason blocks risk-increasing
+        orders, and the cursor is kept so the next reconciliation reads the record again;
+        an operator either records the settlement through the ledger or acknowledges the
+        record (`acknowledge_settlement`) after investigating. Once a market is settled in
+        the ledger, later changes to the venue record other than its result or value
+        surface only through the positions and balance checks.
+
+        A fill arriving after its market's settlement was recorded contradicts the venue's
+        own final fill count for its order or the counts it settled, and stays refused by
+        the ledger.
+        """
+        read = getattr(self.gateway, "settlements_since", None)
+        if read is None:
+            return []
+        if deferred:
+            return ["settlements_deferred"]
+        data = self.ledger.processed(SETTLEMENTS_CURSOR)
+        cursor = data.get("cursor") if data else None
+        try:
+            venue, next_cursor = read(cursor)
+        except Exception:
+            return ["settlements_unavailable"]
+        reasons = []
+        acknowledged = {
+            key for key in self.ledger.processed_inputs() if key.startswith(SETTLEMENT_ACK_PREFIX)
+        }
+        for item in venue:
+            unreadable = isinstance(item, UnreadableSettlement)
+            token = item.token if unreadable else item.ticker
+            if settlement_ack_key(token) in acknowledged:
+                continue
+            reason = "settlement_unreadable" if unreadable else self._settle(item)
+            if reason is not None:
+                reasons.append(f"{reason}:{token}")
+        if not reasons and next_cursor != cursor:
+            self.ledger.set_checkpoint(SETTLEMENTS_CURSOR, {"cursor": next_cursor}, now)
+        return reasons
+
+    def _venue_filled(self, client_order_id):
+        """The largest fill count the venue reported for an order in `reconciled` events
+        (zero when there are none); None when such an event lacks it."""
+        reported = ZERO
+        for event in self.ledger.events(client_order_id):
+            if event.kind == "reconciled":
+                value = event.payload.get("filled_quantity")
+                if value is None:
+                    return None
+                reported = max(reported, dec(value, "filled_quantity"))
+        return reported
+
+    @in_exact
+    def _settle(self, item):
+        projection = self.ledger.projection()
+        recorded = projection.portfolio.settlements.get(item.ticker)
+        if recorded is not None:
+            agrees = (recorded.result, recorded.settlement_value) == (
+                item.result,
+                item.settlement_value,
+            )
+            return None if agrees else "settlement_conflict"
+        states = [s for s in projection.orders.values() if s.order.ticker == item.ticker]
+        if not states:
+            return "settlement_foreign"
+        if any(s.active for s in states):
+            return "settlement_orders_active"
+        for state in states:
+            # Canceled at the venue (e.g. at close) is terminal before its fills arrive.
+            reported = self._venue_filled(state.order.client_order_id)
+            if reported is None or state.filled_quantity < reported:
+                return "settlement_fills_missing"
+        if item.fee != ZERO:
+            return "settlement_fee"
+        held = projection.portfolio.holding(item.ticker)
+        value = item.settlement_value
+        payout = held.yes_qty * value + held.no_qty * (ONE - value)
+        if (item.yes_count, item.no_count, item.revenue) != (held.yes_qty, held.no_qty, payout):
+            return "settlement_mismatch"
+        settlement = Settlement(
+            # A venue settles each market of an account once.
+            settlement_id="kalshi:" + item.ticker,
+            ticker=item.ticker,
+            result=item.result,
+            settlement_value=item.settlement_value,
+            source_ref=item.source_ref,
+            effective_at=item.settled_at,
+        )
+        try:
+            self.ledger.append_settlement(settlement)
+        except LedgerConflict:
+            return "settlement_conflict"
+        return None
 
     def _reconcile_positions(self, portfolio):
         try:
