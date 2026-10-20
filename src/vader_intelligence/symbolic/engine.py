@@ -34,7 +34,9 @@ from .expressions import (
 from .genetic import MUTATIONS, crossover, mutate, random_tree
 from .model import Model, model_to_dict
 
-ENGINE_VERSION = "symbolic-search-v1"
+# v2: the simplest member of a semantic class represents it (v1 kept the first scored, so
+# a simpler equivalent found later never reached the front); same seed, same v2 result.
+ENGINE_VERSION = "symbolic-search-v2"
 SELECTION_RULE = "simplest_within_one_standard_error"
 REASONS = ("non_finite", "near_constant", "platt_failure", "unstable")
 NEAR_CONSTANT = 1e-9
@@ -257,8 +259,13 @@ class Archive:
 
     A canonical duplicate is not evaluated and not counted as a candidate. Otherwise the
     budgets are checked, the candidate counter increments and training outputs are
-    computed; a semantic duplicate stops there (counted, not re-scored). Each evaluated
-    expression ends as exactly one of: valid, invalid by reason, semantic duplicate.
+    computed. Expressions with one semantic fingerprint form a class represented by its
+    simplest evaluated member: the lowest (complexity, canonical key), whatever the
+    arrival order. A member that does not beat the representative stops there (a semantic
+    duplicate: counted, not re-scored) and shares its outcome; a simpler one is scored and
+    replaces it, the old representative becoming the semantic duplicate. Each evaluated
+    expression ends as exactly one of: valid, invalid by reason, semantic duplicate. Only
+    representatives are valid, so the front and the selection see the simplest members.
     """
 
     def __init__(self, scorer, max_candidates, max_seconds, clock):
@@ -268,41 +275,61 @@ class Archive:
         self.evaluated = 0
         self.duplicates = {"canonical": 0, "semantic": 0}
         self.invalid = dict.fromkeys(REASONS, 0)
-        self.valid = []
-        self.by_key = {}
-        self.by_fingerprint = {}
+        self.representatives = {}  # Candidate.index -> valid representative, scoring order
+        self.by_key = {}  # canonical key -> semantic fingerprint, or "non_finite"
+        self.by_fingerprint = {}  # fingerprint -> ((complexity, key), outcome)
+
+    @property
+    def valid(self):
+        """Valid class representatives in scoring order."""
+        return list(self.representatives.values())
 
     def check_time(self):
         if self.clock() - self.start >= self.max_seconds:
             raise BudgetExhausted("max_seconds")
+
+    def outcome(self, key):
+        """Outcome of an evaluated canonical key: its class representative's."""
+        entry = self.by_key[key]
+        return self.by_fingerprint[entry][1] if isinstance(entry, bytes) else entry
 
     def evaluate(self, expr):
         """(canonical key, Candidate or rejection reason); may raise BudgetExhausted."""
         key = canonical_key(expr)
         if key in self.by_key:
             self.duplicates["canonical"] += 1
-            return key, self.by_key[key]
+            return key, self.outcome(key)
         if self.evaluated >= self.max_candidates:
             raise BudgetExhausted("max_candidates")
         self.check_time()
         self.evaluated += 1
         scores = self.scorer.training_scores(expr)
         if scores is None:
-            outcome = "non_finite"
-        else:
-            fingerprint = semantic_fingerprint(scores)
-            if fingerprint in self.by_fingerprint:
-                self.duplicates["semantic"] += 1
-                self.by_key[key] = self.by_fingerprint[fingerprint]
-                return key, self.by_key[key]
-            outcome = self.scorer.score(expr, scores, self.evaluated)
-            self.by_fingerprint[fingerprint] = outcome
+            self.invalid["non_finite"] += 1
+            self.by_key[key] = "non_finite"
+            return key, "non_finite"
+        fingerprint = semantic_fingerprint(scores)
+        self.by_key[key] = fingerprint
+        rank = (size(expr), key)
+        current = self.by_fingerprint.get(fingerprint)
+        if current is not None:
+            self.duplicates["semantic"] += 1
+            if current[0] <= rank:
+                return key, current[1]
+            self._discount(current[1])  # the old representative is now the duplicate
+        outcome = self.scorer.score(expr, scores, self.evaluated)
+        self.by_fingerprint[fingerprint] = (rank, outcome)
         if isinstance(outcome, str):
             self.invalid[outcome] += 1
         else:
-            self.valid.append(outcome)
-        self.by_key[key] = outcome
+            self.representatives[outcome.index] = outcome
         return key, outcome
+
+    def _discount(self, outcome):
+        if isinstance(outcome, str):
+            self.invalid[outcome] -= 1
+        else:
+            del self.representatives[outcome.index]
 
 
 @dataclass(frozen=True)
