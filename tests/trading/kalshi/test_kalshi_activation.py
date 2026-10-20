@@ -306,7 +306,15 @@ def _pasted_forms():
     # its DER length is a multiple of 3.
     short = base64.b64encode(der)
     assert not short.endswith(b"=")
+    lines = body_lines(rsa_key)
+    damaged = bytearray(b"".join(lines))
+    damaged[len(damaged) // 2] = ord("A") if damaged[len(damaged) // 2] != ord("A") else ord("B")
+    openssh = ed.private_bytes(ser.Encoding.PEM, ser.PrivateFormat.OpenSSH, ser.NoEncryption())
     return {
+        "rsa_body_in_a_toml_array": b"[\n" + b",\n".join(b'"' + x + b'"' for x in lines) + b"]",
+        "rsa_body_truncated": b"\n".join(lines[:12]),
+        "rsa_body_one_character_damaged": bytes(damaged),
+        "openssh_body": b"\n".join(x for x in openssh.splitlines() if b"-----" not in x),
         "ed25519_der_base64_unpadded_lines": short[:32] + b"\\\n" + short[32:],
         "ed25519_der_base64_after_a_character": b"x" + short,
         "ed25519_der_hex_after_a_digit": b"5" + der.hex().encode(),
@@ -318,6 +326,35 @@ def _pasted_forms():
         "pem_hex": pem_text.hex().encode(),
         "der_hex": der.hex().encode(),
     }
+
+
+def body_lines(key):
+    """The base64 lines of a key's PEM without its armour."""
+    return [line for line in pem(key).splitlines() if b"-----" not in line]
+
+
+def test_a_body_pasted_as_comments_is_refused(tmp_path):
+    # TOML ignores comments, so no other gate sees them: this gate is the only defence.
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    for case, prefix in enumerate(("# ", "#", "#\t")):
+        comments = "".join(f"{prefix}{line.decode()}\n" for line in body_lines(key))
+        directory = tmp_path / f"case{case}"
+        directory.mkdir()
+        setup = Setup(directory)
+        setup.write(extra=comments)
+        assert setup.refused().failed == ("no_key_material",)
+
+
+def test_public_keys_are_not_key_material():
+    for key in (
+        ed25519.Ed25519PrivateKey.generate(),
+        rsa.generate_private_key(public_exponent=65537, key_size=2048),
+    ):
+        der = key.public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        for blob in (base64.b64encode(der), der.hex().encode()):
+            assert not contains_key_material(b'note = """\n' + blob + b'\n"""\n')
 
 
 @pytest.mark.parametrize("form", sorted(_pasted_forms()))

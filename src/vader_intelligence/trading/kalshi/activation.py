@@ -121,12 +121,27 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _KEY_MATERIAL = (b"-----BEGIN", b"PRIVATE KEY")
 _BASE64_RUN = re.compile(rb"[A-Za-z0-9+/]{40,}={0,2}")
 _HEX_RUN = re.compile(rb"[0-9A-Fa-f]{40,}")
-_LAYOUT = re.compile(rb"[\s\"'\\]+")  # whitespace, quotes, TOML line continuations
+# Whitespace, quotes, TOML line continuations, comment markers and array punctuation: a
+# body pasted as commented-out lines or split across an array is still one run.
+_LAYOUT = re.compile(rb"[\s\"'\\#,\[\]]+")
+# Markers in decoded bytes: PEM text, an OpenSSH private key, and the opening bytes of
+# key structures, so a truncated or damaged body (which still exposes key components)
+# is found without a complete, loadable DER.
+_DECODED_MARKERS = (*_KEY_MATERIAL, b"openssh-key-v1\x00")
+_KEY_PREFIXES = re.compile(
+    rb"\x30\x82..\x02\x01\x00\x02\x82"  # PKCS#1 RSAPrivateKey: version 0, then n
+    rb"|\x02\x01\x00\x30\x0d\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01"  # PKCS#8 RSA
+    rb"|\x06\x03\x2b\x65\x70\x04\x22\x04\x20"  # PKCS#8 Ed25519: OID, then the seed
+    rb"|\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x05\x0d",  # PBES2 (encrypted PKCS#8)
+    re.DOTALL,
+)
 
 
 def _loads_as_private_key(der):
+    # Only the shape matters here, and RSA validation (primality tests) on a crafted
+    # structure can take a minute; skipping it also accepts a damaged key.
     try:
-        serialization.load_der_private_key(der, password=None)
+        serialization.load_der_private_key(der, password=None, unsafe_skip_rsa_key_validation=True)
     except TypeError:  # an encrypted private key: still key material
         return True
     except Exception:  # not a DER private key
@@ -158,7 +173,7 @@ def _decodes_to_key(blob):
     key is bounded by its own length header, so bytes decoded from neighbouring text that
     merged into the same run (a token after an unpadded run, a character before it) do
     not hide it."""
-    if any(marker in blob for marker in _KEY_MATERIAL):
+    if any(marker in blob for marker in _DECODED_MARKERS) or _KEY_PREFIXES.search(blob):
         return True
     start = blob.find(0x30)  # SEQUENCE
     while start != -1:
@@ -190,13 +205,17 @@ def _hex_decodings(run):
 
 def contains_key_material(data):
     """True when `data` holds a private key in any form an operator might paste: PEM text,
-    or a base64 or hex run (also across line breaks and quotes) that decodes to PEM text
-    or a DER private key. A run may absorb neighbouring characters once the layout is
-    removed, so every alignment is decoded and a DER key is found wherever it starts. A
-    SHA-256 hex digest decodes to 32 bytes that hold neither."""
+    or a base64 or hex run (also across line breaks, quotes, comment markers and arrays)
+    that decodes to PEM text, an OpenSSH key, the opening bytes of a key structure (so a
+    truncated body counts) or a DER private key. A run may absorb neighbouring characters
+    once the layout is removed, so every alignment is decoded and a DER key is found
+    wherever it starts. A SHA-256 hex digest decodes to 32 bytes that hold none of these.
+    Any text containing `-----BEGIN` or `PRIVATE KEY` is refused too, comments
+    included."""
     if any(marker in data for marker in _KEY_MATERIAL):
         return True
-    for text in (data, _LAYOUT.sub(b"", data)):
+    stripped = _LAYOUT.sub(b"", data)
+    for text in (data, stripped) if stripped != data else (data,):
         for match in _BASE64_RUN.finditer(text):
             if any(_decodes_to_key(blob) for blob in _base64_decodings(match.group())):
                 return True
