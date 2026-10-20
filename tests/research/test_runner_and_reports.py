@@ -212,6 +212,29 @@ def test_a_cohort_with_no_decision_in_a_segment_is_reported_not_evaluated(
     assert holdout["cohorts"][real]["population"]["scored_paired"] == 1
 
 
+def test_a_single_cohort_segment_without_decisions_keeps_its_cohort_key(store, config, monkeypatch):
+    """Pre-review of #37: in a single-cohort run, a segment with no decision is evaluated
+    under that cohort, as before F13, so a rerun finds its earlier evaluation."""
+    forward_slice(store, config)
+    settle(store, config, monkeypatch, settlement_evidence())
+    real = json.loads(
+        store.db.execute("SELECT payload_json FROM forecast_decisions WHERE id=1").fetchone()[0]
+    )["manifest"]["discovery"]["collector_config_hash"]
+    split = dict(
+        view="forward-shadow",
+        start_date=GAME_DAY - timedelta(days=3),
+        through_date=GAME_DAY,
+        development_through=GAME_DAY - timedelta(days=1),
+        holdout_from=GAME_DAY,
+    )
+    first = run_at(store, at(23, 40), **split)
+    development = first["segments"]["development"]
+    assert list(development["cohorts"]) == [real]
+    assert development["cohorts"][real]["collector_config_hash"] == real
+    again = run_at(store, at(23, 41), **split)
+    assert again["segments"]["development"]["cohorts"][real]["existing"] is True
+
+
 def live_forward_abstention(store, game_id=900003):
     """A forward-shadow decision in the forward dataset written by a run recorded as live
     (abstaining, so it cites no evidence); SYNTHETIC test bytes model a live record."""

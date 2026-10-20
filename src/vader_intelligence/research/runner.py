@@ -314,6 +314,11 @@ def run(
             if segment == "holdout":
                 summary["holdout_history"] = _holdout_history(db, dataset, seg_start, seg_through)
             cohorts = _cohorts(db, protocol, dataset, modes, seg_start, seg_through)
+            pinned = [c for c in run_cohorts if c is not None]
+            if cohorts == [None] and len(pinned) == 1:
+                # A segment without decisions in a single-cohort run is evaluated under that
+                # cohort, as before review F13, so a rerun finds its earlier evaluation.
+                cohorts = pinned
             entry = {
                 "start_date": seg_start.isoformat(),
                 "through_date": seg_through.isoformat(),
