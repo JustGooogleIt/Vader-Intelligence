@@ -438,6 +438,11 @@ attempts and refresh failures are reported; no promise of up-to-the-minute offic
 truth is made when refresh has not run. Repeated identical observations are new
 retrieval evidence but not new samples.
 
+Implementation note (independent review F10): a forward-shadow or reconstruction
+evaluation considers only attempts of settlement runs whose durable source lineage is
+live; a synthetic run's attempts are skipped, never "the latest attempt" that labels or
+invalidates the outcome. A synthetic evaluation may use either lineage.
+
 For binary scoring require the selected contract's Kalshi interpretation to have
 `status='finalized'`, `payout_kind='binary'`, no flags, `binary_outcome` yes or no,
 valid nonmissing `settlement_ts`, notional exactly 1, and consistent exact payout

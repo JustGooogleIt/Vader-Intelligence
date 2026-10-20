@@ -12,9 +12,13 @@ One chain through every integrated layer, with injected transports and clocks:
 4. forward shadow: the validated artifact runs as a registered forecaster at C on the
    shipped collector fixture, the game settles, a contract-2 evaluation scores it, and
    the evaluation becomes shadow evidence;
-5. paper: a coordinator-run backtest on labelled synthetic execution quotes becomes paper
-   evidence; a synthetic operator approval promotes to paper_approved (never live);
-6. the candidate's one holdout evaluation, recorded in both ledgers;
+5. paper: a backtest on labelled synthetic execution quotes under an assumed-depth
+   SCENARIO is reported, and the protected evaluator refuses it as paper evidence
+   (finding F40): paper evidence needs `evaluator.paper_backtest` on execution inputs
+   built from the dataset's verified history archive, without an assumed depth, which a
+   SYNTHETIC dataset has not. The candidate stays shadow_tested (the sanctioned route is
+   tested in tests/pods/test_review_fixes.py);
+6. the candidate's one holdout evaluation (from shadow_tested), recorded in both ledgers;
 7. live-adapter dry run: the shadow decision becomes a signed (throwaway key), unsent
    order request;
 8. execution arithmetic on the synthetic history archive.
@@ -39,7 +43,7 @@ import json
 import math
 import sys
 import tempfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -67,7 +71,6 @@ from vader_intelligence.history.acquire import Acquisition  # noqa: E402
 from vader_intelligence.pods import evaluator  # noqa: E402
 from vader_intelligence.pods.candidates import (  # noqa: E402
     HoldoutAlreadyConsumed,
-    OperatorApprovalRecord,
     candidate_record,
 )
 from vader_intelligence.pods.contracts import (  # noqa: E402
@@ -388,21 +391,24 @@ def run(workdir):
                     segment="validation",
                     ledger_path=workdir / "paper-validation.sqlite3",
                 )
-                paper = evaluator.paper_evidence(store, candidate, summary)
-                approval = OperatorApprovalRecord(
-                    candidate,
-                    "synthetic-demo-operator",
-                    datetime(2026, 10, 19, tzinfo=timezone.utc).isoformat(),
-                    "SYNTHETIC demo approval for paper only",
-                )
+                # Supplied SYNTHETIC quotes under an assumed depth: never paper evidence.
+                try:
+                    evaluator.paper_evidence(store, candidate, summary)
+                    evidence = "accepted"
+                except ContractError as exc:
+                    evidence = f"refused: {exc}"
                 out["paper"] = {
+                    "execution_inputs": summary["execution_inputs"]["source"],
+                    "input_label": summary["report"]["manifest"]["input_label"],
+                    "assumed_depth": summary["report"]["manifest"]["config"]["assumed_depth"],
+                    "paper_evidence": evidence,
                     "forecasts": summary["forecasts"],
                     "orders": len(summary["report"]["orders"]),
                     "fills": len(summary["report"]["fills"]),
                     "equity_conservative": summary["report"]["pnl"]["equity_conservative"],
                     "realized": summary["report"]["pnl"]["realized"],
                     "verification": summary["report"]["verification"],
-                    "state": evaluator.record_paper(store, candidate, paper, approval),
+                    "state": candidate_record(store, candidate)["state"],
                 }
                 holdout = evaluator.evaluate_holdout(store, registry, candidate)
                 try:
@@ -433,6 +439,7 @@ def run(workdir):
                 signer=Signer(
                     "00000000-0000-4000-8000-000000000000", ed25519.Ed25519PrivateKey.generate()
                 ),
+                decision_mode="synthetic",  # this demo's decisions are SYNTHETIC
             )
         finally:
             db.close()

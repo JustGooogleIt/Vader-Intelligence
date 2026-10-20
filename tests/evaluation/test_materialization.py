@@ -348,6 +348,99 @@ def test_mlb_disagreement_is_an_annotation_not_a_label(store, config, monkeypatc
     assert result["report"]["mlb_annotation"] == {"False": 1}
 
 
+def test_receipt_predating_its_witness_run_never_makes_a_publication_timely(
+    store, config, monkeypatch
+):
+    """Stack review F11: the evaluator's publication status uses the shared proof
+    predicate, so a forged witness receipt (a forecast-witness run inserted around the run
+    API, holding a trusted receipt observed inside the publication window but before the
+    run started) is not a publication receipt: the decision is unconfirmed, not scored."""
+    import vader_intelligence.forecast.tick as tick_module
+    from vader_intelligence.forecast import contracts
+    from vader_intelligence.forecast.references import reference
+
+    to_schema4(store)
+    collect(store, config, origin=at(18, 3))
+    tick_at(store, PROTO, at(18, 3, 30))
+    real_witness, calls = tick_module.witness, []
+
+    def without_publication_witness(*args, **kwargs):
+        calls.append(None)
+        return {"status": "complete"} if len(calls) == 3 else real_witness(*args, **kwargs)
+
+    monkeypatch.setattr(tick_module, "witness", without_publication_witness)
+    due = tick_at(store, PROTO, at(18, 5, 30))
+    monkeypatch.setattr(tick_module, "witness", real_witness)
+    assert due["publications"]["allowed"] == 1
+    db = store.db
+    publication_id, publication_digest = db.execute(
+        "SELECT id, digest FROM forecast_publications"
+    ).fetchone()
+    tool = {"observer_namespace": NS, "session_id": "forged", "source_lineage": "synthetic"}
+    db.execute(
+        "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
+        (
+            "forged-witness",
+            "forecast-witness",
+            at(18, 30).isoformat(),
+            None,
+            "running",
+            RunProvenanceV1(
+                "forged-witness", "forecast-witness", "a" * 64, {}, tool_configuration=tool
+            ).to_json(),
+            None,
+        ),
+    )
+    ref = reference(db, "forecast_publications", {"id": publication_id})
+    forged = dict(
+        schema_version=1,
+        contract_version=3,
+        run_id="forged-witness",
+        created_at=at(18, 30).isoformat(),
+        code_hash="a" * 64,
+        config_hash=digest({}),
+        mode="synthetic",
+        references=[ref],
+        subject_kind="publication",
+        fetch_id=None,
+        binding_id=None,
+        publication_id=publication_id,
+        discovery_id=None,
+        subject_digest=publication_digest,
+        observed_at=at(18, 5, 31).isoformat(),
+        session_id="forged",
+        observer_namespace=NS,
+        monotonic_offset="0",
+        clock_status="trusted",
+    )
+    with pytest.raises(ValueError, match="predates its witness run"):
+        journal.validate_links(db, "forecast_receipts", forged)
+    # Present anyway, inserted around the journal as the pre-fix journal accepted it.
+    db.execute(
+        "INSERT INTO forecast_receipts(idempotency_key,run_id,subject_kind,fetch_id,binding_id,"
+        "publication_id,discovery_id,observed_at,digest,payload_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (
+            contracts.key("forecast_receipts", forged),
+            "forged-witness",
+            "publication",
+            None,
+            None,
+            publication_id,
+            None,
+            forged["observed_at"],
+            digest(forged),
+            contracts.validate("forecast_receipts", forged),
+        ),
+    )
+    settle(store, config, monkeypatch, settlement_evidence())
+    result = evaluate_at(store, at(23, 40), view="forward-shadow")
+    item = items_of(store, result["evaluation_id"])[f"game:{GAME_ID}"]
+    assert item["publication_status"] == "publication_unconfirmed"
+    assert item["publication_reasons"] == ["receipt_missing"] and item["receipt_id"] is None
+    assert all(score is None for score in item["scores"].values())
+    assert result["report"]["population"]["FP"] == 0
+
+
 # ------------------------------------------------------------------ population
 
 
@@ -400,10 +493,9 @@ def test_game_without_binding_is_counted_from_the_frozen_manifest(store, config)
     assert item["cutoff_status"] == "no_binding" and item["outcome_status"] == "identity_unresolved"
 
 
-def test_mixed_collector_cohorts_are_evaluated_separately(store, config, monkeypatch):
-    forward_slice(store, config)
-    settle(store, config, monkeypatch, settlement_evidence())
-    # A second collector configuration wrote a pass that pins another decision.
+def other_cohort_abstention(store, game_id=900002, start=at(20, 0)):
+    """A second collector configuration wrote a pass that pins another decision (an
+    abstention for `game_id` at `start`). Returns that cohort's collector hash."""
     other_run, other_config = "other-collector", {"max_pages": 7}
     store.db.execute(
         "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
@@ -462,13 +554,13 @@ def test_mixed_collector_cohorts_are_evaluated_separately(store, config, monkeyp
         "references": [],
         "dataset": PROTO.dataset,
         "protocol": PROTO.protocol_id,
-        "game_id": 900002,
+        "game_id": game_id,
         "unresolved_key": None,
         "ticker": None,
         "yes_team_id": None,
         "horizon": 3600,
-        "scheduled_start": "2026-09-27T20:00:00+00:00",
-        "cutoff": "2026-09-27T19:00:00+00:00",
+        "scheduled_start": start.isoformat(),
+        "cutoff": (start - timedelta(hours=1)).isoformat(),
         "binding_id": None,
         "discovery_id": pass_id,
         "selection_version": PROTO.selection_version,
@@ -490,6 +582,14 @@ def test_mixed_collector_cohorts_are_evaluated_separately(store, config, monkeyp
         "supersedes_id": None,
     }
     journal.append(store.db, "forecast_decisions", abstention)
+    return digest(other_config)
+
+
+def test_mixed_collector_cohorts_are_evaluated_separately(store, config, monkeypatch):
+    forward_slice(store, config)
+    settle(store, config, monkeypatch, settlement_evidence())
+    other_config = {"max_pages": 7}
+    assert other_cohort_abstention(store) == digest(other_config)
     with pytest.raises(ValueError, match="separate cohort"):
         evaluate_at(store, at(23, 40), view="forward-shadow")
     real_hash = json.loads(
@@ -611,6 +711,7 @@ def test_outcome_join_dispositions_directly(store, config, monkeypatch):
             yes_team_id=117,
             outcomes_as_of=AS_OF,
             source_ceiling=10**6,
+            mode="synthetic",
         ).status
         == "identity_unresolved"
     )
@@ -622,6 +723,7 @@ def test_outcome_join_dispositions_directly(store, config, monkeypatch):
             yes_team_id=117,
             outcomes_as_of=AS_OF,
             source_ceiling=10**6,
+            mode="synthetic",
         ).status
         == "outcome_not_observed"
     )
@@ -633,6 +735,7 @@ def test_outcome_join_dispositions_directly(store, config, monkeypatch):
         yes_team_id=117,
         outcomes_as_of=AS_OF,
         source_ceiling=10**6,
+        mode="synthetic",
     )
     assert joined.scorable and joined.y == 1 and joined.mlb_agrees is True
     # A frozen game that the mapping contradicts cannot score.
@@ -643,6 +746,7 @@ def test_outcome_join_dispositions_directly(store, config, monkeypatch):
         yes_team_id=117,
         outcomes_as_of=AS_OF,
         source_ceiling=10**6,
+        mode="synthetic",
     )
     assert changed.status == "identity_changed"
     # A ceiling below the settlement attempt hides it.
@@ -654,6 +758,7 @@ def test_outcome_join_dispositions_directly(store, config, monkeypatch):
             yes_team_id=117,
             outcomes_as_of=AS_OF,
             source_ceiling=1,
+            mode="synthetic",
         ).status
         == "outcome_not_observed"
     )
@@ -698,3 +803,51 @@ def test_evaluate_and_inspect_through_the_cli(tmp_path, monkeypatch):
         "3": 0,
         "4": 0,
     }
+
+
+def test_evaluate_through_the_cli_defaults_to_the_archive_record_contract(tmp_path, monkeypatch):
+    """On schema 6 new decisions are contract 4; the CLI must evaluate them by default and
+    accept --record-contract 4 (review F25), as `evaluate()` itself does."""
+    path = tmp_path / "evaluate6.sqlite3"
+    config = Config(database=str(path), min_free_bytes=1)
+
+    def cli(*args):
+        return execute(parser().parse_args(["--db", str(path), *args]))
+
+    cli("db-init")
+    cli("settlement", "migrate")
+    cli("forecast", "migrate")
+    cli("forecast", "migrate", "--record-contract", "4")
+    store = Store(path, min_free_bytes=1)
+    try:
+        assert store.schema_version() == 6
+        collect(store, config, origin=at(18, 3))
+        tick_at(store, PROTO, at(18, 3, 30))
+        assert tick_at(store, PROTO, at(18, 5, 30))["decisions_eligible"] == 1
+        settle(store, config, monkeypatch, settlement_evidence())
+    finally:
+        store.close()
+    research = tmp_path / "research.toml"
+    research.write_text(f'[research]\ndataset = "{PROTO.dataset}"\n')
+    base = (
+        "evaluate",
+        "--research-config",
+        str(research),
+        "--view",
+        "forward-shadow",
+        "--outcomes-as-of",
+        AS_OF.isoformat(),
+    )
+    result = cli(*base)
+    report = result["report"]
+    assert result["status"] == "complete" and report["record_contract"] == 4
+    assert report["population"]["scored_paired"] == 1 and report["excluded_decisions"] == []
+    explicit = cli(*base, "--record-contract", "4")
+    assert explicit["existing"] is True and explicit["evaluation_id"] == result["evaluation_id"]
+    legacy = cli(*base, "--record-contract", "3")
+    assert legacy["status"] == "inconclusive" and legacy["report"]["record_contract"] == 3
+    assert legacy["report"]["excluded_decisions"] == [
+        {"id": 1, "contract": 4, "reason": "other_contract"}
+    ]
+    with pytest.raises(SystemExit):
+        parser().parse_args(["evaluate", *base[1:], "--record-contract", "5"])

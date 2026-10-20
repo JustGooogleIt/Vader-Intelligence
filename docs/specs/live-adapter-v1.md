@@ -182,3 +182,38 @@ and balance mismatches indefinitely (safe, since buys stop, but never resolved).
   missing, and four minor gaps (a data-less acknowledgement ignored, two records for one
   ticker still blocking every market, and runbook remedies for fees, own unreadable
   records and `fill_conflict`), fixed as described above.
+
+## Revision: venue absence (2026-10-19, independent review findings F30, F32)
+
+- **Accepted orders survive a restart (F32).** The guard that an order the exchange
+  accepted is never reported "not found" lived only in gateway memory. `lookup` and
+  `cancel` now also use what the ledger records: the exchange order id of an exchange
+  event (the 201, a 409 resolved by lookup, a reconciliation that found the order), an
+  `accepted` event or a fill. After a restart, `lookup` scans the listing as before
+  (which detects duplicates), then GETs the recorded id; while neither shows the order
+  it raises `LookupInconclusive`, so reconciliation reports `lookup_failed:<coid>` and
+  the order keeps its reservation. Two recorded exchange ids, or a venue order other
+  than the recorded one, raise as duplicate exposure.
+- **One negative read is never final for an unknown submission (F30).** A create that
+  timed out while still in flight, or that REST reads have not caught up with, could be
+  recorded `not_found` (terminal `rejected`, reservation released) on the first
+  reconciliation after the settle window. Now:
+  - `Executor.reconcile` reads `gateway.open_orders()` first. Any venue-open order that
+    is not an active ledger order is `venue_open_untracked:<client id>` (blocking); an
+    unreadable list is `open_orders_unavailable` (blocking).
+  - For an `unknown` order (or `pending_submit` without an outcome) the first `None`
+    from `lookup` is recorded as a `reconciled` event with status `absent`, which the
+    projection ignores: the order stays `unknown`, keeps its reservation and is reported
+    `absence_unconfirmed:<coid>`. It becomes `not_found` only on a `None` at least
+    `absence_grace_seconds` (default 300) after the first, in a reconciliation whose
+    open-orders list was read and does not show it (`absent_since` is recorded).
+  - A `None` for any other active order is not taken as final while the open-orders
+    list shows it or cannot be read.
+  - `Executor.cancel` also sends a cancel for an order whose only terminal record is a
+    reconciled `not_found`; the venue's answer is recorded, but a terminal order is never
+    reopened. Fills of such an order are still recorded against it.
+  - One-way change: a ledger holding a `reconciled`/`absent` event cannot be projected
+    by code before this revision, which refuses the unknown status. That fails closed,
+    and no live ledger exists yet; the ledger's version is unchanged.
+  - Paper is unchanged: `PaperExchange.lookup` never returns `None` for a submitted
+    order and its open orders are the ledger's.

@@ -181,7 +181,12 @@ class ShadowEvaluationRecord:
 
 @dataclass(frozen=True)
 class PaperReportRecord:
-    """Paper-execution report under conservative assumptions with no risk-check bypass."""
+    """Paper-execution report under conservative assumptions with no risk-check bypass.
+
+    It names its execution source and inputs: only inputs built from the verified history
+    archive (`history_archive`, with their digest) qualify, and an assumed-depth SCENARIO
+    (D-010: candles carry no sizes) is never conservative evidence.
+    """
 
     KIND: ClassVar[str] = "paper_report"
     candidate_id: str
@@ -191,6 +196,9 @@ class PaperReportRecord:
     n_decisions: int
     period_start: str
     period_end: str
+    execution_source: str | None = None
+    execution_inputs_sha256: str | None = None
+    assumed_depth: str | None = None
 
     def __post_init__(self):
         normalize_fields(self)
@@ -200,10 +208,23 @@ class PaperReportRecord:
         require(self.risk_checks_bypassed >= 0, "risk_checks_bypassed must be non-negative")
         require(self.n_decisions >= 0, "n_decisions must be non-negative")
         _period(self.period_start, self.period_end)
+        if self.execution_source is not None:
+            _nonempty(self.execution_source, "execution_source")
+        if self.execution_inputs_sha256 is not None:
+            require(
+                bool(HEX64.match(self.execution_inputs_sha256)),
+                "execution_inputs_sha256 must be hex",
+            )
 
     def check(self):
         if self.execution_assumptions != "conservative":
             raise PromotionRefused("paper report must use conservative execution assumptions")
+        if self.execution_source != "history_archive" or self.execution_inputs_sha256 is None:
+            raise PromotionRefused(
+                "paper report must name execution inputs built from the history archive"
+            )
+        if self.assumed_depth is not None:
+            raise PromotionRefused("an assumed-depth scenario is never conservative paper evidence")
         if self.risk_checks_bypassed:
             raise PromotionRefused("paper report shows bypassed risk checks")
         if self.n_decisions < 1:

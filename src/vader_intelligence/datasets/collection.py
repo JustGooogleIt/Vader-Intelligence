@@ -17,6 +17,7 @@ from datetime import date, datetime, timezone
 from ..features import definitions, quotes
 from ..history import interpret
 from ..provenance import json_text, source_hash
+from ..storage import retrieval_instant, retrieval_text_bound
 from .history import ASSUMPTIONS as HISTORY_ASSUMPTIONS
 from .history import HORIZON, archive_identity, before, label_of, team_histories
 
@@ -43,18 +44,20 @@ def lineage_runs(db, lineage):
 
 def _observations(db, ticker, kind, cutoff, runs):
     """[(retrieved_at, data, fetch_id)] of one ticker and kind retrieved at or before C by
-    runs of the selected lineage only."""
+    runs of the selected lineage only. Retrieval times are compared as instants (review
+    F23): the SQL text bound is only a prefilter, since stamps may carry any UTC offset."""
     rows = db.execute(
         "SELECT f.retrieved_at, o.data_json, f.id, q.run_id FROM observations o JOIN fetches f"
         " ON f.id=o.fetch_id JOIN requests q ON q.id=f.request_id"
         " WHERE o.ticker=? AND o.kind=? AND f.state='ok' AND f.retrieved_at<=? ORDER BY f.seq",
-        (ticker, kind, cutoff.isoformat()),
+        (ticker, kind, retrieval_text_bound(cutoff, "upper")),
     ).fetchall()
-    return [
-        (datetime.fromisoformat(at), json.loads(data), fid)
-        for at, data, fid, run_id in rows
-        if run_id in runs
-    ]
+    out = []
+    for at, data, fid, run_id in rows:
+        moment = retrieval_instant(at)
+        if run_id in runs and moment is not None and moment <= cutoff:
+            out.append((moment, json.loads(data), fid))
+    return out
 
 
 def build(

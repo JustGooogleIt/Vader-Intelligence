@@ -32,13 +32,15 @@ def test_end_to_end_chain_with_hand_checked_numbers(tmp_path):
     log_delta = Decimal(shadow["paired_with_midpoint"]["mean_log_loss_delta"])
     assert math.isclose(float(log_delta), math.log(0.645) - math.log(p), abs_tol=1e-9)
 
-    assert out["paper"]["state"] == "paper_approved" and out["paper"]["verification"] == []
-    assert out["candidate"]["transitions"] == [
-        "proposed",
-        "validated",
-        "shadow_tested",
-        "paper_approved",
-    ]
+    # F40: the demo's paper backtest runs on SYNTHETIC supplied quotes under an assumed
+    # depth, so it is reported but refused as paper evidence; no paper_approved.
+    paper = out["paper"]
+    assert paper["verification"] == [] and paper["execution_inputs"] == "supplied"
+    assert paper["input_label"].startswith("supplied:synthetic:validation:")
+    assert paper["assumed_depth"] == "10"
+    assert paper["paper_evidence"].startswith("refused: paper evidence needs execution inputs")
+    assert paper["state"] == "shadow_tested"
+    assert out["candidate"]["transitions"] == ["proposed", "validated", "shadow_tested"]
     assert out["holdout"]["registry_ledger"]["evaluations"] == 1
     assert out["holdout"]["second_attempt"].startswith("refused")
 

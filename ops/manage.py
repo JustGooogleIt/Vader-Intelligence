@@ -7,13 +7,21 @@ import plistlib
 import sqlite3
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 # Direct script execution works without packaging or shared CLI changes.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ops import archive, launchd, runner  # noqa: E402
-from ops.common import absolute, label, load, validate, write_json  # noqa: E402
+from ops.common import (  # noqa: E402
+    absolute,
+    check_shadow_forecasters,
+    label,
+    load,
+    validate,
+    write_json,
+)
 
 
 def parser():
@@ -108,6 +116,8 @@ def configure(args):
             "--forbid and --shadow-model-registry apply only with --shadow-research-config"
         )
     validate(config)
+    if "shadow" in config:
+        check_shadow_forecasters(config["shadow"])
     for name in ("python", "collector_config"):
         if not Path(config[name]).is_file():
             raise ValueError(f"{name} must exist")
@@ -158,6 +168,12 @@ def main(argv=None):
 
                 for value in (args.start, args.through):
                     date.fromisoformat(value)
+                # Named before the first step: an overlap-skipped step has no start time,
+                # and a repeated name would fail the next overlap instead of reporting it.
+                stamp = runner.utc().replace("+00:00", "Z").replace(":", "")
+                report_path = Path(config["state"]) / (
+                    f"shadow-evaluate-{stamp}-{os.getpid()}-{uuid.uuid4().hex[:12]}.json"
+                )
                 records = []
                 if not args.skip_settlement:
                     records.append(
@@ -212,14 +228,7 @@ def main(argv=None):
                     else "failed"
                 )
                 report = {"status": overall, "steps": records}
-                write_json(
-                    Path(config["state"])
-                    / f"shadow-evaluate-{records[0].get('started_at', 'overlap')}.json".replace(
-                        ":", ""
-                    ),
-                    report,
-                    new=True,
-                )
+                write_json(report_path, report, new=True)
                 print(json.dumps(report, indent=2))
                 return 75 if overall == "overlap_skipped" else 0 if overall == "complete" else 1
             if args.action in ("health", "status"):

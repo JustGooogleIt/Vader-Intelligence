@@ -107,7 +107,9 @@ def candle_historical(end):
     }
 
 
-def handler_factory(calls, *, page_size_pages=2, fail_ticker=None):
+def handler_factory(
+    calls, *, page_size_pages=2, fail_ticker=None, schedule=None, unavailable_ticker=None
+):
     def handler(request):
         calls.append(request)
         path = request.url.path.removeprefix("/trade-api/v2")
@@ -122,11 +124,13 @@ def handler_factory(calls, *, page_size_pages=2, fail_ticker=None):
             assert query["status"] == "settled"
             return response(data={"markets": SETTLED, "cursor": ""})
         if request.url.host == "statsapi.mlb.com":
-            return response(data=SCHEDULE)
+            return response(data=schedule or SCHEDULE)
         if path.endswith("/candlesticks"):
             ticker = path.split("/")[-2]
             if ticker == fail_ticker:
                 return response(status=404, data={"error": "not found"})
+            if ticker == unavailable_ticker:
+                return response(status=503, data={"error": "unavailable"})
             end, start = int(query["end_ts"]), int(query["start_ts"])
             maker = candle_historical if path.startswith("/historical/") else candle_live
             return response(
@@ -338,3 +342,54 @@ def test_execution_candles_are_a_separate_stage_features_never_read(store, confi
     assert feature and all(c["end"] <= limit for c in feature)
     assert any(c["end"] > limit for c in execution)
     assert [c for c in execution if c["end"] <= limit] == feature
+
+
+def with_start(pk, start):
+    """SCHEDULE with one game's provider gameDate replaced."""
+    games = [
+        g | {"gameDate": start} if g["gamePk"] == pk else g for g in SCHEDULE["dates"][0]["games"]
+    ]
+    return {"dates": [{"date": DAY, "games": games}]}
+
+
+@pytest.mark.parametrize("start", ["2026-09-20T17:10:00", "TBD", "2026-09-20", 1790010600])
+def test_an_unparseable_official_start_is_one_unresolved_event(store, config, start):
+    """Review F20: an offset-less or non-ISO gameDate on one candidate leaves that event
+    unresolved (`unparseable_start`); the others identify and the run fetches candles."""
+    calls = []
+    result = acquire(store, config, calls, handler={"schedule": with_start(900001, start)})
+    assert result["status"] == "complete", result
+    assert result["identified_events"] == 1
+    assert result["unresolved_by_reason"] == {"start_differs": 1, "unparseable_start": 1}
+    candle_paths = sorted(r.url.path for r in calls if r.url.path.endswith("/candlesticks"))
+    assert [p.rsplit("/", 2)[-2] for p in candle_paths] == [
+        "KXMLBGAME-26SEP201610HOUATH-ATH",
+        "KXMLBGAME-26SEP201610HOUATH-HOU",
+    ]
+    summary = interpret.summary(store.db)
+    assert summary["unresolved_by_reason"]["unparseable_start"] == 1
+    # A second candidate with the exact start cannot be proven unique beside it.
+    games = interpret.schedule(store.db)
+    twin = games[900001] | {"gamePk": 900009, "gameDate": "2026-09-20T17:10:00Z"}
+    records = interpret.events(interpret.markets(store.db))["KXMLBGAME-26SEP201310PHINYM"]
+    found = interpret.identify(records, games | {900009: twin})
+    assert found == {"status": "unresolved", "reason": "unparseable_start"}
+
+
+def test_the_request_bound_counts_logical_requests_and_reports_http_attempts(store, config, capsys):
+    """Review N-20b: --max-requests bounds logical requests, and each may be retried up
+    to max_attempts; HTTP attempts are reported separately as attempts_made."""
+    calls = []
+    unavailable = "KXMLBGAME-26SEP201310PHINYM-NYM"
+    result = acquire(
+        store, config, calls, max_requests=9, handler={"unavailable_ticker": unavailable}
+    )
+    assert result["status"] == "partial" and result["candle_requests"]["failed"] == 1
+    assert result["requests_made"] == 9
+    assert len(calls) == 9 - 1 + config.max_attempts == 11
+    assert result["attempts_made"] == len(calls)
+    assert store.db.execute("SELECT COUNT(*) FROM fetches").fetchone()[0] == len(calls)
+    with pytest.raises(SystemExit):
+        parser().parse_args(["history", "acquire", "--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "logical requests" in help_text and "attempts_made" in help_text

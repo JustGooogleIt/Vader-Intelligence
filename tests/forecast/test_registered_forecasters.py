@@ -132,6 +132,39 @@ def test_only_quotes_witnessed_by_the_cutoff_feed_a_model(store, config):
     assert witnessed.quotes and all(q.at <= cutoff for q in witnessed.quotes)
 
 
+def restamp_fetches(db, hours):
+    """Rewrite every retrieval time as the same instant at another UTC offset."""
+    from datetime import datetime, timedelta, timezone
+
+    zone = timezone(timedelta(hours=hours))
+    for fetch_id, stamp in db.execute(
+        "SELECT id, retrieved_at FROM fetches WHERE retrieved_at IS NOT NULL"
+    ).fetchall():
+        moved = datetime.fromisoformat(stamp).astimezone(zone).isoformat()
+        db.execute("UPDATE fetches SET retrieved_at=? WHERE id=?", (moved, fetch_id))
+    db.commit()
+
+
+@pytest.mark.parametrize("hours", [2, 14])
+def test_witnessed_listing_compares_retrieval_instants(store, config, hours):
+    """Review F27: the C and C - LOOKBACK bounds compare instants, not offset text. A
+    retrieval at 18:03Z stamped 20:03+02:00 is inside the window; one at 15:00Z (before
+    C - 2 h = 16:05Z) stamped 17:00+02:00 is outside it."""
+    to_schema6(store)
+    runner, proto = runner_and_protocol()
+    collect(store, config, origin=at(15, 0))
+    tick_at_runner(store, proto, at(15, 0, 30), runner)  # witnessed, but too old
+    collect(store, config, origin=at(18, 3))
+    tick_at_runner(store, proto, at(18, 3, 30), runner)
+    cutoff, ticker = at(18, 5), "KXMLBGAME-26SEP271505HOUATH-HOU"
+    utc = witnessed_listing(store.db, ticker, cutoff, "local-witness-v1", "synthetic")
+    assert utc.quotes and all(at(16, 5) <= q.at <= cutoff for q in utc.quotes)
+    restamp_fetches(store.db, hours)
+    moved = witnessed_listing(store.db, ticker, cutoff, "local-witness-v1", "synthetic")
+    assert [q.ref for q in moved.quotes] == [q.ref for q in utc.quotes]
+    assert [q.at for q in moved.quotes] == [q.at for q in utc.quotes]
+
+
 def test_research_only_feature_sets_cannot_run_forward():
     sha, data = stub_artifact("fs-full-v1")
     with pytest.raises(ValueError, match="not forward capable"):
@@ -279,3 +312,67 @@ def test_an_unloadable_or_missing_artifact_abstains_and_the_tick_still_decides(s
         result = payload["results"][entry["id"]]
         assert result["probability"] is None
         assert result["reasons"][0].startswith("model_unavailable:")
+
+
+def fixed_output_artifact(output):
+    """A stub artifact whose prediction is `output` (a string, decoded by predict_output)."""
+    data = json.dumps(
+        {
+            "family": "stub",
+            "feature_names": NAMES,
+            "output": output,
+            "training": {"feature_set": "fs-market-v1"},
+        },
+        sort_keys=True,
+    ).encode()
+    return hashlib.sha256(data).hexdigest(), data
+
+
+def predict_output(data, values):
+    output = json.loads(data)["output"]
+    special = {"none": None, "text": "0.5", "true": True}
+    return special[output] if output in special else float(output)
+
+
+VALID_OUTPUTS = {"0.0": "0.000001", "1.0": "0.999999", "0.25": "0.250000", "0.9999996": "0.999999"}
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [["nan", "inf", "-inf", "1.7", "-0.2", "1.0000001"], ["none", "text", "true", "-0.0000001"]],
+)
+def test_an_invalid_model_output_abstains_and_the_decision_is_still_recorded(
+    store, config, invalid
+):
+    """NaN, infinite, out-of-range or non-numeric model outputs abstain (never clipped
+    into a forecast, never failing the decision); [0, 1] keeps the six-place edge clip."""
+    to_schema6(store)
+    artifacts = dict(fixed_output_artifact(o) for o in invalid + list(VALID_OUTPUTS))
+    output_of = {sha: json.loads(data)["output"] for sha, data in artifacts.items()}
+    runner = ForecasterRunner(artifacts, predict_output)
+    proto = Protocol(dataset="models", forecasters=sorted(artifacts))
+    collect(store, config, origin=at(18, 3))
+    tick_at_runner(store, proto, at(18, 3, 30), runner)
+    due = tick_at_runner(store, proto, at(18, 5, 30), runner)
+    assert due["decisions_eligible"] == 1 and not due["errors"]
+    (payload,) = [
+        json.loads(r[0]) for r in store.db.execute("SELECT payload_json FROM forecast_decisions")
+    ]
+    assert payload["results"]["constant-v1"]["probability"] == "0.5"
+    assert payload["results"]["midpoint-v1"]["probability"] is not None
+    reasons = {}
+    for entry in payload["forecasters"]:
+        result = payload["results"][entry["id"]]
+        output = output_of[entry["artifact_sha256"]]
+        reasons[output] = result["reasons"]
+        if output in VALID_OUTPUTS:
+            assert result["probability"] == VALID_OUTPUTS[output] and result["reasons"] == []
+        else:
+            assert result["probability"] is None and result["inputs"] == {}, output
+            (reason,) = result["reasons"]
+            assert reason.startswith("model_output_invalid:"), (output, reason)
+    expected = {"nan": "nan", "1.7": "1.7", "-inf": "-inf", "none": "NoneType", "text": "str"}
+    for output, detail in expected.items():
+        if output in invalid:
+            assert reasons[output] == ["model_output_invalid:" + detail]
+    assert journal.integrity(store.db)["integrity"] == "verified"

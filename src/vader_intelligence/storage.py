@@ -5,7 +5,7 @@ import shutil
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from importlib.resources import files
 from pathlib import Path
 
@@ -24,6 +24,33 @@ def utc_now():
 
 def timestamp(value=None):
     return (value or utc_now()).isoformat()
+
+
+# Retrieval times are stored as ISO text carrying the writer's UTC offset (normally
+# +00:00). Text order equals instant order only at one offset, so a time-window query
+# over retrieved_at prefilters in SQL with a bound widened past any offset Python can
+# represent (below 24 h) and then compares parsed instants exactly.
+RETRIEVAL_TEXT_MARGIN = timedelta(hours=25)
+
+
+def retrieval_text_bound(moment, side):
+    """ISO text that, in SQL text order, bounds every stored retrieved_at whose instant is
+    at or before (`side="upper"`) or at or after (`side="lower"`) `moment`, whatever its
+    UTC offset. A prefilter only: callers keep rows by `retrieval_instant`."""
+    if side not in ("upper", "lower"):
+        raise ValueError("side must be upper or lower")
+    shift = RETRIEVAL_TEXT_MARGIN if side == "upper" else -RETRIEVAL_TEXT_MARGIN
+    return (moment.astimezone(timezone.utc) + shift).isoformat()
+
+
+def retrieval_instant(value):
+    """A stored retrieved_at as an aware datetime, or None when it is not ISO text with
+    a UTC offset (such a retrieval cannot be placed before or after any cutoff)."""
+    try:
+        moment = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    return moment if moment.utcoffset() is not None else None
 
 
 @contextmanager
@@ -146,6 +173,10 @@ class Store:
             raise
 
     def start_run(self, provenance, started_at=None):
+        if provenance.kind == "forecast-witness":
+            # Receipts are operational proof only under this run kind (D-001), so the
+            # generic run API never creates it; forecast.witness writes its own run.
+            raise ValueError("forecast-witness runs are created only by the forecast witness")
         with self.transaction():
             self.db.execute(
                 "INSERT INTO runs(id,kind,started_at,status,provenance_json) VALUES (?,?,?,?,?)",

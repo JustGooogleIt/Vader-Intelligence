@@ -537,7 +537,10 @@ class Ledger:
         """Current projection; cached between writes (never across a rollback).
 
         The cache key combines this connection's change count with `data_version`, which
-        moves when another connection commits (e.g. for a read-only ledger)."""
+        moves when another connection commits (e.g. for a read-only ledger). Committed
+        rows are parsed once and reused, so an out-of-band edit of a stored row (one that
+        first drops an append-only trigger) is seen only after `verify()`, which clears
+        the cache and reports the digest mismatch."""
         key = (self.db.execute("PRAGMA data_version").fetchone()[0], self.db.total_changes)
         if self._cache is not None and self._cache[0] == key and not self._depth:
             return self._cache[1]

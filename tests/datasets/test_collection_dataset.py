@@ -3,7 +3,7 @@ with an injected transport, and a synthetic history archive for identity and lab
 
 import json
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -16,7 +16,7 @@ from history import test_acquire as synthetic
 
 from vader_intelligence.datasets import collection
 from vader_intelligence.history.acquire import Acquisition
-from vader_intelligence.storage import Store
+from vader_intelligence.storage import Store, retrieval_instant, retrieval_text_bound
 
 TICKER = "KXMLBGAME-26SEP271505HOUATH"
 
@@ -129,3 +129,62 @@ def test_quotes_after_the_cutoff_are_invisible(store, config, tmp_path):
     finally:
         history.close()
     assert rows == [] and manifest["exclusions"] == {"no_listing_before_cutoff": 1}
+
+
+def restamp(db, hours):
+    """Rewrite every retrieval time as the same instant at another UTC offset."""
+    zone = timezone(timedelta(hours=hours))
+    for fetch_id, stamp in db.execute(
+        "SELECT id, retrieved_at FROM fetches WHERE retrieved_at IS NOT NULL"
+    ).fetchall():
+        moved = datetime.fromisoformat(stamp).astimezone(zone).isoformat()
+        db.execute("UPDATE fetches SET retrieved_at=? WHERE id=?", (moved, fetch_id))
+    db.commit()
+
+
+@pytest.mark.parametrize("hours", [2, -4, 14, -12])
+def test_the_cutoff_compares_instants_not_offset_text(store, config, tmp_path, hours):
+    """Review F23: a retrieval stamped at a non-UTC offset is admitted by its instant.
+    The same archive at any offset yields exactly the UTC-stamped rows."""
+    collect(store, config, origin=at(18, 3))  # every retrieval before C = 18:05Z
+    history = history_archive(tmp_path / "history.sqlite3", config)
+    try:
+        utc_manifest, utc_rows = build(store.db, history.db)
+        restamp(store.db, hours)
+        manifest, rows = build(store.db, history.db)
+    finally:
+        history.close()
+    assert len(utc_rows) == 1 and manifest["rows"] == 1
+    assert manifest["exclusions"] == utc_manifest["exclusions"]
+    assert rows[0]["features"] == utc_rows[0]["features"]
+    assert (
+        rows[0]["inputs"]["selected_quote_fetches"]
+        == utc_rows[0]["inputs"]["selected_quote_fetches"]
+    )
+
+
+@pytest.mark.parametrize("hours", [-4, -12])
+def test_a_retrieval_after_the_cutoff_stays_invisible_at_any_offset(store, config, tmp_path, hours):
+    """Review F23: 14:06-04:00 is 18:06Z, after C = 18:05Z, although its text sorts first."""
+    collect(store, config, origin=at(18, 6))
+    restamp(store.db, hours)
+    history = history_archive(tmp_path / "history.sqlite3", config)
+    try:
+        manifest, rows = build(store.db, history.db)
+    finally:
+        history.close()
+    assert rows == [] and manifest["exclusions"] == {"no_listing_before_cutoff": 1}
+
+
+def test_the_retrieval_text_prefilter_never_drops_an_instant_inside_the_window():
+    """The SQL text bound is a superset at every offset Python can represent."""
+    edge = datetime(2026, 9, 27, 18, 5, tzinfo=timezone.utc)
+    upper = retrieval_text_bound(edge, "upper")
+    lower = retrieval_text_bound(edge, "lower")
+    for minutes in (-(24 * 60 - 1), -12 * 60, -4 * 60, 0, 2 * 60, 14 * 60, 24 * 60 - 1):
+        for moment in (edge, edge.replace(microsecond=999999)):
+            stamp = moment.astimezone(timezone(timedelta(minutes=minutes))).isoformat()
+            assert lower <= stamp <= upper
+            assert retrieval_instant(stamp) == moment
+    assert retrieval_instant("2026-09-27T18:05:00") is None  # no offset: never placed
+    assert retrieval_instant("TBD") is None and retrieval_instant(None) is None

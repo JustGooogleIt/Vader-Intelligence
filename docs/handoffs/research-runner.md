@@ -22,17 +22,25 @@ Steps, in temporal order:
 1. **Reconstruction** (cutoff-reconstruction view only): `forecast reconstruct` over
    the range in ≤31-day chunks, bindings in cutoff order, into the explicit study
    namespace. The forward view evaluates the forward dataset as actually published.
-2. **Evaluation**: one `evaluate` per segment and per collector cohort found in the
-   dataset's decisions (`collector_config_hash` pin). Cohorts and record modes are never
-   pooled; each result is keyed by cohort hash.
+2. **Evaluation**: one `evaluate` per segment and per collector cohort found in that
+   segment's decisions (`collector_config_hash` pin); a cohort of the run with no
+   decision in a segment is listed under the segment's `cohorts_without_decisions`, not
+   evaluated there. Cohorts and record modes are never pooled; each result is keyed by
+   cohort hash.
 3. **Resume**: decisions and evaluations have content keys, so a repeated or resumed run
-   reports `existing: true` and writes nothing new. A budget exhaustion is `partial` with
-   nothing written by the interrupted step.
+   reports `existing: true` and adds no decision or evaluation; it still records its own
+   `research-run` row (and the `runs` rows of the steps it invoked). A budget exhaustion
+   is `partial` with nothing written by the interrupted step.
+
+The run's `source_lineage` is that of the records it evaluates (decisions in scope and,
+for reconstruction, the bindings it decides); an injected clock is always synthetic, and
+a scope mixing synthetic and live records is refused before anything is written.
 
 **Split and held-out observations.** `--development-through D --holdout-from H` with
 `start ≤ D < H ≤ through`; the two ranges never overlap; development is evaluated before
-holdout; the summary's `holdout_history` lists every earlier evaluation of exactly that
-holdout range in the dataset with the protocol and code hash it used. The protocol is
+holdout; the summary's `holdout_history` lists every earlier evaluation in the dataset
+whose period overlaps the holdout range, in any view (an open-ended period overlaps),
+with its view, period and the protocol and code hash it used. The protocol is
 hashed and recorded before any evaluation. v1 has no tunable parameter, so there is
 nothing to fit; the framework records enough provenance to audit the experiment and
 does not claim to prevent every form of researcher leakage (a reviewer changing the

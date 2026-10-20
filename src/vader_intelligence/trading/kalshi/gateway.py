@@ -21,12 +21,17 @@ How the `trading.gateway.ExchangeGateway` contract is met:
   duplicate rule turns it into 409 -> lookup instead of a second order.
 - `lookup(client_order_id)`: GET /portfolio/orders/{id} when this instance learnt the
   exchange id, else GET /portfolio/orders?ticker=&min_ts= over every page with
-  client-side matching (there is no server filter, facts §2.3 [V:OAS]). Two venue orders
-  with one client id raise (duplicate exposure); a venue order whose ticker, book side,
-  YES price or initial count differs from ours raises. `None` is returned only after
-  the whole window was scanned AND the order is older than the settle window AND
-  younger than the live listing window AND no 201 was ever seen for it; otherwise it
-  raises (not definitive).
+  client-side matching (there is no server filter, facts §2.3 [V:OAS]), then GET by the
+  exchange id the ledger records (from the 201, a 409 resolved by lookup or a
+  reconciliation that found the order) when the listing misses it. Two venue orders
+  with one client id, a venue order other than the recorded one, or two recorded ids
+  raise (duplicate exposure); a venue order whose ticker, book side, YES price or
+  initial count differs from ours raises. `None` is returned only after the whole
+  window was scanned AND the order is older than the settle window AND younger than
+  the live listing window AND the exchange never accepted it: no 201 seen by this
+  instance and none recorded in the ledger (an `accepted` event, an exchange order id
+  or a fill), so a restart cannot turn an accepted order into "not found"; otherwise
+  it raises (not definitive).
 - `cancel`: DELETE /portfolio/events/orders/{id}?market_ticker= (auto-routing needs the
   ticker, facts §12 [V:SHARD]), then GET the order and the fills of that order:
   `canceled` only when the order is canceled, its fills sum to its `fill_count_fp` (so
@@ -445,10 +450,33 @@ class KalshiGateway:
         self._remember(order.client_order_id, venue.order_id)
         return order_status(venue)
 
+    def _recorded(self, client_order_id):
+        """(exchange order id or None, accepted) from the ledger, which survives restarts:
+        exchange events carrying an exchange order id (the 201, a 409 resolved by lookup, a
+        reconciliation that found the order), an `accepted` event or a fill mean the
+        exchange accepted the order. Two recorded ids, or one this instance contradicts,
+        raise (duplicate exposure)."""
+        recorded, accepted = set(), False
+        for event in self.ledger.events(client_order_id):
+            if event.source != "exchange":
+                continue
+            if event.exchange_order_id:
+                recorded.add(event.exchange_order_id)
+            accepted = accepted or event.kind == "accepted" or bool(event.exchange_order_id)
+        ids = recorded | {self._order_ids.get(client_order_id)} - {None}
+        if len(ids) > 1:
+            raise ReconciliationMismatch(
+                f"duplicate exposure: client order {client_order_id} maps to exchange orders "
+                + ", ".join(sorted(ids))
+            )
+        accepted = accepted or bool(self.ledger.fills(client_order_id))
+        return (recorded.pop() if recorded else None), accepted
+
     def lookup(self, client_order_id):
         order = self.ledger.order(client_order_id)
         if order is None:
             raise LookupInconclusive("the order is not in this ledger")
+        recorded, accepted = self._recorded(client_order_id)
         known = self._order_ids.get(client_order_id)
         if known is not None:
             try:
@@ -470,9 +498,16 @@ class KalshiGateway:
             raise ReconciliationMismatch(
                 f"duplicate exposure: {len(matches)} venue orders carry {client_order_id}"
             )
+        if recorded is not None:
+            self._remember(client_order_id, recorded)  # a different venue order raises below
         if matches:
             return self._status(order, matches[0])
-        if client_order_id in self._accepted or known is not None:
+        if recorded is not None and known is None:
+            try:
+                return self._status(order, self._get_order(recorded))
+            except NotFound:
+                pass  # REST lag: accepted, so never "not found"
+        if accepted or client_order_id in self._accepted or known is not None:
             raise LookupInconclusive("an order the exchange accepted is not listed yet")
         age = self._now() - order.created_at
         if age < timedelta(seconds=self.settle_seconds):
@@ -497,7 +532,8 @@ class KalshiGateway:
         order = self.ledger.order(client_order_id)
         if order is None:
             return CancelResult("rejected", reason="local:order_not_in_ledger")
-        order_id = self._order_ids.get(client_order_id)
+        recorded, _ = self._recorded(client_order_id)
+        order_id = self._order_ids.get(client_order_id) or recorded
         if order_id is None:
             status = self.lookup(client_order_id)  # raises unless definitive
             if status is None:

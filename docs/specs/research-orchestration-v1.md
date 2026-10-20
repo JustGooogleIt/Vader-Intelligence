@@ -111,8 +111,9 @@ promotion service from evidence recorded by the protected evaluator:
 - validated → shadow_tested: a forward-shadow (or explicitly labelled reconstruction)
   evaluation of the registered forecaster exists with coverage reported.
 - shadow_tested → paper_approved: a paper-execution report under conservative execution
-  assumptions exists, risk checks never bypassed, and an operator approval record names
-  the candidate. Live eligibility does not exist in this lifecycle: it requires
+  assumptions exists (execution inputs built from the verified history archive, named by
+  digest, and no assumed-depth scenario), risk checks never bypassed, and an operator
+  approval record names the candidate. Live eligibility does not exist in this lifecycle: it requires
   independent review and explicit user activation outside the pod system.
 - Final holdout: evaluated at most once per candidate by the evaluator; the holdout
   ledger records consumption; a consumed holdout is never reported as untouched.
@@ -174,9 +175,20 @@ search that stops on its time budget is still timing-dependent and is reported
 - `record_shadow` builds `ShadowEvaluationRecord` from a stored forecast evaluation that
   scores the candidate's artifact as a registered forecaster (contract 4); mode is
   `forward_shadow` or `reconstruction` from the evaluation view.
-- `paper_evidence` builds `PaperReportRecord` only from a coordinator-run
-  `research.backtest.run` summary (maker model none, worst-of-bracketing book), never
-  from pod output; `record_paper` also requires an `OperatorApprovalRecord`.
+- `paper_backtest` is the coordinator-run backtest paper evidence comes from: the
+  candidate's own model, dataset and split on validation, one ledger, maker model none,
+  worst-of-bracketing books and no assumed depth (D-010: depth is a labelled scenario,
+  never conservative evidence). It builds the execution inputs from the dataset's
+  verified history archive and stores them as a coordinator input, runs
+  `research.backtest.run` (whose summary records the inputs' source and digest) and
+  stores the summary as a coordinator-only `paper_backtest_summary`.
+- `paper_evidence` builds `PaperReportRecord` only from such a stored summary whose
+  inputs are `history_archive` and stored by the coordinator; the record names the
+  execution source, the inputs' digest and the (absent) depth scenario. Summaries of
+  `research.backtest.simulate` (supplied inputs, labelled `supplied:` whatever the payload
+  claims), assumed-depth runs, grids and pod output never qualify. `record_paper`
+  re-derives the record from its stored summary and also requires an
+  `OperatorApprovalRecord` (finding F40).
 - `evaluate_holdout` requires a validated (or later) candidate, runs
   `training.evaluate_holdout` (registry holdout ledger: first use consumes, later uses
   are reuses) and records the candidate's one entry in the pod store's holdout ledger.
@@ -197,7 +209,8 @@ run` (holdout segment requires `--acknowledge-holdout` and is ledger-recorded).
     rows share one entry.
   - Training, symbolic search and backtests apply the same guard.
 - **Inputs are coordinator-only.** A worker result declaring a reserved artifact kind
-  (`dataset_snapshot`, `execution_inputs`, `experiment_manifest`, `planner_round`) is
+  (`dataset_snapshot`, `execution_inputs`, `experiment_manifest`, `planner_round`,
+  `paper_backtest_summary`) is
   quarantined (`reserved_artifact_kind`) and refused by the store. `accept_model` requires
   a snapshot stored by the coordinator whose pin matches the registry's.
 - **Candidate-bound inputs.**

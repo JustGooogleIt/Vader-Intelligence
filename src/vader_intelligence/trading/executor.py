@@ -11,12 +11,14 @@ Durable order of operations for a placement:
 
 A crash between 1 and 3 leaves a `pending_submit` order without an outcome; like an
 `unknown` one it blocks risk-increasing orders until `reconcile()` has looked the order
-up by client order id at the venue. A new executor (a restart) reconciles before its
-first submission. An intent that already has a decision is never re-evaluated and its
-order is never resubmitted.
+up by client order id at the venue (one negative answer is not final for such an order:
+see `Executor.reconcile`). A new executor (a restart) reconciles before its first
+submission. An intent that already has a decision is never re-evaluated and its order is
+never resubmitted.
 """
 
 from dataclasses import dataclass, replace
+from datetime import timedelta
 
 from .gateway import CancelResult, GatewayEvent, SubmitResult, UnreadableSettlement
 from .ledger import (
@@ -26,8 +28,8 @@ from .ledger import (
     LedgerError,
     build_order,
 )
-from .money import ONE, ZERO, dec, digest, in_exact, text
-from .orders import GATEWAY_SOURCE, Fill, OrderEvent
+from .money import ONE, ZERO, dec, digest, in_exact, text, ts_text
+from .orders import ABSENT, GATEWAY_SOURCE, Fill, OrderEvent
 from .portfolio import CashEvent, Settlement
 from .risk import Approval, Rejection, RiskContext
 
@@ -38,6 +40,10 @@ SETTLEMENTS_CURSOR = CHECKPOINT_PREFIX + "reconcile:settlements_cursor"
 # (named by `settlement_ack_key`) is resolved outside the executor and may be skipped.
 SETTLEMENT_ACK_PREFIX = "settlement_ack:"
 _VENUE_TERMINAL = ("canceled", "expired", "rejected", "not_found")
+# A submission whose outcome was never known is `not_found` only on a negative venue read
+# at least this long after the first one (REST reads lag; a create may still be in
+# flight), with a clean open-orders sweep in the same reconciliation.
+ABSENCE_GRACE_SECONDS = 300
 
 
 def settlement_ack_key(token):
@@ -78,12 +84,24 @@ def _resolve(checkpoint):
 
 
 class Executor:
-    def __init__(self, ledger, gateway, engine, fee_schedule):
+    def __init__(
+        self,
+        ledger,
+        gateway,
+        engine,
+        fee_schedule,
+        *,
+        absence_grace_seconds=ABSENCE_GRACE_SECONDS,
+    ):
         env = ledger.environment
         if gateway.environment != env or engine.environment != env:
             raise EnvironmentMismatch("ledger, gateway and risk engine environments differ")
+        grace = absence_grace_seconds
+        if isinstance(grace, bool) or not isinstance(grace, int) or grace <= 0:
+            raise ValueError("absence_grace_seconds must be a positive integer")
         self.ledger, self.gateway, self.engine = ledger, gateway, engine
         self.fee_schedule = fee_schedule
+        self.absence_grace = timedelta(seconds=grace)
         self.source = GATEWAY_SOURCE[env]
         self.unknown_reasons = ()
         self.needs_reconcile = True
@@ -202,11 +220,15 @@ class Executor:
         return result
 
     def cancel(self, client_order_id, *, now):
-        """Request a cancel. Returns None when the order is already terminal."""
+        """Request a cancel. Returns None when the order is already terminal, unless that
+        terminal state came only from reconciliation (`not_found`, an absence the venue
+        never confirmed): such an order can still surface and rest at the venue
+        (`venue_open_untracked`), so the cancel is sent. A recorded outcome never reopens
+        a terminal order."""
         state = self.ledger.projection().orders.get(client_order_id)
         if state is None:
             raise LedgerError(f"unknown order {client_order_id}")
-        if not state.active:
+        if not state.active and not self._ended_by_absence(state):
             return None
         n = sum(1 for e in self.ledger.events(client_order_id) if e.kind == "cancel_requested")
         with self.ledger.transaction("cancel"):
@@ -238,6 +260,13 @@ class Executor:
                 )
             )
         return result
+
+    def _ended_by_absence(self, state):
+        """Terminal only through a reconciled `not_found`: no venue event ended it."""
+        if state.status != "rejected" or state.venue_status != "not_found":
+            return False
+        ended = ("rejected", "canceled", "expired")
+        return not any(e.kind in ended for e in self.ledger.events(state.order.client_order_id))
 
     def ingest(self, items=(), *, now, settlement=None, input_key=None, checkpoint=None):
         """Record gateway events and fills (and optionally a settlement) atomically.
@@ -292,13 +321,28 @@ class Executor:
 
     def reconcile(self, *, now):
         """Resolve submissions, fetch missed fills, record venue settlements (gateways
-        that report them), compare positions and balance.
+        that report them), compare open orders, positions and balance.
+
+        One negative venue read never resolves a submission whose outcome was never known
+        (`unknown`, or `pending_submit` without an outcome). A negative read (`lookup`
+        returns None, and the open-orders sweep of the same reconciliation was read and
+        does not list the order) is recorded once as an `absent` reconciliation: the
+        order stays unknown and keeps its reservation. It becomes `not_found` (terminal)
+        only on another negative read at least `absence_grace_seconds` after the first.
+        Until then it is reported `absence_unconfirmed:<coid>`. A None for any other
+        order is not taken as final while the sweep lists the order or failed. A
+        venue-open order that is not an active ledger order is reported
+        `venue_open_untracked:<client id>` (`Executor.cancel` can still cancel one that
+        ended only by absence).
 
         Mismatches and venue failures become `unknown_reasons`, which block
         risk-increasing orders until a later reconciliation is clean.
         """
         ledger, reasons, reconciled, gaps = self.ledger, [], [], {}
-        for coid, state in sorted(ledger.projection().orders.items()):
+        projection = ledger.projection()
+        venue_open, sweep_reasons = self._sweep_open_orders(projection)
+        reasons.extend(sweep_reasons)
+        for coid, state in sorted(projection.orders.items()):
             if not state.active:
                 continue
             if state.status == "new":
@@ -325,25 +369,31 @@ class Executor:
                 continue
             status = venue.status if venue is not None else "not_found"
             filled = venue.filled_quantity if venue is not None else ZERO
+            payload = {"status": status, "filled_quantity": text(filled)}
+            if venue is None:
+                awaiting = state.status == "unknown" or unresolved
+                since = self._absent_since(coid) if awaiting else None
+                listed = venue_open is None or coid in venue_open
+                final = not listed and (
+                    not awaiting or (since is not None and now - since >= self.absence_grace)
+                )
+                if not final:
+                    reasons.append(f"absence_unconfirmed:{coid}")
+                    if awaiting and since is None and not listed:  # first negative read
+                        absent = {"status": ABSENT, "filled_quantity": text(ZERO)}
+                        self._record_reconciled(coid, now, absent, None, unresolved)
+                        reconciled.append(coid)
+                    elif unresolved:
+                        ledger.append_event(self._unknown(coid, now))
+                    continue
+                if since is not None:
+                    payload["absent_since"] = ts_text(since)
             changed = status in _VENUE_TERMINAL or (
                 status == "open" and state.status == "pending_submit"
             )
             if state.status == "unknown" or unresolved or changed:
-                payload = {"status": status, "filled_quantity": text(filled)}
-                with ledger.transaction("reconcile"):
-                    if unresolved:
-                        ledger.append_event(self._unknown(coid, now))
-                    ledger.append_event(
-                        OrderEvent(
-                            "reconciled:" + digest({"order": coid, "at": now, **payload}),
-                            coid,
-                            "reconciled",
-                            self.source,
-                            now,
-                            exchange_order_id=venue.exchange_order_id if venue else None,
-                            payload=payload,
-                        )
-                    )
+                exchange_order_id = venue.exchange_order_id if venue else None
+                self._record_reconciled(coid, now, payload, exchange_order_id, unresolved)
                 reconciled.append(coid)
             if filled > state.filled_quantity:
                 gaps[coid] = filled
@@ -361,6 +411,50 @@ class Executor:
             ledger.projection().unknown_flags()
         )
         return ReconcileReport(tuple(reconciled), self.unknown_reasons)
+
+    def _record_reconciled(self, coid, now, payload, exchange_order_id, unresolved):
+        with self.ledger.transaction("reconcile"):
+            if unresolved:
+                self.ledger.append_event(self._unknown(coid, now))
+            self.ledger.append_event(
+                OrderEvent(
+                    "reconciled:" + digest({"order": coid, "at": now, **payload}),
+                    coid,
+                    "reconciled",
+                    self.source,
+                    now,
+                    exchange_order_id=exchange_order_id,
+                    payload=payload,
+                )
+            )
+
+    def _absent_since(self, client_order_id):
+        """Receipt time of an order's first `absent` reconciliation, else None."""
+        return min(
+            (
+                e.received_at
+                for e in self.ledger.events(client_order_id)
+                if e.kind == "reconciled" and e.payload.get("status") == ABSENT
+            ),
+            default=None,
+        )
+
+    def _sweep_open_orders(self, projection):
+        """(client ids the venue lists as open, reasons); (None, reasons) when the list
+        cannot be read. Each venue-open order must be an active ledger order: one unknown
+        to the ledger, or terminal there (e.g. `not_found`, then surfaced), is
+        `venue_open_untracked:<client id, else exchange id>`."""
+        try:
+            listed = list(self.gateway.open_orders())
+        except Exception:
+            return None, ["open_orders_unavailable"]
+        reasons = []
+        for item in listed:
+            state = projection.orders.get(item.client_order_id)
+            if state is None or not state.active:
+                name = item.client_order_id or item.exchange_order_id or "unidentified"
+                reasons.append(f"venue_open_untracked:{name}")
+        return {item.client_order_id for item in listed}, reasons
 
     @staticmethod
     def _unknown(coid, now):

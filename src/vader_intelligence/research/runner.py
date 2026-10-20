@@ -14,17 +14,24 @@ Order and separation:
    chunked to the 31-day command bound; the forward view evaluates the forward dataset
    as published.
 2. Each split segment (`development` before `holdout`, or `whole`) is evaluated once
-   per collector configuration cohort present in the dataset. Cohorts and record
-   modes are never pooled; a segment's results are keyed by cohort hash.
+   per collector configuration cohort pinned by the segment's decisions; a cohort of
+   the run with no decision in a segment is listed under `cohorts_without_decisions`.
+   Cohorts and record modes are never pooled; a segment's results are keyed by cohort
+   hash.
 3. Everything is idempotent by construction: decisions and evaluations have content
-   keys, so a repeated or resumed run reports `existing` results and writes nothing
-   new.
+   keys, so a repeated or resumed run reports `existing` results and adds no decision
+   or evaluation; it still records its own provenance (a new `research-run` row, and
+   the `runs` rows of the reconstruction and evaluation steps it invoked).
+
+The run's source lineage is that of the records it evaluates (an injected clock is
+always synthetic); a scope mixing synthetic and live records is refused.
 
 Held-out observations: the protocol is fixed (hash recorded) before any evaluation of
 the run, the development segment is evaluated before the holdout segment, the two
-ranges may not overlap, and the summary lists every earlier evaluation of the same
-holdout range in this dataset together with the protocol hash it used, so a reviewer
-can see whether a protocol was changed after its holdout was observed. v1 has no
+ranges may not overlap, and the summary lists every earlier evaluation in this dataset
+whose period overlaps the holdout range, in any view, together with the protocol hash
+it used, so a reviewer can see whether a protocol was changed after its holdout was
+observed. v1 has no
 tunable parameter, so this framework records provenance; it does not claim to prevent
 every form of researcher leakage.
 """
@@ -34,7 +41,7 @@ import uuid
 from datetime import date, timedelta
 
 from ..evaluation.service import evaluate
-from ..forecast.reconstruct import MAX_DAYS, reconstruct
+from ..forecast.reconstruct import MAX_DAYS, MODE_OF, reconstruct
 from ..forecast.references import digest
 from ..provenance import RunProvenanceV1, source_hash
 from ..storage import timestamp, utc_now
@@ -72,29 +79,107 @@ def _chunks(start, through):
         current = end + timedelta(days=1)
 
 
-def _cohorts(db, protocol, dataset, modes):
+def _cohorts(db, protocol, dataset, modes, start, through):
+    """Collector cohorts pinned by the dataset's decisions scheduled in [start, through],
+    the scope in which `evaluate` looks for them; [None] when none is pinned there."""
     rows = db.execute(
         "SELECT DISTINCT json_extract(payload_json,'$.manifest.discovery.collector_config_hash')"
         " FROM forecast_decisions WHERE protocol=? AND json_extract(payload_json,'$.dataset')=?"
         " AND json_extract(payload_json,'$.config_hash')=?"
-        " AND mode IN (" + ",".join("?" for _ in modes) + ") ORDER BY 1",
-        (protocol.protocol_id, dataset, protocol.config_hash, *modes),
+        " AND mode IN (" + ",".join("?" for _ in modes) + ")"
+        " AND substr(json_extract(payload_json,'$.scheduled_start'),1,10) BETWEEN ? AND ?"
+        " ORDER BY 1",
+        (
+            protocol.protocol_id,
+            dataset,
+            protocol.config_hash,
+            *modes,
+            start.isoformat(),
+            through.isoformat(),
+        ),
     ).fetchall()
     hashes = sorted(r[0] for r in rows if r[0] is not None)
     return hashes or [None]
 
 
-def _holdout_history(db, dataset, view, start, through):
+def _lineage(db, protocol, dataset, view, start, through):
+    """Source lineage of the records the run evaluates: the modes of the scope's decisions
+    and, for reconstruction, of the bindings it decides; with neither, the protocol's
+    bindings, as `evaluate` falls back. A scope mixing synthetic and live records is
+    refused: one run has one lineage."""
+    live = "forward_shadow" if view == "forward-shadow" else "historical_reconstruction"
+    modes = {
+        row[0]
+        for row in db.execute(
+            "SELECT DISTINCT mode FROM forecast_decisions WHERE protocol=?"
+            " AND json_extract(payload_json,'$.dataset')=?"
+            " AND json_extract(payload_json,'$.config_hash')=? AND mode IN ('synthetic',?)"
+            " AND substr(json_extract(payload_json,'$.scheduled_start'),1,10) BETWEEN ? AND ?",
+            (
+                protocol.protocol_id,
+                dataset,
+                protocol.config_hash,
+                live,
+                start.isoformat(),
+                through.isoformat(),
+            ),
+        )
+    }
+    if view == "cutoff-reconstruction":
+        modes |= {
+            MODE_OF[row[0]]
+            for row in db.execute(
+                "SELECT DISTINCT mode FROM forecast_bindings WHERE policy_version=?"
+                " AND config_hash=? AND mode IN ('forward_shadow','synthetic')"
+                " AND json_extract(payload_json,'$.original_date') BETWEEN ? AND ?",
+                (
+                    protocol.policy_version,
+                    protocol.config_hash,
+                    start.isoformat(),
+                    through.isoformat(),
+                ),
+            )
+        }
+    if len(modes) > 1:
+        raise ValueError(
+            f"the run's scope mixes synthetic and live records {sorted(modes)}; not pooled"
+        )
+    if not modes:
+        modes = {
+            row[0]
+            for row in db.execute(
+                "SELECT DISTINCT mode FROM forecast_bindings WHERE policy_version=? AND config_hash=?",
+                (protocol.policy_version, protocol.config_hash),
+            )
+        }
+    return "synthetic" if "synthetic" in modes else "live"
+
+
+def _holdout_history(db, dataset, start, through):
+    """Every earlier evaluation of the dataset, in any view, whose period overlaps the
+    holdout range (an open start or end overlaps everything on that side): each one may
+    have observed a holdout outcome."""
     rows = db.execute(
         "SELECT id, json_extract(payload_json,'$.config_hash'),"
-        " json_extract(payload_json,'$.code_hash'), json_extract(payload_json,'$.created_at')"
-        " FROM evaluation_runs WHERE json_extract(payload_json,'$.dataset')=? AND view=?"
-        " AND json_extract(payload_json,'$.report.period.start_date')=?"
-        " AND json_extract(payload_json,'$.report.period.through_date')=? ORDER BY id",
-        (dataset, view, start.isoformat(), through.isoformat()),
+        " json_extract(payload_json,'$.code_hash'), json_extract(payload_json,'$.created_at'),"
+        " view, json_extract(payload_json,'$.report.period.start_date'),"
+        " json_extract(payload_json,'$.report.period.through_date')"
+        " FROM evaluation_runs WHERE json_extract(payload_json,'$.dataset')=?"
+        " AND COALESCE(json_extract(payload_json,'$.report.period.start_date')<=?, 1)"
+        " AND COALESCE(json_extract(payload_json,'$.report.period.through_date')>=?, 1)"
+        " ORDER BY id",
+        (dataset, through.isoformat(), start.isoformat()),
     ).fetchall()
     return [
-        {"evaluation_id": r[0], "research_config_hash": r[1], "code_hash": r[2], "created_at": r[3]}
+        {
+            "evaluation_id": r[0],
+            "research_config_hash": r[1],
+            "code_hash": r[2],
+            "created_at": r[3],
+            "view": r[4],
+            "start_date": r[5],
+            "through_date": r[6],
+        }
         for r in rows
     ]
 
@@ -143,6 +228,7 @@ def run(
     else:
         dataset = protocol.dataset if dataset is None else dataset
     db = store.db
+    lineage = _lineage(db, protocol, dataset, view, start_date, through_date)
     identity = archive_identity(db)
     if source_ceiling is None:
         source_ceiling = identity["fetch_ceiling"]
@@ -177,7 +263,8 @@ def run(
             RUN_KIND,
             code_hash,
             configuration,
-            tool_configuration={"source_lineage": "synthetic" if injected else "live"},
+            # Lineage of the evaluated records; an injected clock is always synthetic.
+            tool_configuration={"source_lineage": "synthetic" if injected else lineage},
         ),
         timestamp(clock()),
     )
@@ -222,16 +309,25 @@ def run(
             "synthetic",
             "forward_shadow" if view == "forward-shadow" else "historical_reconstruction",
         )
-        cohorts = _cohorts(db, protocol, dataset, modes)
+        run_cohorts = _cohorts(db, protocol, dataset, modes, start_date, through_date)
         for segment, seg_start, seg_through in segments:
             if segment == "holdout":
-                summary["holdout_history"] = _holdout_history(
-                    db, dataset, view, seg_start, seg_through
-                )
+                summary["holdout_history"] = _holdout_history(db, dataset, seg_start, seg_through)
+            cohorts = _cohorts(db, protocol, dataset, modes, seg_start, seg_through)
+            pinned = [c for c in run_cohorts if c is not None]
+            if cohorts == [None] and len(pinned) == 1:
+                # A segment without decisions in a single-cohort run is evaluated under that
+                # cohort, as before review F13, so a rerun finds its earlier evaluation.
+                cohorts = pinned
             entry = {
                 "start_date": seg_start.isoformat(),
                 "through_date": seg_through.isoformat(),
                 "cohorts": {},
+                # A cohort of the run that decided nothing in this segment is listed, not
+                # evaluated there (evaluate refuses a cohort its scope does not pin).
+                "cohorts_without_decisions": [
+                    c for c in run_cohorts if c is not None and c not in cohorts
+                ],
             }
             summary["segments"][segment] = entry
             for cohort in cohorts:

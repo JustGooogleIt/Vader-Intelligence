@@ -224,6 +224,66 @@ def test_post_cutoff_postponement_vetoes_publication_but_not_the_decision(store,
     assert store.verify_integrity() == []
 
 
+def test_veto_carries_the_witness_time_of_its_evidence(store, config):
+    """Stack review F9: the veto's observation time is when the witness first observed
+    the pass holding the vetoing eligibility decision, not the collector's own clock."""
+    to_schema4(store)
+    collect(store, config, origin=at(18, 3))
+    tick_at(store, PROTO, at(18, 3, 30))
+    postponed = schedule_with(status={"detailedState": "Postponed"})
+    collect(store, config, origin=at(18, 5, 10), handler=handler_from(postponed))
+    due = tick_at(store, PROTO, at(18, 5, 30))  # its first witness phase sees the pass
+    assert due["publications"]["vetoed"] == 1
+    veto, checked_at = store.db.execute(
+        "SELECT json_extract(p.payload_json,'$.manifest.veto'), e.checked_at"
+        " FROM forecast_publications p JOIN eligibility e"
+        " ON e.id=json_extract(p.payload_json,'$.manifest.veto.eligibility_id')"
+    ).fetchone()
+    assert checked_at < at(18, 5, 30).isoformat()
+    assert json.loads(veto)["observed_at"] == at(18, 5, 30).isoformat()
+
+
+def test_unwitnessed_eligibility_row_never_vetoes_publication(store, config):
+    """Stack review F9: only operational evidence of this tick's namespace and mode can
+    veto. An eligibility row that no witness observed (here written by a run outside
+    any witnessed pass) neither vetoes nor stamps its unwitnessed time into the record."""
+    to_schema4(store)
+    collect(store, config, origin=at(18, 3))
+    tick_at(store, PROTO, at(18, 3, 30))
+    (ticker,) = store.db.execute(
+        "SELECT json_extract(payload_json,'$.ticker') FROM forecast_bindings"
+    ).fetchone()
+    from vader_intelligence.provenance import RunProvenanceV1
+
+    stray = at(18, 5, 10).isoformat()
+    store.db.execute(
+        "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
+        (
+            "stray",
+            "collect",
+            stray,
+            None,
+            "interrupted",
+            RunProvenanceV1(
+                "stray", "collect", "a" * 64, {}, tool_configuration={"source_lineage": "synthetic"}
+            ).to_json(),
+            None,
+        ),
+    )
+    store.db.execute(
+        "INSERT INTO eligibility(run_id,ticker,checked_at,game_id,eligible,reason,data_json)"
+        " VALUES ('stray',?,?,?,0,'not_scheduled_pregame','{}')",
+        (ticker, stray, GAME_ID),
+    )
+    due = tick_at(store, PROTO, at(18, 5, 30))
+    assert due["decisions_eligible"] == 1
+    assert due["publications"] == {"allowed": 1, "missed": 0, "vetoed": 0, "failed": 0}
+    (manifest,) = store.db.execute(
+        "SELECT json_extract(payload_json,'$.manifest') FROM forecast_publications"
+    ).fetchone()
+    assert "veto" not in json.loads(manifest)
+
+
 def test_post_cutoff_evidence_that_keeps_the_game_pregame_does_not_veto(store, config):
     to_schema4(store)
     collect(store, config, origin=at(18, 3))

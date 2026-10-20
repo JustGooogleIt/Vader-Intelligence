@@ -112,6 +112,60 @@ def test_resume_cannot_change_a_run_source_lineage(store, config, fixture_data):
         reader.close()
 
 
+@pytest.mark.parametrize("kind", ["forecast-storage", "history-import", "test"])
+def test_run_without_lineage_or_protocol_is_not_live(tmp_path, kind):
+    """Stack review R2: a run that records no source lineage and is not a collector or
+    settlement run of the code that predates lineage (an import, a test harness, any
+    future run kind) carries no evidence of being live. It fails closed: its fetches are
+    synthetic evidence and can never be witnessed as forward evidence."""
+    path = tmp_path / "r2.sqlite3"
+    a = Archive(path)
+    a.run("unlabelled", kind=kind, protocol=None)
+    fetch_id, _ = a.fetch("unlabelled", "markets", T0)
+    a.db.close()
+    with writer_lock(path):
+        store = Store(path, min_free_bytes=1)
+        try:
+            assert run_source_mode(store.db, "unlabelled") == "synthetic"
+            assert reference(store.db, "fetches", {"id": fetch_id})["source_mode"] == "synthetic"
+            observed = witness(store)  # the system clock: a live witness run
+            assert observed["status"] == "complete" and observed["source_lineage"] == "live"
+            forward = evidence.fetch_availability(store.db, fetch_id)
+            assert forward.status == "availability_unproven"
+            synthetic = evidence.fetch_availability(store.db, fetch_id, mode="synthetic")
+            assert synthetic.status == "witnessed"
+        finally:
+            store.close()
+
+
+@pytest.mark.parametrize(
+    "kind, protocol",
+    [
+        ("collect", None),
+        ("discover", None),
+        ("live-check", None),
+        ("collect", "two-phase-v1"),
+        ("discover", "two-phase-v1"),
+        ("live-check", "two-phase-v1"),
+        ("settlement-refresh", None),
+    ],
+)
+def test_pre_lineage_collection_runs_keep_their_classification(tmp_path, kind, protocol):
+    """The runs older code wrote without a lineage field are real collections: the
+    collector's discover/collect/live-check runs (interleaved or two-phase) and the
+    settlement refresh. They stay live unless their own discovery summary says synthetic,
+    so typed references already stored for their evidence keep their digests."""
+    a = Archive(tmp_path / "pre-lineage.sqlite3")
+    a.run("old", kind=kind, protocol=protocol)
+    try:
+        assert run_source_mode(a.db, "old") == "live"
+        if protocol is not None:
+            a.pass_("old", T0, mode="synthetic")
+            assert run_source_mode(a.db, "old") == "synthetic"
+    finally:
+        a.db.close()
+
+
 # ------------------------------------------------------------------ finding 2
 
 
@@ -246,6 +300,183 @@ def test_projection_ignores_a_supplied_receipt_present_in_a_malformed_archive(tm
         (example,) = result["legacy_examples"]
         assert example["contract"] == 2 and "operational witness run" in example["reason"]
     a.db.close()
+
+
+def insert_around_journal(db, table, payload):
+    """Store a receipt the way the pre-fix journal accepted it (no current link rules)."""
+    from vader_intelligence.forecast import contracts
+
+    db.execute(
+        "INSERT INTO forecast_receipts(idempotency_key,run_id,subject_kind,fetch_id,binding_id,"
+        "publication_id,discovery_id,observed_at,digest,payload_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (
+            contracts.key(table, payload),
+            payload["run_id"],
+            payload["subject_kind"],
+            payload["fetch_id"],
+            payload["binding_id"],
+            payload["publication_id"],
+            payload["discovery_id"],
+            payload["observed_at"],
+            digest(payload),
+            contracts.validate(table, payload),
+        ),
+    )
+    return db.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def test_witness_runs_come_only_from_witness_and_receipts_cannot_predate_them(tmp_path):
+    """Stack review F3: the witness boundary is a run kind plus provenance the run declares
+    itself. The reviewer's forgery: a forecast-witness run that starts a day after a fetch,
+    holding a trusted receipt observed one microsecond after that fetch. The generic run
+    API now refuses the witness kind; the journal refuses a receipt that predates its
+    witness run; such a row already in an archive is not proof (PROOF), so the projection
+    never reports the forged time and the real witness does not skip the subject."""
+    path = tmp_path / "forged-witness.sqlite3"
+    a = Archive(path)
+    a.run("collector")  # a pre-lineage two-phase collect run: live evidence
+    fetch_id, _ = a.fetch("collector", "status", T0)
+    tool = {"observer_namespace": NS, "session_id": "forged", "source_lineage": "live"}
+    provenance = RunProvenanceV1(
+        "forged-witness", "forecast-witness", HASH, {"ns": NS}, tool_configuration=tool
+    )
+    a.db.execute(
+        "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
+        (
+            "forged-witness",
+            "forecast-witness",
+            iso(T0 + timedelta(days=1)),
+            None,
+            "running",
+            provenance.to_json(),
+            None,
+        ),
+    )
+    ref = reference(a.db, "fetches", {"id": fetch_id})
+    forged = dict(
+        schema_version=1,
+        contract_version=3,
+        run_id="forged-witness",
+        created_at=iso(T0 + timedelta(days=1)),
+        code_hash=HASH,
+        config_hash=digest({"ns": NS}),
+        mode="forward_shadow",
+        references=[ref],
+        subject_kind="fetch",
+        fetch_id=fetch_id,
+        binding_id=None,
+        publication_id=None,
+        discovery_id=None,
+        subject_digest=ref["digest"],
+        observed_at=iso(T0 + timedelta(microseconds=1)),
+        session_id="forged",
+        observer_namespace=NS,
+        monotonic_offset="0",
+        clock_status="trusted",
+    )
+    before = snapshot(a.db)
+    with pytest.raises(ValueError, match="predates its witness run"):
+        journal.append(a.db, "forecast_receipts", forged)
+    assert snapshot(a.db) == before
+    # Only the new bound refuses it: observed at the run's start, it is admissible.
+    journal.validate_links(
+        a.db, "forecast_receipts", forged | {"observed_at": iso(T0 + timedelta(days=1))}
+    )
+    receipt_id = insert_around_journal(a.db, "forecast_receipts", forged)
+    assert evidence.receipt_is_proof(a.db, receipt_id) is False
+    assert evidence.fetch_availability(a.db, fetch_id).status == "availability_unproven"
+    with pytest.raises(ValueError, match="predates its witness run"):
+        journal.integrity(a.db)
+    a.db.close()
+    with writer_lock(path):
+        store = Store(path, min_free_bytes=1)
+        try:
+            with pytest.raises(ValueError, match="forecast-witness"):
+                store.start_run(
+                    RunProvenanceV1(
+                        "minted", "forecast-witness", HASH, {"ns": NS}, tool_configuration=tool
+                    ),
+                    iso(T0 - timedelta(days=1)),
+                )
+            assert store.db.execute("SELECT 1 FROM runs WHERE id='minted'").fetchone() is None
+            # The real witness never re-observes the subject: its first receipt is permanent,
+            # so the subject stays unproven and every later tick still runs (rewriting the
+            # receipt key would be an IdempotencyConflict on every tick). Integrity keeps
+            # reporting the forged row.
+            result = witness(store)
+            assert result["status"] == "complete"
+            assert (
+                store.db.execute(
+                    "SELECT COUNT(*) FROM forecast_receipts WHERE fetch_id=?", (fetch_id,)
+                ).fetchone()[0]
+                == 1
+            )
+            assert evidence.fetch_availability(store.db, fetch_id).status == (
+                "availability_unproven"
+            )
+            with pytest.raises(ValueError, match="predates its witness run"):
+                journal.integrity(store.db)
+        finally:
+            store.close()
+
+
+def test_a_clock_stepping_back_after_the_run_start_never_writes_proof(tmp_path):
+    """Pre-review of #37: the run start is also the divergence base, so a clock that steps
+    back after it is untrusted at once, and the bound refuses a receipt that would predate
+    the run; the witness reports it and later honest runs witness the subjects."""
+    path = tmp_path / "stepped-clock.sqlite3"
+    a = Archive(path)
+    a.run("collector")
+    fetch_id, _ = a.fetch("collector", "status", T0)
+    a.db.close()
+    calls = {"n": 0}
+
+    def stepping():  # the run start is sampled 2 s later than every later reading
+        calls["n"] += 1
+        return T0 + timedelta(minutes=5, seconds=2 if calls["n"] == 1 else 0)
+
+    with writer_lock(path):
+        store = Store(path, min_free_bytes=1)
+        try:
+            stepped = witness(store, clock=stepping)
+            assert stepped["receipts"] == 0 and stepped["skipped_invalid"] >= 1
+            assert evidence.fetch_availability(store.db, fetch_id, mode="synthetic").status == (
+                "availability_unproven"
+            )
+            later = witness(store, clock=lambda: T0 + timedelta(minutes=10))
+            assert later["status"] == "complete" and later["receipts"] >= 1
+            assert evidence.fetch_availability(store.db, fetch_id, mode="synthetic").status == (
+                "witnessed"
+            )
+            journal.integrity(store.db)
+        finally:
+            store.close()
+
+
+def test_every_receipt_the_witness_writes_is_within_its_run(tmp_path):
+    """The bound never touches honest receipts: the witness samples its run start before
+    any observation, so each receipt it writes is observed at or after that start."""
+    path = tmp_path / "honest-witness.sqlite3"
+    a = Archive(path)
+    a.run("collector")
+    for offset in range(3):
+        a.fetch("collector", "status", T0 + timedelta(seconds=offset))
+    a.db.close()
+    with writer_lock(path):
+        store = Store(path, min_free_bytes=1)
+        try:
+            for clock in (None, lambda: T0 + timedelta(minutes=5)):
+                result = witness(store, clock=clock)
+                assert result["status"] == "complete" and result["receipts"] > 0
+            rows = store.db.execute(
+                "SELECT r.id, r.observed_at, w.started_at FROM forecast_receipts r"
+                " JOIN runs w ON w.id=r.run_id"
+            ).fetchall()
+            assert rows and all(observed >= started for _, observed, started in rows)
+            assert all(evidence.receipt_is_proof(store.db, rid) for rid, _, _ in rows)
+            assert journal.integrity(store.db)["legacy_rows"] == 0
+        finally:
+            store.close()
 
 
 # ------------------------------------------------------------------ finding 3

@@ -259,9 +259,10 @@ def evaluate(
     """Materialize one evaluation. Returns a summary dict; status complete | inconclusive
     (no paired binary outcomes) | partial (budget exhausted, nothing written) | existing.
 
-    One evaluation covers decisions of one record contract (decision D-001): 3 by
-    default; 2 evaluates a legacy cohort, from which draft-era decisions (not valid under
-    the current rules, or decided before renewal at C existed) are excluded and listed.
+    One evaluation covers decisions of one record contract (decision D-001): by default
+    the archive's current contract (4 on schema 6, else 3); 2 evaluates a legacy cohort,
+    from which draft-era decisions (not valid under the current rules, or decided before
+    renewal at C existed) are excluded and listed.
     Decisions of other contracts are never unattempted opportunities; they are listed.
     """
     injected = clock is not None or monotonic is not None
@@ -542,6 +543,7 @@ def evaluate(
                     yes_team_id=yes_team,
                     outcomes_as_of=as_of,
                     source_ceiling=source_ceiling,
+                    mode=mode,
                     scheduled_start=None
                     if record.get("scheduled_start") is None
                     else utc(datetime.fromisoformat(record["scheduled_start"])),

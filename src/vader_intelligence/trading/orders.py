@@ -13,6 +13,11 @@ a terminal order is never reopened by a stale event. Precedence, highest first:
 4. `accepted`, any fill, or a reconciled `open`/`filled` -> `open`;
 5. `submit_requested` -> `pending_submit`; otherwise `new`.
 
+A `reconciled` event with status `absent` records a single negative venue read that is
+not final yet (`executor.reconcile` confirms it later as `not_found`, or the order is
+found). It resolves nothing: the order is projected as if it did not exist, so an
+unknown submission stays `unknown` and an unresolved one stays without an outcome.
+
 Fills after a cancel request or a cancel are accepted (cancel race); the final state
 then reflects the remaining quantity. Fills above the order quantity, and `amended`
 events (unsupported in v1), mark the state `inconsistent`.
@@ -63,6 +68,10 @@ ENVIRONMENTS = ("paper", "live")
 TERMINAL = ("filled", "canceled", "expired", "rejected")
 ACTIVE = ("new", "pending_submit", "open", "unknown")
 VENUE_STATUSES = ("pending", "open", "filled", "canceled", "expired", "rejected", "not_found")
+# A negative venue read that is not final yet (recorded by reconciliation, never reported
+# by a gateway); see the module docstring.
+ABSENT = "absent"
+RECONCILED_STATUSES = (*VENUE_STATUSES, ABSENT)
 _OUTCOME_KINDS = {
     "submitted",
     "accepted",
@@ -227,7 +236,7 @@ class OrderEvent:
             _text(self.exchange_order_id, "exchange_order_id", 200)
         payload = frozen_mapping(self.payload, "payload")
         if self.kind == "reconciled":
-            _choice(payload.get("status"), VENUE_STATUSES, "reconciled status")
+            _choice(payload.get("status"), RECONCILED_STATUSES, "reconciled status")
         object.__setattr__(self, "payload", payload)
         object.__setattr__(self, "received_at", utc(self.received_at, "received_at"))
         object.__setattr__(self, "exchange_ts", opt_utc(self.exchange_ts, "exchange_ts"))
@@ -338,6 +347,9 @@ def order_state(order, events=(), fills=()):
         if record.client_order_id != order.client_order_id:
             raise ValueError("record belongs to another order")
     filled = sum((f.quantity for f in fills), ZERO)
+    exchange_ids = [e.exchange_order_id for e in events if e.exchange_order_id]
+    # A single negative venue read (`absent`) resolves nothing.
+    events = [e for e in events if not (e.kind == "reconciled" and e.payload["status"] == ABSENT)]
     kinds = {e.kind for e in events}
     reconciled = [e for e in events if e.kind == "reconciled"]
     venue = reconciled[-1].payload["status"] if reconciled else None
@@ -363,7 +375,6 @@ def order_state(order, events=(), fills=()):
         for e in events
         if e.kind == "accepted" or (e.kind == "reconciled" and venue in ("open", "filled"))
     ] + [f.exchange_ts for f in fills]
-    exchange_ids = [e.exchange_order_id for e in events if e.exchange_order_id]
     return OrderState(
         order=order,
         status=status,

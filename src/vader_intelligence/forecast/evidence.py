@@ -71,12 +71,15 @@ class DiscoveryEvidence:
 # aliased `r`; one parameter, the observer namespace. A receipt is availability proof
 # only when it declares contract 2 or 3, belongs to the namespace, and the run that wrote
 # it is a forecast-witness run whose own provenance names this receipt's namespace and
-# session and records its source lineage. Receipts supplied by any other caller, and
-# receipts of the draft witness (PR #10/#11, which never recorded that provenance), are
-# stored assertions only. Contract 3 enforces this at write time; for contract 2 this is
-# the reader's admissibility rule. Projection, witness deduplication, the tick and the
-# evaluator all use this text, so reader and integrity classification cannot diverge.
-PROOF = (
+# session and records its source lineage, and that had started by the receipt's
+# observation time (stack review F3: the witness samples its run start before any
+# observation, so no receipt it writes predates its run). Receipts supplied by any other
+# caller, and receipts of the draft witness (PR #10/#11, which never recorded that
+# provenance), are stored assertions only. Contract 3 enforces this at write time; for
+# contract 2 this is the reader's admissibility rule. Projection, witness deduplication,
+# the tick and the evaluator all use this text, so reader and integrity classification
+# cannot diverge.
+_WITNESS_RUN = (
     " json_extract(r.payload_json,'$.contract_version') IN (2,3)"
     " AND json_extract(r.payload_json,'$.observer_namespace')=?"
     " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness'"
@@ -85,8 +88,12 @@ PROOF = (
     " AND json_extract(w.provenance_json,'$.tool_configuration.session_id')"
     "=json_extract(r.payload_json,'$.session_id')"
     " AND json_extract(w.provenance_json,'$.tool_configuration.source_lineage')"
-    " IN ('live','synthetic'))"
+    " IN ('live','synthetic')"
 )
+# Receipts a recorded operational witness run wrote (the witness never re-observes them).
+WITNESS_WRITTEN = _WITNESS_RUN + ")"
+# Proof additionally requires the observation not to predate its witness run (review F3).
+PROOF = _WITNESS_RUN + " AND julianday(r.observed_at) >= julianday(w.started_at))"
 
 
 def receipt_is_proof(db, receipt_id, namespace=None):

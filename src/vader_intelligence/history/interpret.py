@@ -165,7 +165,9 @@ def identify(event_markets, games_by_id, identity_rules=("default",)):
     must agree; exactly one official game with these teams away/home on the date whose
     start equals the contract's start. With `history-date-only` enabled, a 2025-era
     contract stating no time anywhere identifies by date and teams alone and its row is
-    marked start_corroborated=false. Returns a dict with status identified|unresolved.
+    marked start_corroborated=false. A candidate whose provider start is present but not an
+    offset-aware ISO instant leaves the event unresolved (`unparseable_start`); it never
+    raises. Returns a dict with status identified|unresolved.
     """
     if not set(identity_rules) <= set(IDENTITY_RULES) or "default" not in identity_rules:
         raise ValueError("identity_rules must include 'default' and only known rules")
@@ -214,7 +216,12 @@ def identify(event_markets, games_by_id, identity_rules=("default",)):
         if number is not None and game.get("gameNumber") != number:
             continue
         candidates.append(game)
-    exact = [g for g in candidates if g.get("gameDate") and instant(g["gameDate"]) == start]
+    starts = [(g, _official_start(g)) for g in candidates if g.get("gameDate")]
+    if any(moment is None for _, moment in starts):
+        # Review F20: one malformed start leaves this event unresolved (uniqueness of the
+        # exact start is unprovable beside it); it never fails the whole interpretation.
+        return {"status": "unresolved", "reason": "unparseable_start"}
+    exact = [g for g, moment in starts if moment == start]
     if len(exact) != 1:
         return {
             "status": "unresolved",
@@ -242,6 +249,15 @@ def identify(event_markets, games_by_id, identity_rules=("default",)):
     }
 
 
+def _official_start(game):
+    """A game's provider gameDate as an offset-aware instant, or None when it is not one
+    (offset-less, non-ISO or not a string)."""
+    try:
+        return instant(game["gameDate"])
+    except ValueError:
+        return None
+
+
 def _identify_date_only(event_markets, identities, games_by_id):
     first = identities[0]
     day = first["original_date"]
@@ -261,12 +277,15 @@ def _identify_date_only(event_markets, identities, games_by_id):
         return {"status": "unresolved", "reason": "home_away_reversed"}
     if game.get("doubleHeader", "N") != "N" or not game.get("gameDate"):
         return {"status": "unresolved", "reason": "doubleheader_or_start_unknown"}
+    start = _official_start(game)
+    if start is None:  # review F22: a per-event reason, never a ValueError
+        return {"status": "unresolved", "reason": "unparseable_start"}
     team_ids = sorted({first["away_id"], first["home_id"]})
     selected = next(m for m, i in zip(event_markets, identities) if i["team_id"] == team_ids[0])
     return {
         "status": "identified",
         "game_id": game["gamePk"],
-        "start": instant(game["gameDate"]).astimezone(timezone.utc).isoformat(),
+        "start": start.astimezone(timezone.utc).isoformat(),
         "official_date": day,
         "away_id": first["away_id"],
         "home_id": first["home_id"],

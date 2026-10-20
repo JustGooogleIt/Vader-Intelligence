@@ -713,6 +713,56 @@ class ShadowConfigurationTests(ShadowFixture):
             validate(inside)
         self.assertIn("forbidden production path", str(caught.exception))
 
+    def test_configure_requires_a_registry_holding_the_protocols_forecasters(self):
+        """F41: when the research protocol registers forecasters, configuring requires a
+        model registry from which every listed artifact opens read-only (otherwise every
+        tick fails before deciding, baselines included). Lifecycle loads stay lenient."""
+        import shutil
+
+        from vader_intelligence.research.registry import Registry
+
+        artifact = b'{"synthetic": "model artifact"}'
+        sha = hashlib.sha256(artifact).hexdigest()
+        self.research.write_text(f'[research]\ndataset = "shadow-test"\nforecasters = ["{sha}"]\n')
+        empty = self.root / "empty registry"
+        empty.mkdir()
+        other = self.root / "other registry"
+        Registry(other).close()  # a research registry without the protocol's artifact
+        full = self.root / "registry"
+        registry = Registry(full)
+        registry.put_artifact(artifact, ".json")
+        registry.close()
+
+        def args(name, model_registry):
+            return argparse.Namespace(
+                **dict(
+                    {k: v for k, v in self.config.items() if k != "shadow"},
+                    state=str(self.root / f"state {name}"),
+                    output=str(self.root / f"config {name}.json"),
+                    shadow_research_config=str(self.research),
+                    tick_budget=3,
+                    forbid=[str(self.production)],
+                    shadow_model_registry=model_registry and str(model_registry),
+                )
+            )
+
+        cases = {
+            "missing": (None, "model_registry is required"),
+            "empty": (empty, "not a research registry"),
+            "other": (other, f"cannot open forecaster {sha}"),
+        }
+        for name, (model_registry, reason) in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError) as caught:
+                    manage.configure(args(name, model_registry))
+                self.assertIn(reason, str(caught.exception))
+                self.assertFalse((self.root / f"config {name}.json").exists())
+                self.assertFalse((self.root / f"state {name}").exists())
+        result = manage.configure(args("good", full))
+        self.assertEqual(load(result["config"])["shadow"]["model_registry"], str(full))
+        shutil.rmtree(full)  # removed later: stop and uninstall must still load the config
+        self.assertEqual(load(result["config"])["shadow"]["model_registry"], str(full))
+
     def test_forbidden_paths_resist_case_changes_and_aliases(self):
         # The Mac's default volume ignores case: a differently cased production path is
         # the same directory and must be refused, as must an alias through a symlink.
@@ -805,6 +855,31 @@ class ShadowRunnerTests(ShadowFixture):
         self.invoke(mode="partial", tick="complete")
         self.assertEqual(runner.health(self.config)["shadow"]["status"], "operational_failure")
 
+    def test_collection_supervision_failures_are_operational_failures(self):
+        for tick in ("complete", "inconclusive"):
+            with self.subTest(tick=tick):
+                result, code = self.invoke(mode="large", tick=tick)
+                self.assertEqual(result["status"], "output_limit_exceeded")
+                self.assertEqual(result["tick"]["status"], tick)
+                self.assertEqual(code, 1)
+                shadow = runner.health(self.config)["shadow"]
+                self.assertEqual(shadow["collection"], "output_limit_exceeded")
+                self.assertEqual(shadow["status"], "operational_failure")
+        # Every reason supervise() can give the collection, with and without a decision.
+        for reason in (
+            "deadline_exceeded",
+            "interrupted",
+            "log_write_failed",
+            "output_limit_exceeded",
+        ):
+            for decisions in (0, 1):
+                tick = {"status": "complete", "decisions_eligible": decisions}
+                with self.subTest(reason=reason, decisions=decisions):
+                    latest = {"tick": tick, "status": reason}
+                    self.assertEqual(
+                        runner.shadow_health(self.config, latest)["status"], "operational_failure"
+                    )
+
     def test_overlap_skips_the_whole_cycle(self):
         with lock(self.state.parent / (self.db.name + ".ops-run.lockfile")):
             result, code = self.invoke()
@@ -890,3 +965,25 @@ class ShadowMaintenanceTests(ShadowFixture):
                 ),
                 1,
             )
+
+    def test_shadow_evaluate_overlaps_each_write_their_own_report(self):
+        argv = ["--config", str(self.config_path), "shadow-evaluate"]
+        argv += ["--from", "2026-10-01", "--through", "2026-10-02"]
+        codes, reports = [], []
+        with lock(self.state.parent / (self.db.name + ".ops-run.lockfile")):
+            for extra in ([], [], ["--skip-settlement"]):
+                with (
+                    patch("sys.stdout", new_callable=io.StringIO) as out,
+                    patch("sys.stderr", new_callable=io.StringIO) as err,
+                ):
+                    codes.append(manage.main(argv + extra))
+                self.assertEqual(err.getvalue(), "")
+                reports.append(json.loads(out.getvalue()))
+        self.assertEqual(codes, [75, 75, 75])
+        self.assertEqual([r["status"] for r in reports], ["overlap_skipped"] * 3)
+        written = sorted(self.state.glob("shadow-evaluate-*.json"))
+        self.assertEqual(len(written), 3)
+        self.assertEqual(
+            sorted(json.dumps(json.loads(p.read_text()), sort_keys=True) for p in written),
+            sorted(json.dumps(r, sort_keys=True) for r in reports),
+        )

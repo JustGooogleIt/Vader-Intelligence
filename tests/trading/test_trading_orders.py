@@ -96,6 +96,14 @@ def test_unknown_resolves_only_by_reconciliation():
     assert order_state(ORDER, [req, unknown, ev("reconciled", 3, status="open")]).status == "open"
     lost = order_state(ORDER, [req, unknown, ev("reconciled", 3, status="not_found")])
     assert lost.status == "rejected" and lost.reason == "not_found_at_venue"
+    absent = ev("reconciled", 2, status="absent")  # one negative read resolves nothing
+    still = order_state(ORDER, [req, unknown, absent])
+    assert (still.status, still.venue_status, still.active) == ("unknown", None, True)
+    assert order_state(ORDER, [req, unknown, absent, ev("accepted", 3)]).status == "unknown"
+    found = order_state(ORDER, [req, unknown, absent, ev("reconciled", 3, status="open")])
+    assert (found.status, found.venue_status) == ("open", "open")
+    unresolved = order_state(ORDER, [req, absent])  # still without a submission outcome
+    assert (unresolved.status, unresolved.submit_outcome) == ("pending_submit", False)
     assert order_state(ORDER, [req, unknown], [fl(10, 2)]).status == "filled"
 
 
@@ -116,6 +124,7 @@ kinds = st.sampled_from(
         "reconciled-open",
         "reconciled-canceled",
         "reconciled-not_found",
+        "reconciled-absent",
         "cancel_requested",
         "submit_unknown",
     ]

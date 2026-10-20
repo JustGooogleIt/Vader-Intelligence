@@ -160,7 +160,7 @@ def test_holdout_backtest_is_recorded_in_the_holdout_ledger(store, config, tmp_p
         with pytest.raises(ValueError, match="insufficient holdout rows"):
             backtest.run(
                 registry, store.db, dataset_id, model_id, HOLDOUT, PaperConfig(),
-                segment="holdout", ledger_path=ledger,
+                segment="holdout", ledger_path=ledger, acknowledge_holdout=True,
             )  # fmt: skip
         assert not ledger.exists()
         assert registry.holdout_status(dataset_id, key)["untouched"]  # the floor consumes nothing
@@ -174,6 +174,7 @@ def test_holdout_backtest_is_recorded_in_the_holdout_ledger(store, config, tmp_p
             segment="holdout",
             grid=grid,
             min_holdout_rows=1,  # the SYNTHETIC archive has two holdout rows
+            acknowledge_holdout=True,
         )
         assert result["selection_biased"] is False
         assert result["holdout_ledger"]["evaluations"] == 1
@@ -193,6 +194,7 @@ def test_holdout_backtest_is_recorded_in_the_holdout_ledger(store, config, tmp_p
                 segment="holdout",
                 ledger_path=ledger,
                 min_holdout_rows=1,
+                acknowledge_holdout=True,
             )
         assert not ledger.exists()
     finally:
@@ -215,6 +217,31 @@ def test_splits_reaching_the_pinned_holdout_are_refused(store, config, tmp_path)
             registry.pin_holdout(dataset_id, "2026-11-01", "operator")
         with pytest.raises(ValueError, match="holdout is pinned from"):
             splits.holdout_key(registry, dataset_id, HOLDOUT)  # holds out from another date
+    finally:
+        registry.close()
+
+
+@pytest.mark.parametrize("spelling", ["20260901", "2026-W36-2"])
+def test_a_holdout_pin_is_a_canonical_date(store, config, tmp_path, spelling):
+    """Review F44: Python accepts `20260901` and `2026-W35-2` as 2026-09-01. Stored as
+    given, every string comparison against the pin was wrong (a split reaching into the
+    holdout passed) and the pin could not be corrected. Such a pin is refused, and one an
+    older version stored reads back canonical, so the guard holds."""
+    registry, dataset_id, _ = registered(store, config, tmp_path, VALIDATION)
+    try:
+        assert date.fromisoformat(spelling) == date(2026, 9, 1)
+        with pytest.raises(ValueError, match="canonical"):
+            registry.pin_holdout(dataset_id, spelling, "operator")
+        assert registry.holdout_from(dataset_id) is None
+        registry.db.execute(  # a pin written before this check existed
+            "INSERT INTO holdout_pins(dataset_id,holdout_from,actor,at) VALUES (?,?,?,?)",
+            (dataset_id, spelling, "older", "2026-10-01T00:00:00+00:00"),
+        )
+        assert registry.holdout_from(dataset_id) == "2026-09-01"
+        late = SplitDefinition("2026-07-31", "2026-09-15", embargo_days=1)
+        with pytest.raises(ValueError, match="reaches the pinned holdout"):
+            splits.guard(registry, dataset_id, late, pin_if_missing=True)
+        assert registry.pin_holdout(dataset_id, "2026-09-01", "operator") == "2026-09-01"
     finally:
         registry.close()
 
@@ -279,7 +306,7 @@ def test_a_reused_holdout_is_selection_biased_and_archives_must_match(store, con
         second = registry.register_model(
             other.to_json(), family="logistic", dataset_id=dataset_id, summary={"test": True}
         )
-        options = dict(segment="holdout", min_holdout_rows=1)
+        options = dict(segment="holdout", min_holdout_rows=1, acknowledge_holdout=True)
         first = backtest.run(
             registry, store.db, dataset_id, model_id, HOLDOUT, PaperConfig(),
             ledger_path=tmp_path / "a.sqlite3", **options,
@@ -297,5 +324,82 @@ def test_a_reused_holdout_is_selection_biased_and_archives_must_match(store, con
         forged["source"]["archive"]["latest_fetch_digest"] = "0" * 64
         with pytest.raises(ValueError, match="differs from the archive"):
             backtest.check_archive(store.db, forged)
+    finally:
+        registry.close()
+
+
+def test_cli_refuses_several_depths_for_one_ledger_run(tmp_path):
+    """N-26b (fixed in 9f06a3d): one --ledger run takes one --assumed-depth; nothing is
+    silently ignored."""
+    args = parser().parse_args(
+        [
+            "backtest",
+            "run",
+            "--registry",
+            str(tmp_path / "r"),
+            "--history-db",
+            str(tmp_path / "h.sqlite3"),
+            "--dataset",
+            "d",
+            "--model",
+            "m",
+            "--development-through",
+            "2026-09-01",
+            "--validation-through",
+            "2026-09-15",
+            "--ledger",
+            str(tmp_path / "l.sqlite3"),
+            "--assumed-depth",
+            "5",
+            "--assumed-depth",
+            "25",
+        ]
+    )
+    with pytest.raises(ValueError, match="one --assumed-depth"):
+        execute(args)
+    assert not (tmp_path / "r").exists() and not (tmp_path / "l.sqlite3").exists()
+
+
+def test_summary_takes_selection_bias_from_the_holdout_ledger():
+    """N-26c: no default derived from the segment name, which called a reused holdout
+    unbiased; the caller passes what the registry's holdout ledger recorded."""
+    execution = {"snapshots": [], "markets": {}, "skipped": {}, "window_seconds": 60}
+    envelope = dict(
+        segment="holdout", model_id="m", dataset_id="d", rows=[], n_forecasts=0, execution=execution
+    )
+    with pytest.raises(TypeError, match="selection_biased"):
+        backtest.summary({}, **envelope)
+    assert backtest.summary({}, **envelope, selection_biased=True)["selection_biased"] is True
+
+
+def test_library_holdout_runs_require_an_acknowledgement(store, config, tmp_path):
+    """F34 (R64): `simulate` and `run` take the final holdout only with an explicit
+    `acknowledge_holdout=True`, as the CLI requires --acknowledge-holdout. Without it
+    nothing is consumed, no ledger slot is taken and no paper ledger is written."""
+    registry, dataset_id, model_id = registered(store, config, tmp_path, HOLDOUT)
+    try:
+        key = splits.holdout_key(registry, dataset_id, HOLDOUT)
+        rows = backtest.segment_rows(registry, dataset_id, HOLDOUT, "holdout")
+        synthetic = backtest.execution_inputs(store.db, rows) | {
+            "source": {"interpretation": "synthetic", "run_id": None}
+        }
+        ledger = tmp_path / "h.sqlite3"
+        options = dict(segment="holdout", ledger_path=ledger, min_holdout_rows=1)
+        with pytest.raises(ValueError, match="acknowledge_holdout"):
+            backtest.simulate(
+                registry, synthetic, dataset_id, model_id, HOLDOUT, PaperConfig(), **options
+            )
+        with pytest.raises(ValueError, match="acknowledge_holdout"):
+            backtest.run(
+                registry, store.db, dataset_id, model_id, HOLDOUT, PaperConfig(), **options
+            )
+        assert not ledger.exists()
+        assert registry.holdout_status(dataset_id, key)["untouched"]
+        assert registry.holdout_evaluation(model_id, dataset_id, key) is None
+        result = backtest.run(
+            registry, store.db, dataset_id, model_id, HOLDOUT, PaperConfig(),
+            acknowledge_holdout=True, **options,
+        )  # fmt: skip
+        assert result["holdout_ledger"]["evaluations"] == 1
     finally:
         registry.close()

@@ -46,10 +46,17 @@ from .contracts import (
 from .operations import UnknownOperation, get_operation, normalized_params
 
 SCHEMA_VERSION = 1
-# Artifact kinds only the coordinator stores (inputs and planning records); a worker
-# result declaring one is refused, so a pod can never forge a snapshot or input.
+# Artifact kinds only the coordinator stores (inputs, planning records and the paper
+# backtest summaries paper evidence comes from); a worker result declaring one is
+# refused, so a pod can never forge a snapshot, an input or paper evidence.
 RESERVED_ARTIFACT_KINDS = frozenset(
-    ("dataset_snapshot", "execution_inputs", "experiment_manifest", "planner_round")
+    (
+        "dataset_snapshot",
+        "execution_inputs",
+        "experiment_manifest",
+        "planner_round",
+        "paper_backtest_summary",
+    )
 )
 DB_NAME = "orchestration.sqlite3"
 SHUTDOWN_REASON = "coordinator_shutdown"

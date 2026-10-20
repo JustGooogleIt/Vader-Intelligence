@@ -327,6 +327,8 @@ def shadow_health(config, latest):
         "wrapper_failed",
         "deadline_exceeded",
         "interrupted",
+        "log_write_failed",
+        "output_limit_exceeded",
         "unverified_result",
         "completion_unknown",
     }:

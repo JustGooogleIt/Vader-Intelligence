@@ -13,6 +13,8 @@ Operational-witness boundary: a contract-2 receipt is admissible only when writt
 ``forecast-witness`` run whose provenance names the receipt's observer namespace and
 session (enforced by the journal), so a receipt supplied through the journal API by any
 other caller is never availability proof and can never occupy a witness receipt key.
+Only this module creates that run kind (``Store.start_run`` refuses it), and a receipt
+observed before its witness run started is refused by the journal and is not proof.
 
 Lineage: a fetch's mode comes from its writing run's persisted source lineage
 (``references.run_source_mode``), never from the witness clock alone; an injected clock
@@ -35,7 +37,7 @@ from datetime import datetime
 from ..provenance import RunProvenanceV1, source_hash
 from ..storage import timestamp, utc_now
 from . import journal
-from .evidence import PROOF
+from .evidence import WITNESS_WRITTEN
 from .references import digest, reference, run_source_mode
 
 NAMESPACE = "local-witness-v1"
@@ -60,10 +62,13 @@ GROUP = {
 }
 REFUSED_UNDER = ("collect", "discover", "live-check")
 LIMITS = {"max_subjects": (1, 500), "scan_rows": (1, 5000), "max_passes": (1, 100)}
-# Only operational witness receipts count, whatever a payload claims (evidence.PROOF): a
+# A subject is witnessed once: the first receipt a recorded witness run wrote is permanent
+# even when it fails the run-start bound (evidence.WITNESS_WRITTEN), so such a subject is
+# left unproven and never re-observed, which would be an IdempotencyConflict that fails
+# every later tick. Only operational witness receipts count, whatever a payload claims: a
 # subject already witnessed under contract 2 by a lineage-recording witness is not
 # witnessed again; a draft-era or supplied receipt does not count as witnessed.
-WITNESS_RECEIPT = PROOF
+WITNESS_RECEIPT = WITNESS_WRITTEN
 CANDIDATE_LIMIT = 10000
 
 
@@ -110,7 +115,12 @@ def witness(
     code_hash = source_hash()
     run_id, session = str(uuid.uuid4()), str(uuid.uuid4())
     lineage = "synthetic" if injected else "live"
-    store.start_run(
+    # One clock sample is both the run's start and the base for the divergence check, so
+    # a clock that steps back after the run starts counts against trust and can never be
+    # absorbed into a later base (a receipt may not predate its run, review F3).
+    base_utc, base_mono = clock(), monotonic()
+    _start_run(
+        store,
         RunProvenanceV1(
             run_id,
             RUN_KIND,
@@ -122,9 +132,8 @@ def witness(
                 "source_lineage": lineage,
             },
         ),
-        timestamp(clock()),
+        timestamp(base_utc),
     )
-    base_utc, base_mono = clock(), monotonic()
     deadline = base_mono + budget
     allowance = {"discovery_pass": max_passes, "research": max_passes, "fetch": max_subjects}
     summary = {
@@ -261,6 +270,17 @@ def witness(
     summary["elapsed_seconds"] = monotonic() - base_mono
     store.finish_run(run_id, status, summary)
     return summary
+
+
+def _start_run(store, provenance, started_at):
+    """The only writer of forecast-witness runs (Store.start_run refuses the kind). The
+    start is sampled before any observation, and the journal and PROOF refuse a receipt
+    observed before its witness run started."""
+    with store.transaction():
+        store.db.execute(
+            "INSERT INTO runs(id,kind,started_at,status,provenance_json) VALUES (?,?,?,?,?)",
+            (provenance.run_id, RUN_KIND, started_at, "running", provenance.to_json()),
+        )
 
 
 def _receipt_mode(injected, subject_mode):

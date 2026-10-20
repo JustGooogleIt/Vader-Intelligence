@@ -12,10 +12,14 @@ Evidence boundaries, stated in every report:
 
 The execution inputs are plain JSON (`vi-execution-inputs-v1`) so that the coordinator
 can build them from the history archive and a research pod can run the simulation from a
-verified copy without archive access. A profitable backtest is not evidence of edge and
-never evidence of live profitability.
+verified copy without archive access. Every summary records where its execution inputs
+came from (`execution_inputs`): `history_archive` only when `run` built them from the
+verified archive, `supplied` for any payload handed to `simulate`, whatever the payload
+claims about itself. A profitable backtest is not evidence of edge and never evidence of
+live profitability.
 """
 
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -26,7 +30,7 @@ from ..datasets import splits
 from ..forecast.references import digest as reference_digest
 from ..history import interpret
 from ..models.artifact import ArtifactError, ModelArtifact, check_inputs, predict_proba
-from ..provenance import source_hash
+from ..provenance import json_text, source_hash
 from ..trading.instruments import Market
 from ..trading.marketdata import BookSnapshot
 from ..trading.portfolio import Settlement
@@ -37,6 +41,9 @@ EXECUTION_SCHEMA = "vi-execution-inputs-v1"
 WINDOW_BEFORE_SECONDS = 120
 WINDOW_AFTER_SECONDS = 300
 SEGMENTS = ("development", "validation", "holdout")
+# Where a summary's execution inputs came from: built by `run` from the verified history
+# archive, or supplied by the caller (labelled synthetic quotes, a stored copy, anything).
+EXECUTION_SOURCES = ("history_archive", "supplied")
 NOTICE = (
     "Historical paper backtest on archived candles. Candles have no sizes: fills exist only "
     "under the assumed_depth SCENARIO. Not evidence of edge or of live profitability."
@@ -155,6 +162,27 @@ def load_execution(data):
     return payload
 
 
+def execution_digest(execution):
+    """sha256 of the execution inputs' canonical JSON: the digest the pod store gives the
+    same payload stored by the coordinator (`json_text` bytes)."""
+    return hashlib.sha256(json_text(execution).encode()).hexdigest()
+
+
+def check_labels(execution, rows):
+    """Refuse execution inputs that name a market outside `rows` or settle one against
+    the dataset's label (the label is the selected market's settled result, yes = 1)."""
+    labels = {row["ticker"]: "yes" if row["y"] else "no" for row in rows}
+    for market in execution["markets"]:
+        if market["ticker"] not in labels:
+            raise ValueError(f"execution inputs name {market['ticker']}, outside the segment rows")
+    for settlement in execution["settlements"]:
+        ticker = settlement["ticker"]
+        if ticker not in labels:
+            raise ValueError(f"execution inputs settle {ticker}, outside the segment rows")
+        if settlement["result"] != labels[ticker]:
+            raise ValueError(f"settlement of {ticker} contradicts the dataset label")
+
+
 def forecasts(artifact_json, manifest, rows, model_id):
     """One forecast per row at its cutoff, from the row's features only."""
     artifact = ModelArtifact.from_dict(json.loads(artifact_json))
@@ -236,11 +264,17 @@ def summary(
     rows,
     n_forecasts,
     execution,
-    selection_biased=None,
+    selection_biased,
+    execution_source="supplied",
 ):
     """The backtest envelope around a simulator report (or sensitivity table).
 
-    `selection_biased` defaults to "not the holdout"; a reused holdout is biased too."""
+    `selection_biased` is required: true for every segment but a holdout's first use as
+    the registry's holdout ledger records it (a reused holdout is biased too).
+    `execution_source` is `history_archive` only for inputs `run` built from the verified
+    archive; anything else is `supplied`."""
+    if execution_source not in EXECUTION_SOURCES:
+        raise ValueError(f"execution_source must be one of {EXECUTION_SOURCES}")
     days = sorted(r["official_date"] for r in rows)
     quoted = {s["ticker"] for s in execution["snapshots"]}
     return {
@@ -248,7 +282,7 @@ def summary(
         "simulated": True,
         "notice": NOTICE,
         "segment": segment,
-        "selection_biased": segment != "holdout" if selection_biased is None else selection_biased,
+        "selection_biased": bool(selection_biased),
         "model_id": model_id,
         "dataset_id": dataset_id,
         "rows": len(rows),
@@ -259,6 +293,11 @@ def summary(
         "snapshots": len(execution["snapshots"]),
         "skipped": execution["skipped"],
         "execution_window_seconds": execution["window_seconds"],
+        "execution_inputs": {
+            "source": execution_source,
+            "interpretation": (execution.get("source") or {}).get("interpretation"),
+            "sha256": execution_digest(execution),
+        },
         "code_hash": source_hash(),
         "report": report_dict,
     }
@@ -283,11 +322,19 @@ def _check_model(registry, dataset_id, model_id, split):
     return artifact_json
 
 
-def _guard_segment(registry, dataset_id, model_id, split, segment):
-    """Holdout: the pinned ledger key, refused when this model already used it. Other
-    segments: the split must end before the dataset's pinned holdout."""
+def _guard_segment(registry, dataset_id, model_id, split, segment, acknowledged=False):
+    """Holdout: refused unless acknowledged; the pinned ledger key, refused when this
+    model already used it. Other segments: the split must end before the dataset's
+    pinned holdout."""
     if segment not in SEGMENTS:
         raise ValueError(f"segment must be one of {SEGMENTS}")
+    if segment == "holdout" and acknowledged is not True:
+        # The library equivalent of the CLI's --acknowledge-holdout: a holdout run
+        # consumes the dataset's final holdout and the model's one ledger slot.
+        raise ValueError(
+            "the holdout segment requires acknowledge_holdout=True (it consumes the final"
+            " holdout and is recorded in the holdout ledger)"
+        )
     if segment != "holdout":
         readonly = getattr(registry, "readonly", False)
         splits.guard(registry, dataset_id, split, pin_if_missing=not readonly)
@@ -312,20 +359,22 @@ def run(
     directory=None,
     run_id=None,
     min_holdout_rows=training.MIN_EVALUATION_ROWS,
+    acknowledge_holdout=False,
 ):
     """Backtest a registered model on one segment of a registry dataset.
 
-    `holdout` is allowed only through this function's ledger entry, which is recorded
-    before any holdout result is computed or written (first use consumes the pinned
-    holdout, later uses by other models are reuses). With `grid`, a sensitivity table
-    over disposable ledgers; otherwise one run into `ledger_path`.
+    `holdout` requires `acknowledge_holdout=True` and is allowed only through this
+    function's ledger entry, which is recorded before any holdout result is computed or
+    written (first use consumes the pinned holdout, later uses by other models are
+    reuses). With `grid`, a sensitivity table over disposable ledgers; otherwise one run
+    into `ledger_path`.
     """
     _check_model(registry, dataset_id, model_id, split)
-    _guard_segment(registry, dataset_id, model_id, split, segment)
+    _guard_segment(registry, dataset_id, model_id, split, segment, acknowledge_holdout)
     check_archive(history_db, registry.dataset(dataset_id))
     rows = segment_rows(registry, dataset_id, split, segment)
     execution = execution_inputs(history_db, rows, run_id=run_id)
-    return simulate(
+    return _simulate(
         registry,
         execution,
         dataset_id,
@@ -337,6 +386,8 @@ def run(
         ledger_path=ledger_path,
         directory=directory,
         min_holdout_rows=min_holdout_rows,
+        acknowledge_holdout=acknowledge_holdout,
+        source="history_archive",
     )
 
 
@@ -353,20 +404,61 @@ def simulate(
     ledger_path=None,
     directory=None,
     min_holdout_rows=training.MIN_EVALUATION_ROWS,
+    acknowledge_holdout=False,
 ):
     """`run` on execution inputs already built (by `execution_inputs`, or a labelled
-    synthetic payload); the same model, split, segment and holdout-ledger rules apply."""
+    synthetic payload); the same model, split, segment, holdout acknowledgement and
+    holdout-ledger rules apply, and settlements must agree with the dataset's labels.
+
+    The inputs are recorded as `supplied`, whatever their payload claims: only `run`
+    builds them from the verified archive, so a supplied payload is never archive
+    evidence (and never paper evidence)."""
+    return _simulate(
+        registry,
+        execution,
+        dataset_id,
+        model_id,
+        split,
+        config,
+        segment=segment,
+        grid=grid,
+        ledger_path=ledger_path,
+        directory=directory,
+        min_holdout_rows=min_holdout_rows,
+        acknowledge_holdout=acknowledge_holdout,
+        source="supplied",
+    )
+
+
+def _simulate(
+    registry,
+    execution,
+    dataset_id,
+    model_id,
+    split,
+    config,
+    *,
+    segment,
+    grid,
+    ledger_path,
+    directory,
+    min_holdout_rows,
+    acknowledge_holdout,
+    source,
+):
     if (grid is None) == (ledger_path is None):
         raise ValueError("give exactly one of grid or ledger_path")
     execution = load_execution(execution)
     manifest = registry.dataset(dataset_id)
     artifact_json = _check_model(registry, dataset_id, model_id, split)
-    key = _guard_segment(registry, dataset_id, model_id, split, segment)
+    key = _guard_segment(registry, dataset_id, model_id, split, segment, acknowledge_holdout)
     rows = segment_rows(registry, dataset_id, split, segment)
     if segment == "holdout" and len(rows) < min_holdout_rows:
         raise ValueError(f"insufficient holdout rows: {len(rows)}")
+    check_labels(execution, rows)
     forecast_inputs = forecasts(artifact_json, manifest, rows, model_id)
-    label = f"{execution['source']['interpretation']}:{segment}:{dataset_id[:16]}"
+    # The label leads with where the inputs came from, never with the payload's claim.
+    label = f"{source}:{execution['source']['interpretation']}:{segment}:{dataset_id[:16]}"
     inputs = paper_inputs(execution, forecast_inputs, label)
     if not inputs.forecasts:
         raise ValueError("no forecast has execution data")
@@ -393,6 +485,7 @@ def simulate(
         n_forecasts=len(inputs.forecasts),
         execution=execution,
         selection_biased=segment != "holdout" or entry["evaluations"] > 1,
+        execution_source=source,
     )
     out["forecasts_dropped_non_finite"] = len(rows) - len(forecast_inputs)
     if entry is not None:

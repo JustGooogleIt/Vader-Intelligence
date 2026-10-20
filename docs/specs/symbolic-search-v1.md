@@ -63,7 +63,15 @@ first (generations, `max_candidates`, `max_seconds`) and records which.
 Deduplication: canonical form (commutative operands sorted, constants rounded to 6
 significant digits, trivial identities folded: `x+0`, `x*1`, `x*0`, `neg(neg(x))`) plus
 a semantic fingerprint (hash of training-fold outputs rounded to 1e-9). Duplicates are
-counted, not re-scored.
+counted, not re-scored. Expressions sharing a fingerprint form a class represented by its
+simplest evaluated member, the lowest (complexity, canonical key) whatever the arrival
+order: a simpler member is scored when it arrives and replaces the representative (which
+then counts as the semantic duplicate); other members share the representative's
+outcome. Only representatives enter the Pareto front and the selection. Budget
+accounting is unchanged (an expression counts when its training outputs are computed).
+Results record the engine version: `symbolic-search-v2` since 2026-10-19;
+`symbolic-search-v1` kept the first-scored member, so a simpler equivalent found later
+never reached the front.
 
 Invalid/unstable: invalid (non-finite) outputs, near-constant output (std < 1e-9),
 Platt fit failure, or extreme sensitivity (relative change in validation loss > 0.5 when

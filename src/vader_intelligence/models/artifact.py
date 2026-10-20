@@ -60,8 +60,10 @@ def register_family(name, raw_score_fn):
 
     `raw_score_fn(params, Z, names)` returns one raw log-odds per row of the
     preprocessed matrix Z, whose columns are `names`; the artifact's calibration then
-    maps those to probabilities. Built-in families cannot be replaced, and a name
-    already registered to a different function is refused.
+    maps those to probabilities. Artifact construction calls it on a zero-row Z, so it
+    must validate params there (raising ValueError, TypeError or KeyError) and return an
+    empty array. Built-in families cannot be replaced, and a name already registered to
+    a different function is refused.
     """
     if not isinstance(name, str) or not FAMILY_NAME.fullmatch(name):
         raise ValueError(f"invalid family name {name!r}")
@@ -106,9 +108,12 @@ class ModelArtifact:
             object.__setattr__(self, name, _canonical(value, name))
         try:
             calibration.apply(self.calibration, np.zeros(0))
-            if self.family in _BUILTIN:  # validates params against the preprocessor width
+            # Scoring zero rows validates params against the preprocessor outputs, for
+            # built-in and registered families alike (`_known` imported "symbolic").
+            scorer = _BUILTIN.get(self.family) or _REGISTERED.get(self.family)
+            if scorer is not None:
                 names = self.preprocessor.output_names
-                _BUILTIN[self.family](self.params, np.zeros((0, len(names))), names)
+                scorer(self.params, np.zeros((0, len(names))), names)
         except (ValueError, TypeError, KeyError) as exc:
             raise ArtifactError(f"invalid {self.family} artifact: {exc}") from exc
 

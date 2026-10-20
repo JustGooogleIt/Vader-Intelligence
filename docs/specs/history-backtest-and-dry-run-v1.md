@@ -35,7 +35,8 @@ Segments: `development` (in-sample), `validation` (selection-biased: it compares
 models) and `holdout`.
 
 **Holdout runs (revised after review, D-014).**
-- The holdout run requires `--acknowledge-holdout`.
+- The holdout run requires `--acknowledge-holdout`; the library functions `run` and
+  `simulate` require `acknowledge_holdout=True` the same way (finding F34).
 - The dataset's final holdout is *pinned* in the registry (`holdout_pins`; `vader dataset
   pin-holdout`, or the first writable training or snapshot use), and the run's split must
   hold out exactly from the pin.
@@ -52,6 +53,15 @@ models) and `holdout`.
 **Archive check.** The history archive must be the one the dataset was built from: the
 fetch at the dataset's recorded ceiling must have the recorded digest.
 
+**Execution provenance (finding F40).** Every summary records `execution_inputs`
+(`source`, the payload's `interpretation`, and the `sha256` of its canonical JSON), and
+the simulator's input label leads with the source. The source is `history_archive` only
+when `run` built the inputs from the verified archive; inputs handed to `simulate`
+(labelled synthetic quotes, stored copies) are `supplied`, whatever the payload claims.
+`run` and `simulate` refuse inputs that name a market outside the segment rows or
+settle one against the dataset's label. Paper evidence for a research candidate comes
+only from `pods.evaluator.paper_backtest` (archive-built inputs, no assumed depth).
+
 **Counting.** `markets_with_execution_data` counts markets with at least one quote in the
 window; `markets` counts all of them.
 
@@ -61,8 +71,8 @@ live profitability.
 
 ## 2. Live-adapter dry run (`trading/shadow_dryrun.py`, `vader live dry-run`)
 
-For every contract-4 decision in an evidence archive with a probability from the named
-registered forecaster:
+For every effective forward-shadow contract-4 decision in an evidence archive with a
+probability from the named registered forecaster:
 
 1. the latest archived order book at or before the decision's cutoff (`kind = book`
    observations; retrieval time as `as_of`);
@@ -85,7 +95,12 @@ registered forecaster:
   too), so no phantom open exposure distorts later decisions;
 - the ledger must be new;
 - with `--max-order-notional` / `--max-daily-notional`, the live gateway's local notional
-  caps are applied.
+  caps are applied;
+- only decisions of mode `forward_shadow` are used (`--decision-mode synthetic` selects
+  SYNTHETIC decisions instead, for tests and demos; the report names the mode), never
+  cutoff reconstructions, and a decision superseded by a correction is left out, so a
+  decision and its correction never yield two orders (finding F35). The report counts
+  what was left out (`decisions_excluded`).
 
 **Scope.** The ledger is a paper ledger, so a dry run can never reach a live ledger.
 

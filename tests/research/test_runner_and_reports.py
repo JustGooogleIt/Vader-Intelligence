@@ -16,10 +16,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "forecast"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "evaluation"))
 from _f34 import GAME_ID, at, collect, protocol, tick_at, to_schema4  # noqa: E402
 from conftest import Clock  # noqa: E402
-from test_materialization import AS_OF, forward_slice, settle, settlement_evidence  # noqa: E402
+from test_materialization import (  # noqa: E402
+    AS_OF,
+    evaluate_at,
+    forward_slice,
+    other_cohort_abstention,
+    settle,
+    settlement_evidence,
+)
 
 from vader_intelligence.cli import execute, parser  # noqa: E402
 from vader_intelligence.config import Config  # noqa: E402
+from vader_intelligence.forecast import journal  # noqa: E402
+from vader_intelligence.provenance import RunProvenanceV1  # noqa: E402
 from vader_intelligence.research import report as reports  # noqa: E402
 from vader_intelligence.research.runner import inspect_run, list_runs, run  # noqa: E402
 from vader_intelligence.storage import Store  # noqa: E402
@@ -135,6 +144,190 @@ def test_split_evaluates_development_before_holdout_and_records_history(store, c
     )
     assert again["holdout_history"][0]["evaluation_id"] == hold["evaluation_id"]
     assert again["holdout_history"][0]["research_config_hash"] == PROTO.config_hash
+
+
+def test_holdout_history_lists_every_earlier_overlapping_evaluation(store, config, monkeypatch):
+    """An evaluation that scored a holdout game is history whatever its range or view
+    (review F12): a whole-range forward evaluation and an open-range simulated
+    reconstruction evaluation both observed GAME_DAY."""
+    forward_slice(store, config)
+    settle(store, config, monkeypatch, settlement_evidence())
+    span = {"start_date": GAME_DAY - timedelta(days=3), "through_date": GAME_DAY}
+    whole = run_at(store, at(23, 40), view="forward-shadow", **span)
+    observed = next(iter(whole["segments"]["whole"]["cohorts"].values()))
+    assert observed["population"]["scored_paired"] == 1  # the holdout game was scored
+    other_view = evaluate_at(store, at(23, 41), view="cutoff-reconstruction")
+    before = evaluate_at(
+        store,
+        at(23, 42),
+        view="forward-shadow",
+        start_date=GAME_DAY - timedelta(days=3),
+        through_date=GAME_DAY - timedelta(days=1),
+    )
+    split = run_at(
+        store,
+        at(23, 50),
+        view="forward-shadow",
+        development_through=GAME_DAY - timedelta(days=1),
+        holdout_from=GAME_DAY,
+        **span,
+    )
+    history = {h["evaluation_id"]: h for h in split["holdout_history"]}
+    assert list(history) == [observed["evaluation_id"], other_view["evaluation_id"]]
+    assert before["evaluation_id"] not in history  # ends before the holdout range
+    assert history[observed["evaluation_id"]]["view"] == "forward-shadow"
+    assert history[other_view["evaluation_id"]]["view"] == "cutoff-reconstruction"
+    assert history[other_view["evaluation_id"]]["start_date"] is None
+    assert history[observed["evaluation_id"]]["research_config_hash"] == PROTO.config_hash
+
+
+def test_a_cohort_with_no_decision_in_a_segment_is_reported_not_evaluated(
+    store, config, monkeypatch
+):
+    """Collector cohorts are found per segment (review F13): cohort `other` decided only a
+    development game and the fixture cohort only the holdout game; neither is evaluated
+    where it decided nothing, and the run does not fail."""
+    forward_slice(store, config)
+    settle(store, config, monkeypatch, settlement_evidence())
+    other = other_cohort_abstention(store, start=at(20, 0) - timedelta(days=2))
+    real = json.loads(
+        store.db.execute("SELECT payload_json FROM forecast_decisions WHERE id=1").fetchone()[0]
+    )["manifest"]["discovery"]["collector_config_hash"]
+    result = run_at(
+        store,
+        at(23, 40),
+        view="forward-shadow",
+        start_date=GAME_DAY - timedelta(days=3),
+        through_date=GAME_DAY,
+        development_through=GAME_DAY - timedelta(days=1),
+        holdout_from=GAME_DAY,
+    )
+    assert result["status"] == "complete" and result["errors"] == []
+    development, holdout = result["segments"]["development"], result["segments"]["holdout"]
+    assert list(development["cohorts"]) == [other]
+    assert development["cohorts_without_decisions"] == [real]
+    assert development["cohorts"][other]["population"]["decisions"] == 1
+    assert list(holdout["cohorts"]) == [real]
+    assert holdout["cohorts_without_decisions"] == [other]
+    assert holdout["cohorts"][real]["population"]["scored_paired"] == 1
+
+
+def test_a_single_cohort_segment_without_decisions_keeps_its_cohort_key(store, config, monkeypatch):
+    """Pre-review of #37: in a single-cohort run, a segment with no decision is evaluated
+    under that cohort, as before F13, so a rerun finds its earlier evaluation."""
+    forward_slice(store, config)
+    settle(store, config, monkeypatch, settlement_evidence())
+    real = json.loads(
+        store.db.execute("SELECT payload_json FROM forecast_decisions WHERE id=1").fetchone()[0]
+    )["manifest"]["discovery"]["collector_config_hash"]
+    split = dict(
+        view="forward-shadow",
+        start_date=GAME_DAY - timedelta(days=3),
+        through_date=GAME_DAY,
+        development_through=GAME_DAY - timedelta(days=1),
+        holdout_from=GAME_DAY,
+    )
+    first = run_at(store, at(23, 40), **split)
+    development = first["segments"]["development"]
+    assert list(development["cohorts"]) == [real]
+    assert development["cohorts"][real]["collector_config_hash"] == real
+    again = run_at(store, at(23, 41), **split)
+    assert again["segments"]["development"]["cohorts"][real]["existing"] is True
+
+
+def live_forward_abstention(store, game_id=900003):
+    """A forward-shadow decision in the forward dataset written by a run recorded as live
+    (abstaining, so it cites no evidence); SYNTHETIC test bytes model a live record."""
+    store.db.execute(
+        "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
+        (
+            "live-tick",
+            "forecast-tick",
+            at(19, 0).isoformat(),
+            at(19, 1).isoformat(),
+            "complete",
+            RunProvenanceV1(
+                "live-tick",
+                "forecast-tick",
+                "a" * 64,
+                {},
+                tool_configuration={"source_lineage": "live"},
+            ).to_json(),
+            "{}",
+        ),
+    )
+    journal.append(
+        store.db,
+        "forecast_decisions",
+        {
+            "schema_version": 1,
+            "contract_version": 3,
+            "run_id": "live-tick",
+            "created_at": at(19, 1).isoformat(),
+            "code_hash": "a" * 64,
+            "config_hash": PROTO.config_hash,
+            "mode": "forward_shadow",
+            "references": [],
+            "dataset": PROTO.dataset,
+            "protocol": PROTO.protocol_id,
+            "game_id": game_id,
+            "unresolved_key": None,
+            "ticker": None,
+            "yes_team_id": None,
+            "horizon": 3600,
+            "scheduled_start": at(21, 0).isoformat(),
+            "cutoff": at(20, 0).isoformat(),
+            "binding_id": None,
+            "discovery_id": None,
+            "selection_version": PROTO.selection_version,
+            "baseline_versions": ["constant-v1", "midpoint-v1"],
+            "cutoff_eligible": False,
+            "reasons": ["identity_unproven"],
+            "results": {
+                name: {"probability": None, "reasons": ["identity_unproven"], "inputs": {}}
+                for name in ("constant-v1", "midpoint-v1")
+            },
+            "manifest": {},
+            "source_ceiling": 0,
+            "supersedes_id": None,
+        },
+    )
+
+
+def test_run_lineage_follows_the_evaluated_records_not_the_clock(store, config, monkeypatch):
+    """Review F14: an uninjected run over synthetic decisions is a synthetic run; a scope
+    mixing synthetic and live records is refused before anything is written."""
+    forward_slice(store, config)
+    settle(store, config, monkeypatch, settlement_evidence())
+    result = run(
+        store,
+        PROTO,
+        view="forward-shadow",
+        outcomes_as_of=AS_OF,
+        start_date=GAME_DAY,
+        through_date=GAME_DAY,
+    )
+    assert result["status"] == "complete"
+    (cohort,) = result["segments"]["whole"]["cohorts"].values()
+    assert cohort["mode"] == "synthetic"
+    provenance = inspect_run(store.db, result["run_id"])["provenance"]
+    assert provenance["tool_configuration"]["source_lineage"] == "synthetic"
+    reconstruction = run(
+        store,
+        PROTO,
+        view="cutoff-reconstruction",
+        dataset="study-lineage",
+        outcomes_as_of=AS_OF,
+        start_date=GAME_DAY,
+        through_date=GAME_DAY,
+    )
+    provenance = inspect_run(store.db, reconstruction["run_id"])["provenance"]
+    assert provenance["tool_configuration"]["source_lineage"] == "synthetic"
+    live_forward_abstention(store)
+    runs = store.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+    with pytest.raises(ValueError, match="mixes synthetic and live"):
+        run_at(store, at(23, 50), view="forward-shadow")
+    assert store.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == runs
 
 
 def test_budget_exhaustion_is_partial_and_writes_no_evaluation(store, config, monkeypatch):

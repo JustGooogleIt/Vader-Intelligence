@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import sqlite3
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -124,8 +125,9 @@ def validate_shadow(config):
     if "model_registry" in shadow:
         if not isinstance(shadow["model_registry"], str):
             raise ValueError("shadow model_registry must be an absolute directory path")
-        # Existence is checked when configuring; a lifecycle action (stop, uninstall)
-        # must still load the configuration if the registry was removed later.
+        # Existence and contents are checked when configuring (check_shadow_forecasters);
+        # a lifecycle action (stop, uninstall) must still load the configuration if the
+        # registry was removed later.
         own["model_registry"] = absolute(shadow["model_registry"]).resolve()
     for name, path in own.items():
         for banned in resolved:
@@ -134,6 +136,45 @@ def validate_shadow(config):
                     f"shadow {name} {path} targets a forbidden production path {banned}"
                 )
     return shadow
+
+
+def check_shadow_forecasters(shadow):
+    """Configure-time check of a validated shadow block against its research protocol.
+
+    When the protocol registers forecasters (D-004), the shadow needs a model registry
+    from which every listed artifact opens read-only, exactly as the tick reads them.
+    Without one, every tick fails before deciding and the shadow records no forward
+    decisions at all, baselines included, while collection continues. Lifecycle loads
+    never run this check, so a configuration whose registry was later removed can still
+    be stopped and uninstalled.
+    """
+    from vader_intelligence.forecast.research import Protocol
+    from vader_intelligence.research.registry import Registry
+
+    protocol = Protocol.load(shadow["research_config"])
+    if not protocol.forecasters:
+        return
+    if "model_registry" not in shadow:
+        raise ValueError(
+            "the shadow research protocol registers forecasters: model_registry is required"
+        )
+    root = absolute(shadow["model_registry"])
+    if not root.is_dir():
+        raise ValueError("shadow model_registry must be an existing directory")
+    try:
+        registry = Registry(root, readonly=True)
+    except sqlite3.Error as exc:
+        raise ValueError(f"shadow model_registry {root} is not a research registry") from exc
+    try:
+        for sha in protocol.forecasters:
+            try:
+                registry.model_artifact(sha)
+            except (OSError, ValueError) as exc:
+                raise ValueError(
+                    f"shadow model_registry cannot open forecaster {sha} read-only: {exc}"
+                ) from exc
+    finally:
+        registry.close()
 
 
 def _targets(path, banned):

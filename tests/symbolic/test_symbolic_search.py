@@ -23,8 +23,14 @@ from vader_intelligence.symbolic import (
     replay,
     search,
 )
-from vader_intelligence.symbolic.engine import Archive, Scorer
-from vader_intelligence.symbolic.expressions import depth, size
+from vader_intelligence.symbolic.engine import (
+    Archive,
+    Scorer,
+    pareto_front,
+    select,
+    semantic_fingerprint,
+)
+from vader_intelligence.symbolic.expressions import canonical_key, depth, size
 from vader_intelligence.symbolic.genetic import nodes
 
 X0, X1, X2 = Var("x0"), Var("x1"), Var("x2")
@@ -205,6 +211,70 @@ def test_duplicates_are_counted_not_rescored(folds):
     assert archive.evaluated == 3 and len(archive.valid) == 2
 
 
+def test_the_simplest_semantic_duplicate_represents_its_class(folds):
+    """A simpler expression with the same training outputs, found later, replaces the
+    representative, so the front and the one-SE rule see it; the representative does not
+    depend on arrival order, and budgets and counters keep their meaning."""
+    diff = op("sub", X0, X1)
+    padded = op("max", diff, diff)  # 7 nodes, the same outputs as x0 - x1 (3 nodes)
+    archive = Archive(scorer(folds), 100, 60.0, TickClock())
+    _, first = archive.evaluate(padded)
+    assert first.complexity == 7
+    _, simpler = archive.evaluate(diff)
+    assert simpler.complexity == 3 and simpler.model.expression == diff
+    assert archive.duplicates == {"canonical": 0, "semantic": 1} and archive.evaluated == 2
+    assert [c.complexity for c in archive.valid] == [3]
+    assert [c.complexity for c in pareto_front(archive.valid)] == [3]
+    assert select(pareto_front(archive.valid))[0] is simpler
+    # The replaced member and later, larger members now share the representative.
+    assert archive.evaluate(op("max", diff, diff))[1] is simpler
+    assert archive.evaluate(op("min", diff, diff))[1] is simpler
+    assert archive.duplicates == {"canonical": 1, "semantic": 2} and archive.evaluated == 3
+    invalid = sum(archive.invalid.values())
+    assert archive.evaluated == len(archive.valid) + invalid + archive.duplicates["semantic"]
+    reverse = Archive(scorer(folds), 100, 60.0, TickClock())
+    reverse.evaluate(diff)
+    assert reverse.evaluate(padded)[1].model == simpler.model
+    assert [c.model for c in reverse.valid] == [simpler.model]
+    # Equal complexity: the lower canonical key represents the class, in either order.
+    pair = [op("add", X0, X0), op("mul", X0, Const(2.0))]
+    expected = min(pair, key=canonical_key)
+    for order in (pair, pair[::-1]):
+        tie = Archive(scorer(folds), 100, 60.0, TickClock())
+        for expr in order:
+            tie.evaluate(expr)
+        assert [c.model.expression for c in tie.valid] == [expected]
+
+
+def test_every_front_member_is_the_simplest_of_its_semantic_class(folds, monkeypatch):
+    """Search level: whatever order the evolution finds them in, each front member (and
+    so the selection) is the lowest (complexity, canonical key) member evaluated in its
+    semantic class. The planted run finds 2*x0 - x1 as (-x1 + x0) + x0 (6 nodes) before
+    (x0 - x1) + x0 (5 nodes); v1 kept the first."""
+    simplest = {}
+    training_scores = Scorer.training_scores
+
+    def recording(self, expr):
+        scores = training_scores(self, expr)
+        if scores is not None:
+            rank, fingerprint = (size(expr), canonical_key(expr)), semantic_fingerprint(scores)
+            simplest[fingerprint] = min(simplest.get(fingerprint, rank), rank)
+        return scores
+
+    monkeypatch.setattr(Scorer, "training_scores", recording)
+    result = search(*folds, NAMES, SearchConfig(population=100, generations=15, seed=0))
+    monkeypatch.undo()
+    fold_scorer = scorer(folds)
+    for candidate in result.front:
+        expression = candidate.model.expression
+        fingerprint = semantic_fingerprint(fold_scorer.training_scores(expression))
+        assert (candidate.complexity, canonical_key(expression)) == simplest[fingerprint]
+    assert result.selected in result.front
+    assert json_text(result.to_dict()) == json_text(
+        search(*folds, NAMES, SearchConfig(population=100, generations=15, seed=0)).to_dict()
+    )
+
+
 def test_oversized_children_are_discarded_and_counted(folds):
     config = SearchConfig(population=30, generations=4, max_depth=3, max_nodes=5, seed=2)
     result = search(*folds, NAMES, config)
@@ -215,6 +285,7 @@ def test_oversized_children_are_discarded_and_counted(folds):
 
 def test_result_record_shape(planted_result):
     record = planted_result.to_dict()
+    assert record["engine"] == "symbolic-search-v2"  # v1: first-scored semantic representative
     assert sorted(record) == sorted(
         [
             "engine",

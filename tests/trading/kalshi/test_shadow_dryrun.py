@@ -5,6 +5,7 @@ strategy -> risk -> executor path into a `DryRunGateway`: built, signed with a t
 key, recorded, never sent. The archive is opened read-only.
 """
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -69,6 +70,7 @@ def test_a_confident_forecast_becomes_a_signed_request_that_is_never_sent(
             forecaster_id=forecaster,
             ledger_path=tmp_path / "dryrun.sqlite3",
             signer=Signer(KEY_ID, throwaway),
+            decision_mode="synthetic",
         )
     finally:
         db.close()
@@ -90,12 +92,18 @@ def test_a_confident_forecast_becomes_a_signed_request_that_is_never_sent(
     db = open_archive(config.database)
     try:
         with pytest.raises(ValueError, match="new paper ledger"):  # no silent replays
-            shadow_dryrun.run(db, forecaster_id=forecaster, ledger_path=tmp_path / "dryrun.sqlite3")
+            shadow_dryrun.run(
+                db,
+                forecaster_id=forecaster,
+                ledger_path=tmp_path / "dryrun.sqlite3",
+                decision_mode="synthetic",
+            )
         capped = shadow_dryrun.run(
             db,
             forecaster_id=forecaster,
             ledger_path=tmp_path / "capped.sqlite3",
             max_order_notional="0.10",
+            decision_mode="synthetic",
         )
     finally:
         db.close()
@@ -112,7 +120,10 @@ def test_a_forecast_without_edge_produces_no_request(store, config, tmp_path, no
     db = open_archive(config.database)
     try:
         result = shadow_dryrun.run(
-            db, forecaster_id=forecaster, ledger_path=tmp_path / "dryrun.sqlite3"
+            db,
+            forecaster_id=forecaster,
+            ledger_path=tmp_path / "dryrun.sqlite3",
+            decision_mode="synthetic",
         )
     finally:
         db.close()
@@ -137,9 +148,76 @@ def test_cli_dry_run_signs_with_a_throwaway_key(store, config, tmp_path, no_netw
             "--ledger",
             str(tmp_path / "dry.sqlite3"),
             "--sign-with-throwaway-key",
+            "--decision-mode",
+            "synthetic",
         ]
     )
     result = execute(args)
     assert result["status"] == "complete" and result["signed"] is True
+    assert result["decision_mode"] == "synthetic"
     assert [o["outcome"] for o in result["outcomes"]] == ["submitted_dry"]
     assert [r["method"] for r in result["requests"]] == ["POST", "DELETE"]
+    args.ledger, args.decision_mode = str(tmp_path / "forward.sqlite3"), "forward_shadow"
+    forward = execute(args)  # the default: this SYNTHETIC archive has no forward decision
+    assert forward["status"] == "inconclusive" and forward["outcomes"] == []
+    assert forward["decisions_excluded"] == {"other_mode": 1, "superseded": 0}
+
+
+def add_decision(store, base_id, *, mode, supersedes_id=None):
+    """Hand-insert a copy of a decision row with another mode or as a correction
+    (SYNTHETIC records exercising decision selection only; lineage is not valid)."""
+    columns = [r[1] for r in store.db.execute("PRAGMA table_info(forecast_decisions)")]
+    row = dict(
+        zip(
+            columns,
+            store.db.execute("SELECT * FROM forecast_decisions WHERE id=?", (base_id,)).fetchone(),
+        )
+    )
+    n = store.db.execute("SELECT COUNT(*) FROM forecast_decisions").fetchone()[0]
+    payload = json.loads(row["payload_json"]) | {"mode": mode, "supersedes_id": supersedes_id}
+    text = json.dumps(payload, sort_keys=True)
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    row |= {
+        "id": None,
+        "mode": mode,
+        "supersedes_id": supersedes_id,
+        "payload_json": text,
+        "digest": digest,
+        "idempotency_key": hashlib.sha256(f"{digest}:{base_id}:{mode}:{n}".encode()).hexdigest(),
+    }
+    with store.db:
+        cursor = store.db.execute(
+            f"INSERT INTO forecast_decisions({','.join(row)}) VALUES "
+            f"({','.join('?' for _ in row)})",
+            list(row.values()),
+        )
+    return cursor.lastrowid
+
+
+def test_only_effective_forward_shadow_decisions_are_dry_run(store, config, tmp_path, no_network):
+    forecaster = shadow_archive(store, config, lambda data, values: min(0.95, values[0] + 0.25))
+    ((original,),) = store.db.execute("SELECT id FROM forecast_decisions").fetchall()
+    correction = add_decision(store, original, mode="synthetic", supersedes_id=original)
+    forward = add_decision(store, original, mode="forward_shadow")
+    corrected = add_decision(store, original, mode="forward_shadow")
+    add_decision(store, corrected, mode="historical_reconstruction", supersedes_id=corrected)
+    add_decision(store, original, mode="historical_reconstruction")
+    no_network()
+    db = open_archive(config.database)
+    try:
+        # A reconstruction that corrects a forward decision does not supersede it for
+        # forward use: the live path would have acted on it.
+        assert [d[0] for d in shadow_dryrun.decisions(db, forecaster)] == [forward, corrected]
+        assert [d[0] for d in shadow_dryrun.decisions(db, forecaster, "synthetic")] == [
+            correction  # a decision and its correction never both yield an order
+        ]
+        result = shadow_dryrun.run(
+            db, forecaster_id=forecaster, ledger_path=tmp_path / "forward.sqlite3"
+        )
+        with pytest.raises(ValueError, match="decision mode"):
+            shadow_dryrun.decisions(db, forecaster, "historical_reconstruction")
+    finally:
+        db.close()
+    assert result["decision_mode"] == "forward_shadow" and result["decisions"] == 2
+    assert [o["decision_id"] for o in result["outcomes"]] == [forward, corrected]
+    assert result["decisions_excluded"] == {"other_mode": 4, "superseded": 0}

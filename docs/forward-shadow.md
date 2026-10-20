@@ -93,7 +93,8 @@ is at most 19 s; `configure` refuses more. The launchd install preflight is unch
    committed fetches and discovery summary, prepares and witnesses bindings, computes due
    decisions from evidence available at C, attempts publication for eligible decisions
    lacking a record, records missed, exits. Exit 0 complete, 3 inconclusive (no due
-   decision), 1 partial/failed, 130 interrupted. Its deadline is `tick_budget + grace`.
+   decision), 1 partial/failed (a failed witness phase fails the tick), 130 interrupted.
+   Its deadline is `tick_budget + grace`.
 2. `collect --once`: the unchanged two-phase collection (discovery, immutable summary,
    books), deadline as configured.
 
@@ -114,8 +115,10 @@ prevents the collection of that cycle.
 Runs `settlement refresh` (public read-only, bounded by limit/budget) and then
 `research run --view forward-shadow` for the date range with `outcomes_as_of` = now,
 each as a supervised child under the ops run lock, and writes
-`state/shadow-evaluate-<timestamp>.json`. A scheduled cycle that fires meanwhile skips
-as an overlap. Use `--skip-settlement` to re-evaluate without a refresh. Reports:
+`state/shadow-evaluate-<timestamp>-<pid>-<random>.json` (one new report per invocation,
+including one that skips as an overlap and exits 75). A scheduled cycle that fires
+meanwhile skips as an overlap. Use `--skip-settlement` to re-evaluate without a refresh.
+Reports:
 
 ```sh
 "$VADER_PY" -m vader_intelligence.cli --db "$SHADOW_DB" research inspect
@@ -133,7 +136,7 @@ archive access, so it works while a cycle holds the lock):
 | `no_eligible_markets` | Discovery completed with no eligible contracts; the tick had nothing due. Inconclusive, not a failure. An empty eligible live universe proves nothing. |
 | `waiting_for_cutoff` | Eligible games were collected; no decision cutoff was reached in the last tick. |
 | `forecasting` | The last tick recorded at least one decision or explicit abstention. |
-| `operational_failure` | The tick or the collection failed, timed out, produced invalid output or was interrupted. |
+| `operational_failure` | The tick or the collection failed, timed out, produced invalid output, exceeded its log output limit or was interrupted. |
 | `inconclusive` | Neither failure nor evidence of eligible markets. |
 | `never_invoked` | No shadow cycle has run. |
 

@@ -157,6 +157,10 @@ def symbolic_scorer(params, Z, names):
 
 
 def test_registered_family_plug_in(tmp_path, monkeypatch):
+    # Import (and so register) the real symbolic family first: imported for the first
+    # time under the patch, it would register into the throwaway dict below.
+    import vader_intelligence.symbolic.artifact_family  # noqa: F401
+
     monkeypatch.setattr(artifact, "_REGISTERED", {})
     params = {"expression": {"var": "x"}, "a": 2.0, "b": -1.0, "operator_set": "ops-v1"}
     art = ModelArtifact("symbolic", passthrough("x"), params, calibration.identity(), {})
@@ -183,6 +187,38 @@ def test_registered_family_plug_in(tmp_path, monkeypatch):
     broken = ModelArtifact("broken", passthrough("x"), params, calibration.identity(), {})
     with pytest.raises(ArtifactError, match="invalid raw scores"):
         predict_proba(broken, X)
+
+
+def test_symbolic_params_are_validated_at_construction(tmp_path):
+    """The real symbolic family parses params["model"] and requires its feature names to
+    be the preprocessor outputs, in order, before an artifact exists (not at prediction)."""
+    from vader_intelligence.symbolic import Model, Op, Var, model_to_dict
+
+    X, _, _, _ = games()
+    preprocessor = Preprocessor.fit(X, SPECS)
+    names = preprocessor.output_names
+    expression = Op("sub", (Var("mid"), Var("strength")))
+    model = model_to_dict(Model(expression, 2.0, -1.0, tuple(names)))
+    good = ModelArtifact("symbolic", preprocessor, {"model": model}, calibration.identity(), {})
+    assert load(good.save(tmp_path)) == good
+    Z = preprocessor.transform(X[:5])
+    expected = sigmoid(2.0 * (Z[:, names.index("mid")] - Z[:, names.index("strength")]) - 1.0)
+    np.testing.assert_allclose(predict_proba(good, X[:5]), expected, rtol=1e-12)
+    assert predict_proba(good, np.zeros((0, len(NAMES)))).shape == (0,)  # verification call
+    bad = [
+        {},
+        {"model": {"bogus": 1}},
+        {"model": dict(model, feature_names=list(reversed(names)))},
+        {"model": dict(model, feature_names=names[:-1])},
+        {"model": dict(model, operator_set="ops-v0")},
+        {"model": model, "extra": 1},
+        {"model": "x"},
+    ]
+    for params in bad:
+        with pytest.raises(ArtifactError, match="invalid symbolic artifact"):
+            ModelArtifact("symbolic", preprocessor, params, calibration.identity(), {})
+        with pytest.raises(ArtifactError, match="invalid symbolic artifact"):
+            load(write_raw(tmp_path, good.to_dict() | {"params": params}))
 
 
 def test_market_baselines_are_scored_like_models(tmp_path):

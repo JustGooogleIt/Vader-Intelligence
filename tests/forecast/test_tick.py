@@ -328,3 +328,40 @@ def test_decision_left_unpublished_past_the_window_is_recorded_missed(store, con
     # The cutoff decision is intact.
     (decision,) = decisions(store)
     assert decision["results"]["midpoint-v1"]["probability"] == "0.6450"
+
+
+def test_witness_failure_inside_tick_is_not_reported_inconclusive(
+    store, config, monkeypatch, capsys
+):
+    """A witness phase that fails on a storage error returns `failed` without raising.
+    The tick must surface that as a failure (CLI exit 1), never as `inconclusive` (exit
+    3), which means "no eligible markets" and would hide the error (review R6)."""
+    import sqlite3
+
+    import vader_intelligence.forecast.witness as witness_module
+    from vader_intelligence import cli
+
+    to_schema4(store)
+
+    def broken_read(*args, **kwargs):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(witness_module, "_read_batch", broken_read)
+    result = tick_at(store, PROTO, DUE)
+    assert {phase: w["status"] for phase, w in result["witness"].items()} == {
+        "pre": "failed",
+        "bindings": "failed",
+        "publications": "failed",
+    }
+    assert result["status"] == "failed"
+    assert any("witness pre" in error for error in result["errors"])
+    (recorded,) = store.db.execute(
+        "SELECT status FROM runs WHERE id=?", (result["run_id"],)
+    ).fetchone()
+    assert recorded == "failed"
+    store.close()
+    monkeypatch.setattr(
+        "sys.argv", ["vader", "--db", config.database, "forecast", "tick", "--budget", "5"]
+    )
+    assert cli.main() == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "failed"

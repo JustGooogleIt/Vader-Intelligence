@@ -129,7 +129,11 @@ class ExchangeGateway(Protocol):
     - `submit` returns or raises; any exception means the outcome is unknown.
     - `lookup(client_order_id)` returns None ONLY when the venue definitively has no
       order with that client id (None becomes a terminal `not_found`, which releases the
-      reservation); while that is not yet certain it must raise.
+      reservation); while that is not yet certain it must raise. For an order whose
+      submission outcome is unknown the executor still takes None as final only when a
+      second None arrives after a grace period and `open_orders()` does not list it.
+    - `open_orders()` lists the venue's open orders as `OrderStatus`es; reconciliation
+      flags any that is not an active ledger order (`venue_open_untracked`).
     - `cancel` reports `canceled` only when the order's final filled quantity is known
       and its fills are deliverable through `fills_since` (a terminal state releases the
       remaining reservation).
