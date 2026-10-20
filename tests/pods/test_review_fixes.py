@@ -5,6 +5,7 @@ reported as partial."""
 
 import json
 from dataclasses import asdict
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -56,6 +57,10 @@ def test_the_holdout_is_pinned_at_the_first_snapshot(research, pods):  # noqa: F
     legacy = {k: v for k, v in payload.items() if k != "holdout_from"}
     with pytest.raises(SnapshotRefused, match="rebuild"):
         load(json_text(legacy | {"schema": "vi-pod-dataset-v1"}).encode())
+    # Review F44: a non-canonical spelling of the pin would defeat the string checks.
+    basic = date.fromisoformat(SPLIT.first_holdout_date).strftime("%Y%m%d")
+    with pytest.raises(SnapshotRefused, match="canonical"):
+        load(json_text(payload | {"holdout_from": basic}).encode())
 
 
 def test_pods_cannot_produce_inputs_and_diagnostics_stay_on_the_candidates_snapshot(

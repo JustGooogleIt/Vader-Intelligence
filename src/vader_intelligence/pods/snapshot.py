@@ -97,9 +97,12 @@ def load(data: bytes) -> Snapshot:
         raise SnapshotRefused("split key does not match its definition")
     holdout_from = payload["holdout_from"]
     try:
-        date.fromisoformat(holdout_from)
+        # Canonical only: comparisons below are on strings (review F44).
+        canonical = date.fromisoformat(holdout_from).isoformat() == holdout_from
     except (TypeError, ValueError):
-        raise SnapshotRefused("snapshot holdout_from is not a date") from None
+        canonical = False
+    if not canonical:
+        raise SnapshotRefused("snapshot holdout_from is not a canonical date")
     if split.validation_through >= holdout_from:
         raise SnapshotRefused("snapshot split reaches its pinned holdout")
     for segment, rows in payload["segments"].items():

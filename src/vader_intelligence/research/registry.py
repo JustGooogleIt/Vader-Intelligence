@@ -265,18 +265,25 @@ class Registry:
         return self.holdout_status(dataset_id, holdout_key) | {"evaluation_id": evaluation_id}
 
     def holdout_from(self, dataset_id):
-        """First official date of the dataset's pinned final holdout, or None."""
+        """First official date of the dataset's pinned final holdout (canonical
+        YYYY-MM-DD), or None. A pin an older version stored in another ISO spelling reads
+        back canonical, so string comparisons against it hold (review F44)."""
         row = self.db.execute(
             "SELECT holdout_from FROM holdout_pins WHERE dataset_id=?", (dataset_id,)
         ).fetchone()
-        return None if row is None else row[0]
+        return None if row is None else date.fromisoformat(row[0]).isoformat()
 
     def pin_holdout(self, dataset_id, holdout_from, actor):
         """Pin the dataset's final holdout to official dates on or after `holdout_from`.
 
         Recorded once (append-only); pinning again to the same date is a no-op and to
-        another date is refused."""
-        date.fromisoformat(holdout_from)
+        another date is refused. Only a canonical YYYY-MM-DD date is accepted: Python also
+        parses `20260901` and week dates, which every string comparison against the pin
+        would misread (review F44)."""
+        if not isinstance(holdout_from, str) or (
+            date.fromisoformat(holdout_from).isoformat() != holdout_from
+        ):
+            raise ValueError(f"holdout_from must be a canonical YYYY-MM-DD date: {holdout_from!r}")
         if not isinstance(actor, str) or not actor:
             raise ValueError("a pin needs an actor")
         with self.transaction():
@@ -289,8 +296,9 @@ class Registry:
                 "SELECT holdout_from FROM holdout_pins WHERE dataset_id=?", (dataset_id,)
             ).fetchone()
             if row is not None:
-                if row[0] != holdout_from:
-                    raise ValueError(f"dataset holdout is already pinned from {row[0]}")
+                pinned = date.fromisoformat(row[0]).isoformat()
+                if pinned != holdout_from:
+                    raise ValueError(f"dataset holdout is already pinned from {pinned}")
                 return holdout_from
             self.db.execute(
                 "INSERT INTO holdout_pins(dataset_id,holdout_from,actor,at) VALUES (?,?,?,?)",

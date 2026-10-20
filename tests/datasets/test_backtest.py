@@ -221,6 +221,31 @@ def test_splits_reaching_the_pinned_holdout_are_refused(store, config, tmp_path)
         registry.close()
 
 
+@pytest.mark.parametrize("spelling", ["20260901", "2026-W36-2"])
+def test_a_holdout_pin_is_a_canonical_date(store, config, tmp_path, spelling):
+    """Review F44: Python accepts `20260901` and `2026-W35-2` as 2026-09-01. Stored as
+    given, every string comparison against the pin was wrong (a split reaching into the
+    holdout passed) and the pin could not be corrected. Such a pin is refused, and one an
+    older version stored reads back canonical, so the guard holds."""
+    registry, dataset_id, _ = registered(store, config, tmp_path, VALIDATION)
+    try:
+        assert date.fromisoformat(spelling) == date(2026, 9, 1)
+        with pytest.raises(ValueError, match="canonical"):
+            registry.pin_holdout(dataset_id, spelling, "operator")
+        assert registry.holdout_from(dataset_id) is None
+        registry.db.execute(  # a pin written before this check existed
+            "INSERT INTO holdout_pins(dataset_id,holdout_from,actor,at) VALUES (?,?,?,?)",
+            (dataset_id, spelling, "older", "2026-10-01T00:00:00+00:00"),
+        )
+        assert registry.holdout_from(dataset_id) == "2026-09-01"
+        late = SplitDefinition("2026-07-31", "2026-09-15", embargo_days=1)
+        with pytest.raises(ValueError, match="reaches the pinned holdout"):
+            splits.guard(registry, dataset_id, late, pin_if_missing=True)
+        assert registry.pin_holdout(dataset_id, "2026-09-01", "operator") == "2026-09-01"
+    finally:
+        registry.close()
+
+
 def test_cli_backtests_read_the_registry_read_only_except_the_holdout(store, config, tmp_path):
     registry, dataset_id, model_id = registered(store, config, tmp_path, VALIDATION)
     registry.pin_holdout(dataset_id, VALIDATION.first_holdout_date, "test")
