@@ -16,8 +16,9 @@ from _trading_synthetic import (
     open_ledger,
 )
 
-from vader_intelligence.trading.executor import Executor
+from vader_intelligence.trading.executor import ABSENCE_GRACE_SECONDS, Executor
 from vader_intelligence.trading.fees import KALSHI_2026_02_GENERAL as FEES
+from vader_intelligence.trading.gateway import OrderStatus
 from vader_intelligence.trading.ledger import EnvironmentMismatch, Ledger, LedgerError
 from vader_intelligence.trading.risk import Approval, ForecastStatus, Rejection, RiskEngine
 
@@ -93,12 +94,20 @@ def test_unknown_submission_blocks_until_reconciled(tmp_path):
         assert "state_unknown" in blocked.decision.reasons
         assert venue.submit_calls == [coid]
         venue.lookup_error = False
-        report = executor.reconcile(now=at(12))
+        report = executor.reconcile(now=at(12))  # one negative read is never final
+        assert coid in report.reconciled
+        assert report.unresolved == (f"absence_unconfirmed:{coid}",)
+        assert state(ledger, coid).status == "unknown"
+        assert ledger.projection().portfolio.reserved_cash > 0
+        report = executor.reconcile(now=at(11 + ABSENCE_GRACE_SECONDS))  # within the grace
+        assert report.unresolved == (f"absence_unconfirmed:{coid}",)
+        late = 12 + ABSENCE_GRACE_SECONDS
+        report = executor.reconcile(now=at(late))  # second read after it, sweep clean
         assert coid in report.reconciled and report.clean
         lost = state(ledger, coid)
         assert lost.status == "rejected" and lost.reason == "not_found_at_venue"
         assert ledger.projection().portfolio.reserved_cash == 0
-        third = place(executor, make_intent(t=13, rationale="third"), t=13)
+        third = place(executor, make_intent(t=late + 1, rationale="third"), t=late + 1)
         assert isinstance(third.decision, Approval) and third.submit.status == "accepted"
         assert place(executor).existing  # the lost order is never resubmitted
         assert venue.submit_calls == [coid, third.order.client_order_id]
@@ -199,7 +208,8 @@ def _finish(path, venue):
         coid = placement.order.client_order_id if placement.order else None
         if coid and coid in venue.orders and venue.orders[coid]["status"] == "open":
             venue.execute(coid, 28, fee="0.49")
-        assert executor.reconcile(now=at(40)).clean
+        # An order the venue never saw is final only on a second read after the grace.
+        assert executor.reconcile(now=at(30 + ABSENCE_GRACE_SECONDS)).clean
         assert ledger.verify() == []
         projection = ledger.projection()
         return coid, projection.orders[coid].status, projection.portfolio.cash
@@ -240,3 +250,85 @@ def test_crash_between_every_durable_step_of_a_placement(tmp_path):
             assert status == "rejected" and cash == D(1000)
         else:
             assert (status, cash) == clean[1:]
+
+
+class HiddenVenue(FakeVenue):
+    """`lookup` misses the orders in `hidden` (a lagging read); `open_orders` misses those
+    in `unlisted` and raises while `open_error` is set."""
+
+    def __init__(self):
+        super().__init__()
+        self.hidden, self.unlisted, self.open_error = set(), set(), False
+
+    def lookup(self, coid):
+        return None if coid in self.hidden else super().lookup(coid)
+
+    def open_orders(self):
+        if self.open_error:
+            raise ConnectionError("synthetic open-orders failure")
+        return [
+            OrderStatus(c, "open", e["filled"])
+            for c, e in sorted(self.orders.items())
+            if e["status"] == "open" and c not in self.unlisted
+        ]
+
+
+def test_absence_needs_a_second_read_and_a_clean_open_orders_sweep(tmp_path):
+    open_ledger(tmp_path / "l.sqlite3").close()
+    venue = HiddenVenue()
+    venue.fail_submit = "after"  # the venue holds the order; its answer was lost
+    ledger, executor = make(tmp_path / "l.sqlite3", venue)
+    with ledger:
+        coid = place(executor).order.client_order_id
+        venue.hidden.add(coid)
+        unconfirmed = f"absence_unconfirmed:{coid}"
+        assert executor.reconcile(now=at(15)).unresolved == (unconfirmed,)  # sweep lists it
+        assert ledger.events(coid)[-1].kind == "submit_unknown"  # no negative read yet
+        venue.unlisted.add(coid)
+        assert executor.reconcile(now=at(20)).unresolved == (unconfirmed,)  # absent once
+        venue.unlisted.clear()
+        late = 20 + ABSENCE_GRACE_SECONDS
+        assert executor.reconcile(now=at(late)).unresolved == (unconfirmed,)  # sweep lists it
+        venue.open_error = True
+        report = executor.reconcile(now=at(late + 1))  # no sweep: absence stays unconfirmed
+        assert set(report.unresolved) == {unconfirmed, "open_orders_unavailable"}
+        assert state(ledger, coid).status == "unknown"
+        assert [e.payload["status"] for e in ledger.events(coid) if e.kind == "reconciled"] == [
+            "absent"  # the first negative read is recorded once
+        ]
+        venue.open_error = False
+        venue.hidden.clear()
+        assert executor.reconcile(now=at(late + 2)).clean  # found after all
+        assert state(ledger, coid).status == "open"
+        assert ledger.verify() == []
+
+
+def test_an_order_ended_only_by_absence_is_flagged_and_cancelable(tmp_path):
+    open_ledger(tmp_path / "l.sqlite3").close()
+    venue = HiddenVenue()
+    venue.fail_submit = "after"
+    ledger, executor = make(tmp_path / "l.sqlite3", venue)
+    with ledger:
+        coid = place(executor).order.client_order_id
+        venue.hidden.add(coid)
+        venue.unlisted.add(coid)  # a lag on every read
+        executor.reconcile(now=at(20))
+        late = 20 + ABSENCE_GRACE_SECONDS
+        assert executor.reconcile(now=at(late)).clean
+        assert state(ledger, coid).status == "rejected"
+        venue.hidden.clear()
+        venue.unlisted.clear()  # it surfaces, resting
+        report = executor.reconcile(now=at(late + 1))
+        assert f"venue_open_untracked:{coid}" in report.unresolved
+        blocked = place(executor, make_intent(t=late + 2, rationale="next"), t=late + 2)
+        assert "state_unknown" in blocked.decision.reasons
+        venue.execute(coid, 4, fee="0.07")
+        result = executor.cancel(coid, now=at(late + 3))
+        assert result is not None and result.status == "canceled"
+        assert venue.orders[coid]["status"] == "canceled"
+        final = state(ledger, coid)
+        assert final.status == "rejected" and final.remaining == 0  # never reopened
+        assert executor.cancel(coid, now=at(late + 4)) is None
+        assert executor.reconcile(now=at(late + 5)).clean  # its fill is recorded
+        assert state(ledger, coid).filled_quantity == D(4)
+        assert ledger.verify() == []

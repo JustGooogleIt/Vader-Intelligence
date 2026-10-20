@@ -194,3 +194,23 @@ and balance mismatches indefinitely (safe, since buys stop, but never resolved).
   it raises `LookupInconclusive`, so reconciliation reports `lookup_failed:<coid>` and
   the order keeps its reservation. Two recorded exchange ids, or a venue order other
   than the recorded one, raise as duplicate exposure.
+- **One negative read is never final for an unknown submission (F30).** A create that
+  timed out while still in flight, or that REST reads have not caught up with, could be
+  recorded `not_found` (terminal `rejected`, reservation released) on the first
+  reconciliation after the settle window. Now:
+  - `Executor.reconcile` reads `gateway.open_orders()` first. Any venue-open order that
+    is not an active ledger order is `venue_open_untracked:<client id>` (blocking); an
+    unreadable list is `open_orders_unavailable` (blocking).
+  - For an `unknown` order (or `pending_submit` without an outcome) the first `None`
+    from `lookup` is recorded as a `reconciled` event with status `absent`, which the
+    projection ignores: the order stays `unknown`, keeps its reservation and is reported
+    `absence_unconfirmed:<coid>`. It becomes `not_found` only on a `None` at least
+    `absence_grace_seconds` (default 300) after the first, in a reconciliation whose
+    open-orders list was read and does not show it (`absent_since` is recorded).
+  - A `None` for any other active order is not taken as final while the open-orders
+    list shows it or cannot be read.
+  - `Executor.cancel` also sends a cancel for an order whose only terminal record is a
+    reconciled `not_found`; the venue's answer is recorded, but a terminal order is never
+    reopened. Fills of such an order are still recorded against it.
+  - Paper is unchanged: `PaperExchange.lookup` never returns `None` for a submitted
+    order and its open orders are the ledger's.

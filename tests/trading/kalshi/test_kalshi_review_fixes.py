@@ -11,6 +11,7 @@ import pytest
 from _trading_synthetic import TICKER, D, approve, at, make_intent, submit_requested
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
+from vader_intelligence.trading.executor import ABSENCE_GRACE_SECONDS
 from vader_intelligence.trading.gateway import GatewayEvent
 from vader_intelligence.trading.kalshi.auth import Signer
 from vader_intelligence.trading.kalshi.client import (
@@ -99,6 +100,7 @@ def test_strays_keep_startup_unreconciled(tmp_path):
     place(h, 10, tif="gtc")
     h.double.lag = False
     h.executor.reconcile(now=h.at(45))
+    h.executor.reconcile(now=h.at(45 + ABSENCE_GRACE_SECONDS))  # absent twice: not found
     h.double.publish()  # an unexplained resting order appears at the venue
     fresh = h.make_gateway()
     with pytest.raises(ReconciliationMismatch):

@@ -146,7 +146,8 @@ ET, facts §9) and before the canary market's close time.
 
 - Every gate passed; nothing was refused unexpectedly.
 - Exactly one order was created at the venue for the canary `client_order_id`.
-- No `submit_unknown`, no `lookup_failed`, no `positions_unavailable`, no mismatches.
+- No `submit_unknown`, no `lookup_failed`, no `absence_unconfirmed`, no
+  `venue_open_untracked`, no `positions_unavailable`, no mismatches.
 - Cancel confirmed; reconciliation clean before and after; `ledger.verify()` empty.
 - Shutdown report clean; kill switch engaged at the end.
 - No 401 (signature) or clock-skew refusal; no 429 on writes.
@@ -171,7 +172,7 @@ before production.
 | A1 | Clock-skew tolerance undocumented; we refuse to sign *order creation* when an authenticated, uncached `Date` header proves skew > 5 s (cancels and reads are still signed, so a skew never blocks a shutdown) | §1 gap | `auth` | 401s; tighten/loosen the bound |
 | A2 | The request body is not part of the signed text | §1 INF | `auth`, `dryrun` | 401 on every write (fail closed) |
 | A3 | `min_ts` on order and fill listings is Unix seconds on creation (or a later) time | §2.4/§2.5 | `gateway` | lookups/fills miss records: raise or flag mismatches |
-| A4 | REST reads lag by a short delay: "not found" only 30 s after creation; fills re-read with 1 h overlap | §9 | `gateway` | a lagging order is marked not found; caught later as a stray (blocks buys) |
+| A4 | REST reads lag by a short delay: "not found" only 30 s after creation, never for an order the exchange accepted (recorded in the ledger), and for a create whose outcome is unknown only on a second such read at least 300 s after the first while the open-orders listing does not show it; fills re-read with 1 h overlap | §9 | `gateway`, `executor` | a lag beyond that window marks the order not found; when it surfaces it is flagged `venue_open_untracked:<coid>` and as a stray (blocks buys) and `executor.cancel` can cancel it |
 | A5 | Canceled/executed orders older than the historical cutoff are only on `/historical/orders` (not allowlisted): no "not found" for orders older than 3 days | §2.4 V:HIST, INF | `gateway` | manual reconciliation of old orders |
 | A6 | An empty or absent `cursor` ends a listing | INF | `gateway` | pagination error (fails closed) |
 | A7 | Order ids are hexadecimal UUID-like strings (allowlisted path pattern) | UNV | `client` | cancels/get-order refused (fail closed) |
@@ -204,6 +205,15 @@ before production.
 - Resubmission with the same `client_order_id` is available at the gateway (it turns into
   409 -> lookup when the order exists) but the executor never resubmits: an order whose
   outcome is unknown is resolved only by reconciliation.
+- A create whose outcome is unknown and which the venue does not show stays `unknown`
+  (`absence_unconfirmed:<coid>`, buys blocked, reservation held) for at least 300 s
+  (`executor.ABSENCE_GRACE_SECONDS`) after the first negative read: it becomes
+  `not_found` only on a later negative read while the open-orders listing can be read
+  and does not show it. If such an order surfaces afterwards, reconciliation reports
+  `venue_open_untracked:<coid>` (and the stray check `positions_unavailable`) until it is
+  canceled: `executor.cancel(coid, now=...)` sends the cancel although the ledger calls
+  the order terminal (or run `shutdown`). Its fills are still recorded against it, so
+  holdings and cash stay exact; the order is never reopened.
 - Fee schedules in `trading/fees.py` remain unverified (facts §7); the live adapter uses
   the exchange's reported fees for fills, while risk sizing still uses the schedule.
 - The daily notional cap counts gross notional (quantity x limit) of all orders created

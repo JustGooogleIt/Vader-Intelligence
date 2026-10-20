@@ -6,7 +6,7 @@ that block risk-increasing orders."""
 import pytest
 from _trading_synthetic import TICKER, D, approve, at, book, make_intent, market
 
-from vader_intelligence.trading.executor import FILLS_CURSOR
+from vader_intelligence.trading.executor import ABSENCE_GRACE_SECONDS, FILLS_CURSOR
 from vader_intelligence.trading.kalshi.gateway import (
     ForeignActivity,
     LookupInconclusive,
@@ -265,11 +265,15 @@ def test_reads_back_off_and_create_is_never_retried(tmp_path):
     blocked = place(h, 12, rationale="second")  # reconcile first: lookup not definitive yet
     assert isinstance(blocked.decision, Rejection) and "state_unknown" in blocked.decision.reasons
     assert len(posts(h)) == 1  # nothing new was sent, nothing was retried
-    report = h.executor.reconcile(now=h.at(60))  # past the settle window: definitively absent
+    report = h.executor.reconcile(now=h.at(60))  # past the settle window: absent once
+    assert report.unresolved == (f"absence_unconfirmed:{coid}",)
+    assert state(h, coid).status == "unknown"
+    late = 60 + ABSENCE_GRACE_SECONDS
+    report = h.executor.reconcile(now=h.at(late))  # absent again after the grace: final
     assert report.clean and state(h, coid).status == "rejected"
     assert h.double.orders == {}
     h.double.inject("POST", CREATE, 503)
-    third = place(h, 70, rationale="third")
+    third = place(h, late + 10, rationale="third")
     assert third.submit.status == "unknown" and len(posts(h)) == 2
 
 
@@ -333,12 +337,15 @@ def test_lagging_order_marked_absent_is_caught_as_a_stray(tmp_path):
     h.double.inject("POST", CREATE, "timeout_after")
     coid = place(h, 10, tif="gtc").order.client_order_id
     h.double.lag = False
-    assert h.executor.reconcile(now=h.at(45)).clean  # REST still lags: venue says absent
+    assert not h.executor.reconcile(now=h.at(45)).clean  # absent once: not final
+    late = 45 + ABSENCE_GRACE_SECONDS
+    assert h.executor.reconcile(now=h.at(late)).clean  # REST lags beyond the grace
     assert state(h, coid).status == "rejected"
     h.double.publish()  # the order surfaces: an unexplained resting order
-    report = h.executor.reconcile(now=h.at(50))
+    report = h.executor.reconcile(now=h.at(late + 5))
     assert "positions_unavailable" in report.unresolved
-    blocked = place(h, 52, rationale="after stray")
+    assert f"venue_open_untracked:{coid}" in report.unresolved
+    blocked = place(h, late + 7, rationale="after stray")
     assert "state_unknown" in blocked.decision.reasons and len(posts(h)) == 1
 
 
