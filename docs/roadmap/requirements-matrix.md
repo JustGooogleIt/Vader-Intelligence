@@ -8,14 +8,14 @@ recorded output), **simulated** (only against synthetic data or doubles), **unte
 | # | Requirement | PR | Status | Evidence / limitation |
 |---|---|---|---|---|
 | A1 | Contract-2 versioning: explicit record contracts, legacy archives open and classify | #17 | implemented, demonstrated on archives written by old code | D-001; `tests/forecast_storage/test_contract_versioning.py` |
-| A2 | Postseason start-time eligibility | #18 | implemented; demonstrated on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts on 2026-10-19) | D-002; forward decision at C 23:08Z 2026-10-19 recorded (constant 0.5; midpoint abstained, D-016); settlement evaluation after 05:00Z 2026-10-20 |
+| A2 | Postseason start-time eligibility | #18 | implemented; demonstrated on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts on 2026-10-19) | D-002; forward decision at C 23:08Z 2026-10-19 recorded (constant 0.5; midpoint abstained, D-016), settled y = 0 and evaluated (constant scored, published timely) |
 | A3 | Schedule revisions | #19 | implemented | D-003; post-C changes unscored |
 | A4 | Historical acquisition (H lineage, never forward) | #20 | implemented, demonstrated (2025 + 2026 seasons, 2026 execution windows) | 2025 identities are date-only (`start_corroborated = false`) |
 | A5 | NBA/NFL if feasible | — | **blocked** | D-005: no authorized official free schedule source |
 | B1 | Point-in-time feature definitions | #21 | implemented | leakage tests; forward-capable `fs-market-v1` |
 | B2 | Datasets, manifests, chronological embargoed splits | #21 | implemented, demonstrated (2026 dataset, 2,012 dev+val rows + holdout) | history + collection sources |
 | B3 | Baselines, regularized logistic, nonlinear tabular, calibration | #21 | implemented, demonstrated on real data | no model beats market mid on validation (selection-biased) |
-| B4 | Registry, deterministic inference, compatibility checks | #21, #22 | implemented; forward run with registered models on 2026-10-19: one contract-4 decision at C (0.461, 0.438, 0.413 vs market mid 0.415), settlement evaluation after 05:15Z 2026-10-20 | JSON artifacts, numpy inference, abstention on incompatibility (D-004) |
+| B4 | Registry, deterministic inference, compatibility checks | #21, #22 | implemented; forward run with registered models on 2026-10-19: one contract-4 decision at C (0.461, 0.438, 0.413 vs market mid 0.415), settled y = 0 and scored by evaluation contract 2 (Brier 0.2129, 0.1919, 0.1709) | JSON artifacts, numpy inference, abstention on incompatibility (D-004) |
 | C | Bounded symbolic regression | #23 | implemented, demonstrated on real data | best expression on 2026 data = `pair_mid_c` (the market) |
 | D | Credible paper execution | #24, #26 | implemented; simulated (synthetic); demonstrated as a simulation on real validation candles: 2026 (pods and coordinator agree exactly) and two seasons (2,027 games) | candles have no depth (D-010), so fills happen only under assumed depth; P&L is negative or mixed and every 95% interval with more than one trade contains zero; one-tick slippage means no fill with take-at-ask limits; run time quadratic, 5× faster after #29 |
 | E | Risk management and fractional Kelly | #24 | implemented, simulated | hand-verified Kelly cases; authoritative risk engine (D-006) |

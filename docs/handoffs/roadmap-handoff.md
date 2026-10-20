@@ -35,6 +35,7 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #34 | `feat/live-settlements` | `d1ced5f291acc23509af108ee1af16907b71c808` | F live settlement recording: venue settlements recorded only after a clean fills reconciliation and an exact match with the ledger (every venue-reported fill, counts, payout, no fee); operator resolution through the ledger | 1344 passed |
 | #35 | `fix/activation-key-material` | `5b7397ef37edaa42c102039eee07b3895e87e27c` | repair of the #25 activation gate: `no_key_material` also refuses a key pasted as base64 or hex (also merged, misaligned, commented out, in an array, truncated or damaged) or as an OpenSSH body; runbook note: canary risk limits within the notional caps | 1361 passed |
 | #36 | `fix/book-selection-witnessed` | `6a2bc506e98b97a07ca7c3c83e4585ab9530eaba` | repair (D-016): opt-in `selection_version = "selection-v2"` selects the midpoint's book as spec §4 says (latest received **and** witnessed by C); `selection-v1` default and stored decisions unchanged; merges #35's hardening | 1379 passed |
+| #37 | `fix/review-findings` | `7a61f3f670893c36961bf6ff19a9dad3dbd50a18` | repairs for the independent (Grok) review findings on #10–#28, one commit per finding (`docs/roadmap/review-findings.md`); no new capability | 1461 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -48,10 +49,10 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
 | Status | Items |
 |---|---|
 | **Demonstrated on real data** | rule v2 on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts, 2026-10-19); historical acquisition (2025 + 2026, with 2026 execution windows); datasets; training of logistic, gradient boosting and symbolic models; research pods and the protected evaluator on 2026 and on 2025→2026; the pod autopilot (heuristic planner) on the 2026 snapshot; candle vs collected book at C; paper backtest (simulated execution) on real 2026 validation candles through pods and the coordinator, which agree exactly, and on the two-season validation set |
-| **Demonstrated on synthetic data (asserted in the suite)** | full chain proposed → validated → shadow_tested → paper_approved with hand-checked numbers; one-time holdout in both ledgers; dry-run order request; recovery from worker and coordinator SIGKILL, backtest crashes, live create timeout |
+| **Demonstrated on synthetic data (asserted in the suite)** | full chain proposed → validated → shadow_tested → paper_approved with hand-checked numbers (through #36; since #37, F40, paper approval needs the coordinator's archive-built, depth-free backtest, which is tested on the synthetic history archive, and the E2E demo stops at shadow_tested); one-time holdout in both ledgers; dry-run order request; recovery from worker and coordinator SIGKILL, backtest crashes, live create timeout |
 | **Implemented, simulated only** | paper simulator, risk engine, Kelly; Kalshi live adapter against a deterministic exchange double; dry-run gateway |
 | **Demonstrated live (forward, one game)** | rule-v2 and contract-4 decisions at C = 23:08Z 2026-10-19 for `KXMLBGAME-26OCT192008CLETB`, publication allowed, no input witnessed after C; the three pod models as registered forecasters (0.461, 0.438, 0.413 vs market mid 0.415); the live-adapter dry run on that real decision (one signed, unsent request; refused by the 1.00 cap). The midpoint abstained in both shadows: selection-v1 departs from spec §4 (D-016), and selection-v2 (#36), read-only on the same archives, gives 0.4150. `docs/evidence/live-forward-20261019.md` |
-| **Pending (bounded jobs running)** | settlement and contract-2 evaluation of those decisions (≈05:00–05:20Z 2026-10-20) |
+| **Demonstrated live: settlement and evaluation (one game)** | The game settled y = 0 (TB won), and both evaluations ran. The decision was published timely and the constant scored. Model Brier scores: symbolic 0.1709, gradient boosting 0.1919, logistic 0.2129, constant 0.25; there is no paired midpoint (D-016). One game is not evidence of skill |
 | **Untested** | the live canary (`docs/live-canary-runbook.md`, never executed); exchange acceptance of any request; fee schedules against real fills |
 | **Blocked** | A5 NBA/NFL (D-005: no authorized official free schedule source) |
 | **Not done by decision** | one-time holdout of a final candidate (D-009: no candidate validated; the 2026 holdout is untouched, and since #31 it is enforced: the real datasets are pinned at 2026-09-02, D-014) |
@@ -209,6 +210,7 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #34 | 1344 passed, 2 deselected (23 new tests) at `d1ced5f`; ruff clean; the synthetic e2e and recovery demos complete (at `9cca473`; no packaging or schema change) |
 | #35 | 1361 passed, 2 deselected (17 new tests) at `5b7397e`; ruff clean. History: at `7686513`, 1352 passed, but the wrapped-body form failed about one run in three; `e9f4b89` fixed merged and misaligned runs (1355 passed). An independent adversarial review then found that a body pasted as TOML comments passed every gate; `5b7397e` fixes that, plus arrays, truncated, damaged and OpenSSH bodies, and slow RSA validation. On 8 keys per form, the earlier check misses each new form every time and the new one finds every one. No new false positives (0 of 3000 random runs); the worst 64 KiB input takes 0.05 s |
 | #36 | 1379 passed, 2 deselected at `6a2bc50`, which merges #35's hardening (1373 at `45ea196`, 18 new tests); ops 44 passed; ruff clean. A mutant that makes v2 behave like v1 fails five tests. An independent pre-review found no correctness defect: 0 mismatches against a §4 oracle over 900 cutoffs, and v1 identical to the old code. Its three surviving mutants are now killed. Read-only on the real 2026-10-19 archives, v1 reproduces the recorded abstention and v2 gives midpoint 0.4150 |
+| #37 | 1461 passed, 2 deselected (82 new tests) at `7a61f3f`; ops 46 passed; ruff clean. Plain `pytest -q` collects the same 1463 tests as `python -m pytest` (F7). Each regression test failed on the unfixed code first |
 
 ## 6. Data and model limitations
 
@@ -288,7 +290,21 @@ post-only order, cancel, reconcile, shutdown (never executed).
 2. Forward evidence: keep forward shadows with registered forecasters running through the
    rest of the postseason and next season; forward data is the only unbiased test.
    New shadows should set `selection_version = "selection-v2"` (#36, D-016), so forward
-   decisions carry a market-midpoint score.
+   decisions carry a market-midpoint score. Recipe for one bounded game, modelled on
+   `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models`:
+   1. Make a new directory.
+   2. Copy `collector.toml` (rule v1 and v2) and the `registry/` from that directory.
+   3. Write `research.toml` with a new `dataset`, the same three `forecasters` and
+      `selection_version = "selection-v2"`.
+   4. Initialize and migrate the archive (`docs/forward-shadow.md`, "Start"); the
+      registered forecasters need record contract 4.
+   5. Run `ops/manage.py configure` with `--test-label`, `--shadow-research-config`,
+      `--shadow-model-registry` and `--forbid` for each production path. Run it from a
+      checkout at the #36 head or later.
+   6. Copy `driver.sh` and change only `D`, `W`, the first slot (about 72 minutes before
+      C) and the evaluation date and time.
+
+   No launchd and no paid call; public GET endpoints only.
 3. Features beyond the market: the market-only feature set cannot beat its own midpoint by
    construction; team/pitcher/lineup features with forward availability are the next
    research question (the `fs-full-v1` team features exist but are research-only).

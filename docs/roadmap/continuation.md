@@ -41,6 +41,7 @@ always names the exact next action.
 | #34 | `feat/live-settlements` | F live settlement recording: venue settlements recorded only on an exact match with the ledger |
 | #35 | `fix/activation-key-material` | repair: the activation gate refuses encoded key material (also merged or misaligned runs); runbook note on canary risk limits within the notional caps |
 | #36 | `fix/book-selection-witnessed` | repair (D-016): opt-in `selection-v2` selects the midpoint's book as spec §4 says; default unchanged |
+| #37 | `fix/review-findings` | repairs for the independent review findings on #10–#28 (`review-findings.md`) |
 
 Full SHAs are in the final handoff (`docs/handoffs/roadmap-handoff.md`).
 

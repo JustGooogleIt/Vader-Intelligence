@@ -27,6 +27,7 @@ merged, deployed or activated; no credentials exist in this system.
 | #34 | `feat/live-settlements` | F live settlement recording (venue settlements recorded only on an exact match with the ledger) | payout and counts identity | allowlist, cursor, fail-closed reasons |
 | #35 | `fix/activation-key-material` | repair of the #25 `no_key_material` gate (encoded key material, merged and misaligned runs); runbook note on canary risk limits | — | false positives on hashes and paths (the DER scan over every alignment); missed encodings; cost on a large file (64 KiB limit); whether the runbook's limit guidance matches `risk.py` |
 | #36 | `fix/book-selection-witnessed` | repair: opt-in `selection-v2` selects the midpoint's book as spec §4 says (received and witnessed by C; D-016); `selection-v1` default unchanged | spec conformance, cohort and replay versioning | default hash, unknown versions refused |
+| #37 | `fix/review-findings` | repairs for the reviewer's F2–F38 findings (one commit each) | F3/F5 contract narrowing (legacy archives unchanged), F10 lineage, F30/F32 live reconcile | F7 pytest path, F15/F16 ops |
 
 ## Codex Prime — evidence meaning, versioning, leakage, scoring, money correctness
 

@@ -6,6 +6,10 @@ default and keep alternatives behind explicit configuration.
 
 ## D-001 Record contract 2 was amended in place; introduce contract 3 (2026-10-18)
 
+**Accepted by the owner on 2026-10-19** (comment on #17, 13:25 PDT) as the resolution of
+Q-M0-1. This settles the versioning decision only: the reviewer's open findings, F3 and
+F17 among them, still block merge (`docs/roadmap/review-findings.md`).
+
 Context. PR #12 (`27a3473`) changed the validity rules of contract-2 receipts (writer
 must be a `forecast-witness` run whose provenance names namespace and session), the
 derivation of typed-reference `source_mode` for two-phase runs (persisted/inferred

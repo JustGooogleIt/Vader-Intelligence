@@ -120,7 +120,33 @@ What it does not show: acceptance, fills or profit. The risk limits were
 `simulation_defaults(cash)`, not canary limits. The runbook now asks for canary limits
 within the caps (#35, `67b260a`).
 
-## Settlement and evaluation
+## Settlement and evaluation (2026-10-20)
 
-Pending: the bounded `shadow-evaluate` runs at about 05:15Z on 2026-10-20. Its results
-will be added here.
+Each driver ran one bounded `shadow-evaluate`: rule v2 at 05:00Z and the models at
+05:15Z. Each one refreshed settlement evidence and then ran `research run --view
+forward-shadow` over 2026-10-20.
+
+- **Settlement step:** `partial` in both shadows. The 20-target limit truncated the
+  selection; the archive also holds other markets. The game was observed settled:
+  outcome `binary_scorable`, **y = 0** for the CLE contract, so Tampa Bay won.
+- **Evaluation:** `inconclusive` in both, which is the expected status when the paired
+  comparison has no rows.
+  - One decision (U = E = K = 1), published timely, with the constant scored.
+  - The midpoint abstained (D-016), so there is no paired midpoint score (n = 0).
+  - The driver exit code 1 comes from the partial settlement step.
+
+| Forecaster (P of CLE) | Brier | Log loss | Source |
+|---|---|---|---|
+| constant 0.5 | 0.2500 | 0.6931 | evaluator, both shadows |
+| symbolic 0.413415 | 0.1709 | 0.5334 | evaluator, model shadow |
+| gradient boosting 0.438094 | 0.1919 | 0.5764 | evaluator, model shadow |
+| logistic 0.461393 | 0.2129 | 0.6188 | evaluator, model shadow |
+| midpoint | — | — | abstained under selection-v1 |
+| *midpoint 0.4150 under selection-v2* | *0.1722* | *0.5361* | *derived here from the read-only selection-v2 result (D-016); not an evaluator score* |
+
+This is **one game**. It says nothing about any model's skill. All three models were
+rejected on validation, and the market mid (0.415, by the derived selection-v2 figure)
+is essentially tied with the best of them here.
+
+The logistic model's dry-run order (8 YES CLE at 0.42) would have lost its stake had it
+been placed and filled. It was never sent, and a fill was never simulated.
