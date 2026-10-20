@@ -384,3 +384,17 @@ def test_mapping_policy_two_keeps_links_that_name_the_rule_date(fixture_data, ga
     market, event, schedule = mapping_inputs(fixture_data, **game_changes)
     result = resolve(market, event, schedule, reviewed_terms=True, rules=V2)
     assert result["status"] == "mapped" and result["game_id"] == 824948
+
+
+@pytest.mark.parametrize(
+    "game_date", ["absent", None, "TBD", "2026-09-27T19:05:00", "2026-09-27", 1790535900]
+)
+def test_mapping_policy_two_requires_an_offset_aware_official_start(fixture_data, game_date):
+    """Review F19: the provider gameDate must be an offset-aware ISO instant; a missing,
+    offset-less or non-ISO start quarantines instead of mapping or raising."""
+    market, event, schedule = mapping_inputs(fixture_data, gameDate=game_date)
+    if game_date == "absent":
+        del schedule["dates"][0]["games"][0]["gameDate"]
+    result = resolve(market, event, schedule, reviewed_terms=True, rules=V2)
+    assert result["status"] == "quarantined" and result["game_id"] is None
+    assert result["reason"] == "start_time_unknown"

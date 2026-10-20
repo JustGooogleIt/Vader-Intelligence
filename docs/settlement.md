@@ -136,7 +136,9 @@ A game satisfies only the date it was originally scheduled for: when its resched
 link (`rescheduledFromDate`, or the America/New_York date of `rescheduledFrom`) names
 another date it is quarantined `rescheduled_from_other_date` for its new official
 date, so one game never backs two rule dates. A malformed or self-contradictory link
-is quarantined `unverified_schedule_identity`.
+is quarantined `unverified_schedule_identity`. The official `gameDate` must be an
+offset-aware ISO instant; a missing, offset-less or non-ISO start is quarantined
+`start_time_unknown`, as rule v2 eligibility refuses it.
 
 MLB may repeat game IDs in a multi-date response. Identical normalized entries are
 one observation with the full response retained. Conflicting entries are retained
