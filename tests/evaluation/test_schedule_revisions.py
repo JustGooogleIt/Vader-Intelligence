@@ -30,9 +30,11 @@ from test_materialization import (
 from test_rule_v2_pipeline import PROTO as V2_PROTO
 from test_rule_v2_pipeline import dated_settlement, run_slice
 
+from vader_intelligence import mapping as mapping_module
 from vader_intelligence.config import Config
 from vader_intelligence.evaluation import outcomes
 from vader_intelligence.evaluation.service import evaluate
+from vader_intelligence.settlement.models import instant
 from vader_intelligence.storage import Store
 
 
@@ -110,15 +112,25 @@ def test_outcome_join_without_a_decided_start_keeps_the_old_disposition(store, c
 def test_an_unreadable_mapped_start_is_a_disposition_not_an_exception(
     tmp_path, monkeypatch, game_date
 ):
-    """Mapping policy 2 stores the provider's gameDate verbatim and, on the
-    rescheduledFromDate path, never parses it (review F19): a start the evaluator cannot
-    read as an aware instant cannot confirm the horizon, so it is reported, not raised."""
+    """Mapping policy 2 used to store the provider's gameDate verbatim and, on the
+    rescheduledFromDate path, never parse it (review F19). It now quarantines such a start
+    (`start_time_unknown`), but archives settled by the older code hold these mappings:
+    a start the evaluator cannot read as an aware instant cannot confirm the horizon, so
+    it is reported, not raised."""
     config = Config(database=str(tmp_path / "v2.sqlite3"), min_free_bytes=1, eligibility_rules=V2)
     store = Store(config.database, min_free_bytes=1)
     try:
         run_slice(store, config)  # rule-v2 cohort: eligible decision for 19:05Z, published
         evidence = postponed(dated_settlement())
         evidence["schedule"]["dates"][0]["games"][0]["gameDate"] = game_date
+
+        def lenient(value):  # the older policy 2 never parsed this start
+            try:
+                return instant(value)
+            except (TypeError, ValueError):
+                return None
+
+        monkeypatch.setattr(mapping_module, "instant", lenient)
         settle(store, config, monkeypatch, evidence)
         mapping = json.loads(
             store.db.execute(
