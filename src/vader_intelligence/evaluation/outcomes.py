@@ -10,7 +10,11 @@ response invalidates binary eligibility rather than resurrecting an older label.
 Binary labels come solely from `evaluation.settlement.finalized_binary` on the
 selected contract's own Kalshi record; the MLB result is an independent annotation
 and never selects or replaces a label. The settlement mapping, when present, must
-confirm the frozen game identity for a binary label to score.
+confirm the frozen game identity for a binary label to score. It is the mapping of the
+selected attempt's own run; only when that run's mapping is incomplete (its schedule
+fetch failed or lies beyond the view) does the most recent earlier run with complete
+mapping evidence stand in, and only if it was mapped from a schedule showing the game
+final with the same finalized Kalshi result (review F50).
 
 Attempts follow the evaluation's lineage: a forward-shadow or reconstruction evaluation
 sees only attempts of settlement runs whose durable source lineage is live, so synthetic
@@ -94,6 +98,39 @@ def _target_mapping(db, mapping_id, anchor_fetch_id, outcomes_as_of, source_ceil
     ).fetchone()
 
 
+def _final_mapping(db, earlier, *, ticker, label, mode, outcomes_as_of, source_ceiling):
+    """The mapping of the most recent earlier settlement run whose mapping evidence is
+    complete inside the view, when it cannot carry a stale start (review F50): mapped from
+    a schedule showing that game final (a mapping made after the game was played), in a
+    run whose own Kalshi record is the same finalized binary result. Any other complete
+    mapping ends the search, so older evidence never skips newer contrary evidence. Runs
+    without a mapping in view (a failed fetch, evidence beyond the ceiling) are passed
+    over; runs of another lineage do not exist for a live evaluation (F10)."""
+    for fetch_id, _seq, state, _at, mapping_id, anchor, run_id in earlier:
+        if state != "ok" or (mode != "synthetic" and run_source_mode(db, run_id) != "live"):
+            continue
+        mapping = _target_mapping(db, mapping_id, anchor, outcomes_as_of, source_ceiling)
+        if mapping is None:
+            continue
+        data = json.loads(mapping[2])
+        if data.get("status") != "mapped":
+            return None
+        rows = db.execute(
+            "SELECT o.kind, v.data_json FROM settlement_observations o"
+            " JOIN settlement_versions v ON v.id=o.version_id"
+            " WHERE (o.kind='mlb' AND o.entity_key=? AND o.fetch_id=?)"
+            " OR (o.kind='kalshi' AND o.entity_key=? AND o.fetch_id=?)"
+            " ORDER BY o.parser_version",
+            (str(data.get("game_id")), anchor, ticker, fetch_id),
+        ).fetchall()
+        seen = {kind: json.loads(value) for kind, value in rows}  # highest parser wins
+        final = (seen.get("mlb") or {}).get("lifecycle") == "final"
+        if not final or finalized_binary(seen.get("kalshi")).label != label:
+            return None
+        return mapping
+    return None
+
+
 def join(
     db, *, ticker, game_id, yes_team_id, outcomes_as_of, source_ceiling, mode, scheduled_start=None
 ):
@@ -170,6 +207,19 @@ def join(
     # still show a start the game no longer has (a postponement whose schedule fetch
     # failed or lies beyond the source ceiling).
     mapping = _target_mapping(db, target_mapping_id, mapping_anchor, outcomes_as_of, source_ceiling)
+    if mapping is None and eligibility.eligible:
+        # Only exception (F50): when that run's mapping is incomplete, a mapping made
+        # after the game was played (schedule final, same finalized result) cannot be
+        # stale, so a provider outage does not silently drop a proven game.
+        mapping = _final_mapping(
+            db,
+            attempts[attempts.index(attempt) + 1 :],
+            ticker=ticker,
+            label=eligibility.label,
+            mode=mode,
+            outcomes_as_of=outcomes_as_of,
+            source_ceiling=source_ceiling,
+        )
     mapping_id = mapping_data = None
     if mapping is not None:
         mapping_id, _, mapping_json = mapping
