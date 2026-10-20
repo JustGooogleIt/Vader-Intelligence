@@ -400,6 +400,43 @@ def test_summary_insert_failure_fails_the_run_without_books(
     assert research.db.execute("SELECT COUNT(*) FROM fetches").fetchone()[0] == 7
 
 
+def test_summary_free_space_guard_fails_the_run_without_books(
+    research, config, fixture_data, monkeypatch
+):
+    # F39: Store.check_space raises RuntimeError; at the summary commit it is a
+    # storage failure like the others: no summary, a failed run, no book request.
+    handler, calls, _ = handler_for(fixture_data)
+    appended, armed = [], []
+    real_check_space = research.check_space
+    real_append = research.append_forecast
+
+    def check_space():
+        # The guard trips once, on the summary insert's own check.
+        if armed:
+            armed.clear()
+            raise RuntimeError("insufficient disk space; collection stopped without deleting data")
+        real_check_space()
+
+    def append_forecast(table, payload):
+        appended.append(table)
+        armed.append(table)
+        return real_append(table, payload)
+
+    monkeypatch.setattr(research, "check_space", check_space)
+    monkeypatch.setattr(research, "append_forecast", append_forecast)
+    result = Collector(research, reader_for(research, config, handler), config).run()
+    assert appended == ["discovery_passes"]
+    assert result["status"] == "failed" and result["discovery_complete"] is False
+    assert result["discovery_pass_id"] is None and result["discovery_digest"] is None
+    assert result["discovery_reasons"] == ["discovery_summary_not_committed"]
+    assert any(
+        "discovery_summary_not_committed" in e and "insufficient disk space" in e
+        for e in result["errors"]
+    )
+    assert passes(research) == [] and book_calls(calls) == []
+    assert [r[0] for r in research.db.execute("SELECT status FROM runs")] == ["failed"]
+
+
 # ----------------------------------------------------------------- D and E
 
 

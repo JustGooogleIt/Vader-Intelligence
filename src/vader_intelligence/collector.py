@@ -410,7 +410,15 @@ class Collector:
         completed_at = timestamp(self.reader.now())
         try:
             summary, pass_id, pass_digest = commit_summary(completed_at)
-        except (ValueError, TypeError, KeyError, OSError, TimeoutError, sqlite3.Error) as exc:
+        except (
+            ValueError,
+            TypeError,
+            KeyError,
+            OSError,
+            TimeoutError,
+            RuntimeError,  # Store.check_space: the free-space guard (plan §3.3 "disk")
+            sqlite3.Error,
+        ) as exc:
             errors.append(f"discovery_summary_not_committed: {str(exc)[:300]}")
             return finish("failed")
         errors.extend(f"{f['stage']}:{f['key']}: {f['error']}" for f in outcome.failures)
