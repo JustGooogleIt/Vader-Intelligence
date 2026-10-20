@@ -290,3 +290,97 @@ def test_mapping_policy_two_requires_ticker_corroboration(fixture_data):
     event = dict(event, event_ticker=market["event_ticker"])
     result = resolve(market, event, schedule, reviewed_terms=True, rules=V2)
     assert result["status"] == "quarantined" and result["reason"] == "ticker_identity_mismatch"
+
+
+def on_date(market, event, rule_day, ticker_code):
+    """The contract rewritten to another original date: rule wording and event ticker."""
+    ticker = f"KXMLBGAME-{ticker_code}HOUATH"
+    market = dict(
+        market,
+        rules_primary=market["rules_primary"].replace("Sep 27, 2026", rule_day),
+        event_ticker=ticker,
+    )
+    return market, dict(event, event_ticker=ticker)
+
+
+def test_mapping_policy_two_never_maps_a_game_moved_onto_the_rule_date(fixture_data):
+    """Review F18: the only HOU@ATH entry on Sep 27 was moved there from Sep 26. It backs
+    the Sep 26 contract (the provider link names that date) and never the Sep 27 one, so
+    one gamePk cannot satisfy two rule dates."""
+    market, event, schedule = mapping_inputs(
+        fixture_data,
+        gamePk=900010,
+        gameDate="2026-09-27T20:10:00Z",
+        rescheduledFromDate="2026-09-26",
+    )
+    moved_onto = resolve(market, event, schedule, reviewed_terms=True, rules=V2)
+    assert moved_onto["status"] == "quarantined" and moved_onto["game_id"] is None
+    assert moved_onto["reason"] == "rescheduled_from_other_date"
+    assert moved_onto["candidate_ids"] == [900010]
+    earlier = on_date(market, event, "Sep 26, 2026", "26SEP261905")
+    linked = resolve(*earlier, schedule, reviewed_terms=True, rules=V2)
+    assert linked["status"] == "mapped" and linked["game_id"] == 900010
+    assert linked["reason"] == "evidenced_schedule_change"
+
+
+@pytest.mark.parametrize(
+    "game_changes,reason",
+    [
+        # A timestamp-only link: 02:05Z on Sep 27 is 22:05 ET on Sep 26 (Kalshi's dates
+        # are Eastern), so it names Sep 26, not the UTC date.
+        ({"rescheduledFrom": "2026-09-27T02:05:00Z"}, "rescheduled_from_other_date"),
+        (
+            {"rescheduledFrom": "2026-09-26T23:05:00Z", "rescheduledFromDate": "2026-09-26"},
+            "rescheduled_from_other_date",
+        ),
+        # Malformed or self-contradictory links prove nothing.
+        ({"rescheduledFromDate": "Sep 26"}, "unverified_schedule_identity"),
+        ({"rescheduledFrom": "2026-09-26"}, "unverified_schedule_identity"),
+        (
+            {"rescheduledFrom": "2026-09-25T23:05:00Z", "rescheduledFromDate": "2026-09-27"},
+            "unverified_schedule_identity",
+        ),
+    ],
+)
+def test_mapping_policy_two_refuses_reschedule_links_naming_another_date(
+    fixture_data, game_changes, reason
+):
+    market, event, schedule = mapping_inputs(fixture_data, **game_changes)
+    result = resolve(market, event, schedule, reviewed_terms=True, rules=V2)
+    assert result["status"] == "quarantined" and result["reason"] == reason
+
+
+def test_mapping_policy_two_refuses_a_postponement_link_contradicted_by_its_timestamp(
+    fixture_data,
+):
+    market, event, schedule = mapping_inputs(
+        fixture_data,
+        officialDate="2026-09-28",
+        gameDate="2026-09-28T17:05:00Z",
+        rescheduledFromDate="2026-09-27",
+        rescheduledFrom="2026-09-26T19:05:00Z",
+    )
+    result = resolve(market, event, schedule, reviewed_terms=True, rules=V2)
+    assert result["status"] == "quarantined"
+    assert result["reason"] == "unverified_schedule_identity"
+
+
+@pytest.mark.parametrize(
+    "game_changes",
+    [
+        # Links that name the rule date itself (a same-day move, or a consistent
+        # postponement record) keep mapping exactly as before.
+        {"rescheduledFromDate": "2026-09-27"},
+        {"rescheduledFrom": "2026-09-28T01:05:00Z"},  # 21:05 ET on Sep 27
+        {
+            "officialDate": "2026-09-28",
+            "gameDate": "2026-09-28T17:05:00Z",
+            "rescheduledFromDate": "2026-09-27",
+            "rescheduledFrom": "2026-09-27T19:05:00Z",
+        },
+    ],
+)
+def test_mapping_policy_two_keeps_links_that_name_the_rule_date(fixture_data, game_changes):
+    market, event, schedule = mapping_inputs(fixture_data, **game_changes)
+    result = resolve(market, event, schedule, reviewed_terms=True, rules=V2)
+    assert result["status"] == "mapped" and result["game_id"] == 824948

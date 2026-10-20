@@ -1,7 +1,7 @@
 """Conservative full-game mapping v1; no fuzzy aliases or inferred fair prices."""
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from ..config import DEFAULT_RULES
@@ -207,9 +207,32 @@ def resolve(market, event, schedule, *, reviewed_terms, prior=None, rules=DEFAUL
     return result
 
 
+def _link_day(game):
+    """The original official date a provider reschedule link names, or None without one.
+
+    `rescheduledFromDate` is that date; a `rescheduledFrom` instant names its
+    America/New_York date (Kalshi's rule dates and ticker times are Eastern). Both
+    present must agree. A malformed or self-contradictory link raises ValueError."""
+    named = set()
+    linked_date = game.get("rescheduledFromDate")
+    if linked_date is not None:
+        if not isinstance(linked_date, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", linked_date):
+            raise ValueError("malformed rescheduledFromDate")
+        named.add(date.fromisoformat(linked_date).isoformat())
+    if game.get("rescheduledFrom") is not None:
+        moment = instant(game["rescheduledFrom"])
+        named.add(moment.astimezone(ZoneInfo("America/New_York")).date().isoformat())
+    if len(named) > 1:
+        raise ValueError("contradictory reschedule link")
+    return next(iter(named), None)
+
+
 def _resolve_v2(schedule, identity, result):
     """Mapping policy 2: exactly one official game between the two teams on the original
     official date (or provider-linked to it by rescheduledFromDate), away/home as stated.
+    A game satisfies only the date it was originally scheduled for: one whose reschedule
+    link names another date never satisfies its new official date, so one gamePk cannot
+    back two rule dates (review F18); a malformed or contradictory link proves nothing.
     No prior-mapping reuse; doubleheaders and conflicting entries are quarantined."""
     result.update(identity, mapping_policy=2)
 
@@ -242,6 +265,12 @@ def _resolve_v2(schedule, identity, result):
             else "unverified_schedule_identity"
         )
     game = candidates[0]
+    try:
+        linked = _link_day(game)
+    except ValueError:
+        return reject("unverified_schedule_identity")
+    if linked not in (None, day):
+        return reject("rescheduled_from_other_date")
     if game.get("reverseHomeAwayStatus") is True:
         return reject("home_away_reversed")
     if game.get("gameType") not in {"R", "F", "D", "L", "W"}:
