@@ -1,8 +1,8 @@
 """Live-adapter dry run from forward-shadow decisions (roadmap H).
 
-For each contract-4 decision in an evidence archive that carries a probability from one
-registered forecaster, the declarative strategy proposes an order against the latest
-archived book at or before the decision's cutoff; the risk engine approves and sizes it;
+For each effective forward-shadow contract-4 decision in an evidence archive that carries
+a probability from one registered forecaster, the declarative strategy proposes an order
+against the latest archived book at or before the decision's cutoff; the risk engine approves and sizes it;
 the executor submits it to a `DryRunGateway`, which builds the exact live request (and,
 with a throwaway key, signs it) and sends nothing. The ledger is a paper ledger, so the
 run can never touch a live ledger.
@@ -18,6 +18,12 @@ What it does not check: the canary's recorded risk limits, the activation gates 
 switch disengage, startup reconciliation, live order prefix, credential), exchange
 acceptance, fills or profit. The archive is opened read-only, no network transport
 exists on this path, and the ledger must be a new paper ledger.
+
+Decisions used: only those of `decision_mode` (`forward_shadow` by default; `synthetic`
+for SYNTHETIC tests and demos, labelled in the result), never cutoff reconstructions, and
+only the effective decision of each opportunity: one superseded by a correction is left
+out, so a decision and its correction never yield two orders. The result counts what was
+left out (`decisions_excluded`).
 """
 
 import json
@@ -36,28 +42,51 @@ from .simulator import ForecastInput, StrategyConfig, propose
 
 SERIES = "KXMLBGAME"
 LINEAR_CENT = ({"start": "0.0000", "end": "1.0000", "step": "0.0100"},)
+DECISION_MODES = ("forward_shadow", "synthetic")
 NOTICE = (
     "Dry run: requests were constructed (and signed only with a throwaway key) and never "
     "sent. Not evidence of acceptance, fills or profit."
 )
 
 
-def decisions(db, forecaster_id):
-    """(decision id, ticker, cutoff, probability) for decisions that scored the forecaster."""
-    out = []
+def decisions(db, forecaster_id, mode="forward_shadow"):
+    """(decision id, ticker, cutoff, probability, payload) for the effective decisions of
+    `mode` that scored the forecaster (see the module docstring)."""
+    return _select(db, forecaster_id, mode)[0]
+
+
+def _select(db, forecaster_id, mode):
+    """(decisions, excluded counts). A decision some correction supersedes is not the
+    effective record of its opportunity; the correction is, and it is used only when it
+    is itself of `mode` (a forward-shadow decision cannot be corrected forward)."""
+    if mode not in DECISION_MODES:
+        raise ValueError(f"decision mode must be one of {DECISION_MODES}")
+    superseded = {
+        row[0]
+        for row in db.execute(
+            "SELECT supersedes_id FROM forecast_decisions WHERE supersedes_id IS NOT NULL"
+        )
+    }
+    out, excluded = [], {"other_mode": 0, "superseded": 0}
     rows = db.execute(
-        "SELECT id, payload_json FROM forecast_decisions "
+        "SELECT id, mode, payload_json FROM forecast_decisions "
         "WHERE json_extract(payload_json, '$.contract_version') = 4 ORDER BY id"
     )
-    for decision_id, payload_json in rows:
+    for decision_id, decision_mode, payload_json in rows:
         payload = json.loads(payload_json)
         result = payload.get("results", {}).get(forecaster_id)
         if not result or result.get("probability") is None or not payload.get("cutoff"):
             continue
+        if decision_mode != mode:
+            excluded["other_mode"] += 1
+            continue
+        if decision_id in superseded:
+            excluded["superseded"] += 1
+            continue
         out.append(
             (decision_id, payload["ticker"], payload["cutoff"], result["probability"], payload)
         )
-    return out
+    return out, excluded
 
 
 def run(
@@ -73,14 +102,16 @@ def run(
     clip_to_limits=True,
     max_order_notional=None,
     max_daily_notional=None,
+    decision_mode="forward_shadow",
 ):
-    """Dry-run every scored decision; returns the would-be requests and every refusal.
+    """Dry-run every effective scored decision of `decision_mode`; returns the would-be
+    requests and every refusal.
 
     Sizes are clipped to the risk limits by default (a canary sizes down; it does not
     refuse a correctly signed small order because Kelly asked for more).
     """
     strategy = strategy or StrategyConfig()
-    found = decisions(db, forecaster_id)
+    found, excluded = _select(db, forecaster_id, decision_mode)
     tickers = sorted({ticker for _, ticker, _, _, _ in found})
     markets = read_archive_markets(db, tickers) if tickers else {}
     books = read_archive_snapshots(db, tickers) if tickers else None
@@ -186,7 +217,9 @@ def run(
             "kalshi_environment": kalshi_environment,
             "signed": signer is not None,
             "forecaster_id": forecaster_id,
+            "decision_mode": decision_mode,
             "decisions": len(found),
+            "decisions_excluded": excluded,
             "outcomes": outcomes,
             "requests": gateway.records(),
             "refusals": [{"client_order_id": c, "reason": r} for c, r in gateway.refusals],

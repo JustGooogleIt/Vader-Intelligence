@@ -61,8 +61,8 @@ live profitability.
 
 ## 2. Live-adapter dry run (`trading/shadow_dryrun.py`, `vader live dry-run`)
 
-For every contract-4 decision in an evidence archive with a probability from the named
-registered forecaster:
+For every effective forward-shadow contract-4 decision in an evidence archive with a
+probability from the named registered forecaster:
 
 1. the latest archived order book at or before the decision's cutoff (`kind = book`
    observations; retrieval time as `as_of`);
@@ -85,7 +85,12 @@ registered forecaster:
   too), so no phantom open exposure distorts later decisions;
 - the ledger must be new;
 - with `--max-order-notional` / `--max-daily-notional`, the live gateway's local notional
-  caps are applied.
+  caps are applied;
+- only decisions of mode `forward_shadow` are used (`--decision-mode synthetic` selects
+  SYNTHETIC decisions instead, for tests and demos; the report names the mode), never
+  cutoff reconstructions, and a decision superseded by a correction is left out, so a
+  decision and its correction never yield two orders (finding F35). The report counts
+  what was left out (`decisions_excluded`).
 
 **Scope.** The ledger is a paper ledger, so a dry run can never reach a live ledger.
 

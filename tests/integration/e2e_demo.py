@@ -433,6 +433,7 @@ def run(workdir):
                 signer=Signer(
                     "00000000-0000-4000-8000-000000000000", ed25519.Ed25519PrivateKey.generate()
                 ),
+                decision_mode="synthetic",  # this demo's decisions are SYNTHETIC
             )
         finally:
             db.close()

@@ -265,6 +265,12 @@ def parser():
         "--max-order-notional", help="apply the live gateway's per-order notional cap"
     )
     ldry.add_argument("--max-daily-notional", help="apply the live gateway's daily notional cap")
+    ldry.add_argument(
+        "--decision-mode",
+        choices=("forward_shadow", "synthetic"),
+        default="forward_shadow",
+        help="decisions to dry-run (synthetic: SYNTHETIC tests and demos only; labelled)",
+    )
     minspect = model_commands.add_parser("inspect")
     minspect.add_argument("--registry", required=True)
     minspect.add_argument("--id", help="one model; omit to list")
@@ -1205,6 +1211,7 @@ def _live_dry_run(args):
             signer=signer,
             max_order_notional=args.max_order_notional,
             max_daily_notional=args.max_daily_notional,
+            decision_mode=args.decision_mode,
         )
     finally:
         db.close()
