@@ -27,6 +27,8 @@ from test_materialization import (  # noqa: E402
 
 from vader_intelligence.cli import execute, parser  # noqa: E402
 from vader_intelligence.config import Config  # noqa: E402
+from vader_intelligence.forecast import journal  # noqa: E402
+from vader_intelligence.provenance import RunProvenanceV1  # noqa: E402
 from vader_intelligence.research import report as reports  # noqa: E402
 from vader_intelligence.research.runner import inspect_run, list_runs, run  # noqa: E402
 from vader_intelligence.storage import Store  # noqa: E402
@@ -208,6 +210,101 @@ def test_a_cohort_with_no_decision_in_a_segment_is_reported_not_evaluated(
     assert list(holdout["cohorts"]) == [real]
     assert holdout["cohorts_without_decisions"] == [other]
     assert holdout["cohorts"][real]["population"]["scored_paired"] == 1
+
+
+def live_forward_abstention(store, game_id=900003):
+    """A forward-shadow decision in the forward dataset written by a run recorded as live
+    (abstaining, so it cites no evidence); SYNTHETIC test bytes model a live record."""
+    store.db.execute(
+        "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
+        (
+            "live-tick",
+            "forecast-tick",
+            at(19, 0).isoformat(),
+            at(19, 1).isoformat(),
+            "complete",
+            RunProvenanceV1(
+                "live-tick",
+                "forecast-tick",
+                "a" * 64,
+                {},
+                tool_configuration={"source_lineage": "live"},
+            ).to_json(),
+            "{}",
+        ),
+    )
+    journal.append(
+        store.db,
+        "forecast_decisions",
+        {
+            "schema_version": 1,
+            "contract_version": 3,
+            "run_id": "live-tick",
+            "created_at": at(19, 1).isoformat(),
+            "code_hash": "a" * 64,
+            "config_hash": PROTO.config_hash,
+            "mode": "forward_shadow",
+            "references": [],
+            "dataset": PROTO.dataset,
+            "protocol": PROTO.protocol_id,
+            "game_id": game_id,
+            "unresolved_key": None,
+            "ticker": None,
+            "yes_team_id": None,
+            "horizon": 3600,
+            "scheduled_start": at(21, 0).isoformat(),
+            "cutoff": at(20, 0).isoformat(),
+            "binding_id": None,
+            "discovery_id": None,
+            "selection_version": PROTO.selection_version,
+            "baseline_versions": ["constant-v1", "midpoint-v1"],
+            "cutoff_eligible": False,
+            "reasons": ["identity_unproven"],
+            "results": {
+                name: {"probability": None, "reasons": ["identity_unproven"], "inputs": {}}
+                for name in ("constant-v1", "midpoint-v1")
+            },
+            "manifest": {},
+            "source_ceiling": 0,
+            "supersedes_id": None,
+        },
+    )
+
+
+def test_run_lineage_follows_the_evaluated_records_not_the_clock(store, config, monkeypatch):
+    """Review F14: an uninjected run over synthetic decisions is a synthetic run; a scope
+    mixing synthetic and live records is refused before anything is written."""
+    forward_slice(store, config)
+    settle(store, config, monkeypatch, settlement_evidence())
+    result = run(
+        store,
+        PROTO,
+        view="forward-shadow",
+        outcomes_as_of=AS_OF,
+        start_date=GAME_DAY,
+        through_date=GAME_DAY,
+    )
+    assert result["status"] == "complete"
+    (cohort,) = result["segments"]["whole"]["cohorts"].values()
+    assert cohort["mode"] == "synthetic"
+    provenance = inspect_run(store.db, result["run_id"])["provenance"]
+    assert provenance["tool_configuration"]["source_lineage"] == "synthetic"
+    reconstruction = run(
+        store,
+        PROTO,
+        view="cutoff-reconstruction",
+        dataset="study-lineage",
+        outcomes_as_of=AS_OF,
+        start_date=GAME_DAY,
+        through_date=GAME_DAY,
+    )
+    provenance = inspect_run(store.db, reconstruction["run_id"])["provenance"]
+    assert provenance["tool_configuration"]["source_lineage"] == "synthetic"
+    live_forward_abstention(store)
+    runs = store.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+    with pytest.raises(ValueError, match="mixes synthetic and live"):
+        run_at(store, at(23, 50), view="forward-shadow")
+    assert store.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == runs
 
 
 def test_budget_exhaustion_is_partial_and_writes_no_evaluation(store, config, monkeypatch):

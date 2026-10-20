@@ -28,8 +28,13 @@ Steps, in temporal order:
    evaluated there. Cohorts and record modes are never pooled; each result is keyed by
    cohort hash.
 3. **Resume**: decisions and evaluations have content keys, so a repeated or resumed run
-   reports `existing: true` and writes nothing new. A budget exhaustion is `partial` with
-   nothing written by the interrupted step.
+   reports `existing: true` and adds no decision or evaluation; it still records its own
+   `research-run` row (and the `runs` rows of the steps it invoked). A budget exhaustion
+   is `partial` with nothing written by the interrupted step.
+
+The run's `source_lineage` is that of the records it evaluates (decisions in scope and,
+for reconstruction, the bindings it decides); an injected clock is always synthetic, and
+a scope mixing synthetic and live records is refused before anything is written.
 
 **Split and held-out observations.** `--development-through D --holdout-from H` with
 `start ≤ D < H ≤ through`; the two ranges never overlap; development is evaluated before

@@ -19,8 +19,12 @@ Order and separation:
    Cohorts and record modes are never pooled; a segment's results are keyed by cohort
    hash.
 3. Everything is idempotent by construction: decisions and evaluations have content
-   keys, so a repeated or resumed run reports `existing` results and writes nothing
-   new.
+   keys, so a repeated or resumed run reports `existing` results and adds no decision
+   or evaluation; it still records its own provenance (a new `research-run` row, and
+   the `runs` rows of the reconstruction and evaluation steps it invoked).
+
+The run's source lineage is that of the records it evaluates (an injected clock is
+always synthetic); a scope mixing synthetic and live records is refused.
 
 Held-out observations: the protocol is fixed (hash recorded) before any evaluation of
 the run, the development segment is evaluated before the holdout segment, the two
@@ -37,7 +41,7 @@ import uuid
 from datetime import date, timedelta
 
 from ..evaluation.service import evaluate
-from ..forecast.reconstruct import MAX_DAYS, reconstruct
+from ..forecast.reconstruct import MAX_DAYS, MODE_OF, reconstruct
 from ..forecast.references import digest
 from ..provenance import RunProvenanceV1, source_hash
 from ..storage import timestamp, utc_now
@@ -96,6 +100,59 @@ def _cohorts(db, protocol, dataset, modes, start, through):
     ).fetchall()
     hashes = sorted(r[0] for r in rows if r[0] is not None)
     return hashes or [None]
+
+
+def _lineage(db, protocol, dataset, view, start, through):
+    """Source lineage of the records the run evaluates: the modes of the scope's decisions
+    and, for reconstruction, of the bindings it decides; with neither, the protocol's
+    bindings, as `evaluate` falls back. A scope mixing synthetic and live records is
+    refused: one run has one lineage."""
+    live = "forward_shadow" if view == "forward-shadow" else "historical_reconstruction"
+    modes = {
+        row[0]
+        for row in db.execute(
+            "SELECT DISTINCT mode FROM forecast_decisions WHERE protocol=?"
+            " AND json_extract(payload_json,'$.dataset')=?"
+            " AND json_extract(payload_json,'$.config_hash')=? AND mode IN ('synthetic',?)"
+            " AND substr(json_extract(payload_json,'$.scheduled_start'),1,10) BETWEEN ? AND ?",
+            (
+                protocol.protocol_id,
+                dataset,
+                protocol.config_hash,
+                live,
+                start.isoformat(),
+                through.isoformat(),
+            ),
+        )
+    }
+    if view == "cutoff-reconstruction":
+        modes |= {
+            MODE_OF[row[0]]
+            for row in db.execute(
+                "SELECT DISTINCT mode FROM forecast_bindings WHERE policy_version=?"
+                " AND config_hash=? AND mode IN ('forward_shadow','synthetic')"
+                " AND json_extract(payload_json,'$.original_date') BETWEEN ? AND ?",
+                (
+                    protocol.policy_version,
+                    protocol.config_hash,
+                    start.isoformat(),
+                    through.isoformat(),
+                ),
+            )
+        }
+    if len(modes) > 1:
+        raise ValueError(
+            f"the run's scope mixes synthetic and live records {sorted(modes)}; not pooled"
+        )
+    if not modes:
+        modes = {
+            row[0]
+            for row in db.execute(
+                "SELECT DISTINCT mode FROM forecast_bindings WHERE policy_version=? AND config_hash=?",
+                (protocol.policy_version, protocol.config_hash),
+            )
+        }
+    return "synthetic" if "synthetic" in modes else "live"
 
 
 def _holdout_history(db, dataset, start, through):
@@ -171,6 +228,7 @@ def run(
     else:
         dataset = protocol.dataset if dataset is None else dataset
     db = store.db
+    lineage = _lineage(db, protocol, dataset, view, start_date, through_date)
     identity = archive_identity(db)
     if source_ceiling is None:
         source_ceiling = identity["fetch_ceiling"]
@@ -205,7 +263,8 @@ def run(
             RUN_KIND,
             code_hash,
             configuration,
-            tool_configuration={"source_lineage": "synthetic" if injected else "live"},
+            # Lineage of the evaluated records; an injected clock is always synthetic.
+            tool_configuration={"source_lineage": "synthetic" if injected else lineage},
         ),
         timestamp(clock()),
     )
