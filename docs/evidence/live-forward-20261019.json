@@ -1,0 +1,2579 @@
+{
+ "dry_runs": [
+  {
+   "cash": "20",
+   "checks": {
+    "clip_to_limits": true,
+    "max_daily_notional": "2.00",
+    "max_order_notional": "1.00",
+    "not_checked": [
+     "canary risk limits",
+     "activation gates",
+     "exchange acceptance"
+    ],
+    "risk_limits": "simulation_defaults(cash) (labelled simulation assumption)"
+   },
+   "forecaster": "model:06891d035c2156ad",
+   "mode": "capped-cash20",
+   "notice": "Dry run: requests were constructed (and signed only with a throwaway key) and never sent. Not evidence of acceptance, fills or profit.",
+   "outcomes": [
+    {
+     "approved_quantity": null,
+     "canceled_after_dry_run": null,
+     "decision": null,
+     "decision_id": 1,
+     "limit_price": null,
+     "outcome": "no_intent",
+     "reason": "edge_below_threshold",
+     "risk_reasons": null,
+     "side": null,
+     "submit_reason": null,
+     "submit_status": null
+    }
+   ],
+   "refusals": [],
+   "requests": [],
+   "signed_with_throwaway_key": true
+  },
+  {
+   "cash": "1000",
+   "checks": {
+    "clip_to_limits": true,
+    "max_daily_notional": "2.00",
+    "max_order_notional": "1.00",
+    "not_checked": [
+     "canary risk limits",
+     "activation gates",
+     "exchange acceptance"
+    ],
+    "risk_limits": "simulation_defaults(cash) (labelled simulation assumption)"
+   },
+   "forecaster": "model:06891d035c2156ad",
+   "mode": "capped",
+   "notice": "Dry run: requests were constructed (and signed only with a throwaway key) and never sent. Not evidence of acceptance, fills or profit.",
+   "outcomes": [
+    {
+     "approved_quantity": null,
+     "canceled_after_dry_run": null,
+     "decision": null,
+     "decision_id": 1,
+     "limit_price": null,
+     "outcome": "no_intent",
+     "reason": "edge_below_threshold",
+     "risk_reasons": null,
+     "side": null,
+     "submit_reason": null,
+     "submit_status": null
+    }
+   ],
+   "refusals": [],
+   "requests": [],
+   "signed_with_throwaway_key": true
+  },
+  {
+   "cash": "1000",
+   "checks": {
+    "clip_to_limits": true,
+    "max_daily_notional": null,
+    "max_order_notional": null,
+    "not_checked": [
+     "canary risk limits",
+     "activation gates",
+     "exchange acceptance"
+    ],
+    "risk_limits": "simulation_defaults(cash) (labelled simulation assumption)"
+   },
+   "forecaster": "model:06891d035c2156ad",
+   "mode": "uncapped",
+   "notice": "Dry run: requests were constructed (and signed only with a throwaway key) and never sent. Not evidence of acceptance, fills or profit.",
+   "outcomes": [
+    {
+     "approved_quantity": null,
+     "canceled_after_dry_run": null,
+     "decision": null,
+     "decision_id": 1,
+     "limit_price": null,
+     "outcome": "no_intent",
+     "reason": "edge_below_threshold",
+     "risk_reasons": null,
+     "side": null,
+     "submit_reason": null,
+     "submit_status": null
+    }
+   ],
+   "refusals": [],
+   "requests": [],
+   "signed_with_throwaway_key": true
+  },
+  {
+   "cash": "20",
+   "checks": {
+    "clip_to_limits": true,
+    "max_daily_notional": "2.00",
+    "max_order_notional": "1.00",
+    "not_checked": [
+     "canary risk limits",
+     "activation gates",
+     "exchange acceptance"
+    ],
+    "risk_limits": "simulation_defaults(cash) (labelled simulation assumption)"
+   },
+   "forecaster": "model:a6d69da1f90519ee",
+   "mode": "capped-cash20",
+   "notice": "Dry run: requests were constructed (and signed only with a throwaway key) and never sent. Not evidence of acceptance, fills or profit.",
+   "outcomes": [
+    {
+     "approved_quantity": null,
+     "canceled_after_dry_run": null,
+     "decision": null,
+     "decision_id": 1,
+     "limit_price": null,
+     "outcome": "no_intent",
+     "reason": "edge_below_threshold",
+     "risk_reasons": null,
+     "side": null,
+     "submit_reason": null,
+     "submit_status": null
+    }
+   ],
+   "refusals": [],
+   "requests": [],
+   "signed_with_throwaway_key": true
+  },
+  {
+   "cash": "1000",
+   "checks": {
+    "clip_to_limits": true,
+    "max_daily_notional": "2.00",
+    "max_order_notional": "1.00",
+    "not_checked": [
+     "canary risk limits",
+     "activation gates",
+     "exchange acceptance"
+    ],
+    "risk_limits": "simulation_defaults(cash) (labelled simulation assumption)"
+   },
+   "forecaster": "model:a6d69da1f90519ee",
+   "mode": "capped",
+   "notice": "Dry run: requests were constructed (and signed only with a throwaway key) and never sent. Not evidence of acceptance, fills or profit.",
+   "outcomes": [
+    {
+     "approved_quantity": null,
+     "canceled_after_dry_run": null,
+     "decision": null,
+     "decision_id": 1,
+     "limit_price": null,
+     "outcome": "no_intent",
+     "reason": "edge_below_threshold",
+     "risk_reasons": null,
+     "side": null,
+     "submit_reason": null,
+     "submit_status": null
+    }
+   ],
+   "refusals": [],
+   "requests": [],
+   "signed_with_throwaway_key": true
+  },
+  {
+   "cash": "1000",
+   "checks": {
+    "clip_to_limits": true,
+    "max_daily_notional": null,
+    "max_order_notional": null,
+    "not_checked": [
+     "canary risk limits",
+     "activation gates",
+     "exchange acceptance"
+    ],
+    "risk_limits": "simulation_defaults(cash) (labelled simulation assumption)"
+   },
+   "forecaster": "model:a6d69da1f90519ee",
+   "mode": "uncapped",
+   "notice": "Dry run: requests were constructed (and signed only with a throwaway key) and never sent. Not evidence of acceptance, fills or profit.",
+   "outcomes": [
+    {
+     "approved_quantity": null,
+     "canceled_after_dry_run": null,
+     "decision": null,
+     "decision_id": 1,
+     "limit_price": null,
+     "outcome": "no_intent",
+     "reason": "edge_below_threshold",
+     "risk_reasons": null,
+     "side": null,
+     "submit_reason": null,
+     "submit_status": null
+    }
+   ],
+   "refusals": [],
+   "requests": [],
+   "signed_with_throwaway_key": true
+  },
+  {
+   "cash": "20",
+   "checks": {
+    "clip_to_limits": true,
+    "max_daily_notional": "2.00",
+    "max_order_notional": "1.00",
+    "not_checked": [
+     "canary risk limits",
+     "activation gates",
+     "exchange acceptance"
+    ],
+    "risk_limits": "simulation_defaults(cash) (labelled simulation assumption)"
+   },
+   "forecaster": "model:d316e849de67b8cd",
+   "mode": "capped-cash20",
+   "notice": "Dry run: requests were constructed (and signed only with a throwaway key) and never sent. Not evidence of acceptance, fills or profit.",
+   "outcomes": [
+    {
+     "approved_quantity": null,
+     "canceled_after_dry_run": null,
+     "decision": "Rejection",
+     "decision_id": 1,
+     "limit_price": "0.42",
+     "outcome": "refused",
+     "reason": null,
+     "risk_reasons": [
+      "size_zero"
+     ],
+     "side": "yes",
+     "submit_reason": null,
+     "submit_status": null
+    }
+   ],
+   "refusals": [],
+   "requests": [],
+   "signed_with_throwaway_key": true
+  },
+  {
+   "cash": "1000",
+   "checks": {
+    "clip_to_limits": true,
+    "max_daily_notional": "2.00",
+    "max_order_notional": "1.00",
+    "not_checked": [
+     "canary risk limits",
+     "activation gates",
+     "exchange acceptance"
+    ],
+    "risk_limits": "simulation_defaults(cash) (labelled simulation assumption)"
+   },
+   "forecaster": "model:d316e849de67b8cd",
+   "mode": "capped",
+   "notice": "Dry run: requests were constructed (and signed only with a throwaway key) and never sent. Not evidence of acceptance, fills or profit.",
+   "outcomes": [
+    {
+     "approved_quantity": "8",
+     "canceled_after_dry_run": null,
+     "decision": "Approval",
+     "decision_id": 1,
+     "limit_price": "0.42",
+     "outcome": "refused",
+     "reason": null,
+     "risk_reasons": [],
+     "side": "yes",
+     "sizing": {
+      "approved_quantity": "8",
+      "bankroll": "1000",
+      "clips": [],
+      "cost": "0.44",
+      "fee_per_contract": "0.02",
+      "fraction": "0.003820178571428571428571428571428571428571",
+      "full_fraction": "0.03820178571428571428571428571428571428571",
+      "kelly_fraction": "0.1",
+      "price": "0.42",
+      "probability": "0.461393",
+      "quantity": "8",
+      "target_value": "3.820178571428571428571428571428571428571"
+     },
+     "submit_reason": "local:order_notional_cap",
+     "submit_status": "rejected"
+    }
+   ],
+   "refusals": [
+    {
+     "client_order_id": "vi-paper-d45bec6e67a95fea-1",
+     "reason": "order_notional_cap"
+    }
+   ],
+   "requests": [],
+   "signed_with_throwaway_key": true
+  },
+  {
+   "cash": "1000",
+   "checks": {
+    "clip_to_limits": true,
+    "max_daily_notional": null,
+    "max_order_notional": null,
+    "not_checked": [
+     "canary risk limits",
+     "activation gates",
+     "exchange acceptance"
+    ],
+    "risk_limits": "simulation_defaults(cash) (labelled simulation assumption)"
+   },
+   "forecaster": "model:d316e849de67b8cd",
+   "mode": "uncapped",
+   "notice": "Dry run: requests were constructed (and signed only with a throwaway key) and never sent. Not evidence of acceptance, fills or profit.",
+   "outcomes": [
+    {
+     "approved_quantity": "8",
+     "canceled_after_dry_run": "canceled",
+     "decision": "Approval",
+     "decision_id": 1,
+     "limit_price": "0.42",
+     "outcome": "submitted_dry",
+     "reason": null,
+     "risk_reasons": [],
+     "side": "yes",
+     "sizing": {
+      "approved_quantity": "8",
+      "bankroll": "1000",
+      "clips": [],
+      "cost": "0.44",
+      "fee_per_contract": "0.02",
+      "fraction": "0.003820178571428571428571428571428571428571",
+      "full_fraction": "0.03820178571428571428571428571428571428571",
+      "kelly_fraction": "0.1",
+      "price": "0.42",
+      "probability": "0.461393",
+      "quantity": "8",
+      "target_value": "3.820178571428571428571428571428571428571"
+     },
+     "submit_reason": "dry_run",
+     "submit_status": "submitted"
+    }
+   ],
+   "refusals": [],
+   "requests": [
+    {
+     "body": "{\"client_order_id\":\"vi-paper-d45bec6e67a95fea-1\",\"count\":\"8.00\",\"exchange_index\":3,\"post_only\":false,\"price\":\"0.4200\",\"reduce_only\":false,\"self_trade_prevention_type\":\"taker_at_cross\",\"side\":\"bid\",\"ticker\":\"KXMLBGAME-26OCT192008CLETB-CLE\",\"time_in_force\":\"immediate_or_cancel\"}",
+     "method": "POST",
+     "params": {},
+     "url": "https://external-api.demo.kalshi.co/trade-api/v2/portfolio/events/orders"
+    },
+    {
+     "body": null,
+     "method": "DELETE",
+     "params": {
+      "market_ticker": "KXMLBGAME-26OCT192008CLETB-CLE"
+     },
+     "url": "https://external-api.demo.kalshi.co/trade-api/v2/portfolio/events/orders/5cb5d6e88ea34449de967484649cb50f"
+    }
+   ],
+   "signed_with_throwaway_key": true
+  }
+ ],
+ "kind": "live-forward-shadow-20261019",
+ "shadows": {
+  "models": {
+   "book_fetches_near_cutoff": [
+    {
+     "fetch_id": "1a5dab18-0e3b-4105-9e45-77aa320d22ed",
+     "first_witnessed_at": "2026-10-19T23:02:11.493411+00:00",
+     "retrieved_at": "2026-10-19T23:00:15.203928+00:00",
+     "stage": "book",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "5db508ed-3bc5-4382-b913-b10b40fda15f",
+     "first_witnessed_at": "2026-10-19T23:04:11.734373+00:00",
+     "retrieved_at": "2026-10-19T23:02:15.397093+00:00",
+     "stage": "book",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "1fdea6ea-bc07-4bd0-bc40-7f4e3d5c3f69",
+     "first_witnessed_at": "2026-10-19T23:06:11.891353+00:00",
+     "retrieved_at": "2026-10-19T23:04:15.591824+00:00",
+     "stage": "book",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "a529e7a5-345f-42c6-85e9-cde3cd75cbdb",
+     "first_witnessed_at": "2026-10-19T23:08:12.217813+00:00",
+     "retrieved_at": "2026-10-19T23:06:15.780055+00:00",
+     "stage": "book",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "bae8ae65-c41b-46f5-a08f-f04d00cb4704",
+     "first_witnessed_at": "2026-10-19T23:10:12.578249+00:00",
+     "retrieved_at": "2026-10-19T23:08:26.300904+00:00",
+     "stage": "book",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "7e1921e9-0a26-4deb-aedd-9fda42da4845",
+     "first_witnessed_at": "2026-10-19T23:12:12.951801+00:00",
+     "retrieved_at": "2026-10-19T23:10:16.476853+00:00",
+     "stage": "book",
+     "state": "ok"
+    }
+   ],
+   "cycles": [
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 0,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T21:56:13.294538+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 1,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T21:58:13.515715+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 2,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:00:13.725675+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 3,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:02:13.964360+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 4,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:04:14.177085+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 5,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:06:14.441047+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 6,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:08:14.689197+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 7,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:10:14.920925+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 8,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:12:10.123650+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 9,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:14:10.317182+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 10,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:16:10.531040+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 11,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:18:10.767293+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 12,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:20:11.005361+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 13,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:22:11.252396+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 14,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:24:11.474588+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 15,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:26:11.747258+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 16,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:28:12.028523+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 17,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:30:12.261887+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 18,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:32:12.538340+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 19,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:34:12.747309+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 20,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:36:13.079024+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 21,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:38:13.334109+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 22,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:40:13.562059+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 23,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:42:13.798691+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 24,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:44:14.130023+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 25,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:46:14.354983+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 26,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:48:14.598528+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 27,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:50:14.841144+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 28,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:52:10.125907+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 29,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:54:10.368168+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 30,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:56:10.673197+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 31,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:58:10.896302+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 32,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:00:11.121184+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 33,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:02:11.299937+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 34,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:04:11.526014+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 35,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:06:11.700331+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 36,
+     "due": 1,
+     "eligible": 1,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 1,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:08:12.010652+00:00",
+     "tick_status": "complete"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 37,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:10:12.380801+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 38,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:12:12.753370+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 39,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:14:12.960993+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 40,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:16:13.222653+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 41,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:18:13.444713+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 42,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:20:13.621923+00:00",
+     "tick_status": "inconclusive"
+    }
+   ],
+   "decisions": [
+    {
+     "alternatives": [
+      "KXMLBGAME-26OCT192008CLETB-TB"
+     ],
+     "book_reasons": [
+      "book_availability_after_cutoff"
+     ],
+     "code_hash": "0d8674af2495ac145a32607b3d31fd08d4b1669ec0ba0e3c147b804c55502db7",
+     "config_hash": "c4147b5821ab8e2743f14fd11a63141c957e29dbfc5232b3a1121da3855a783c",
+     "contract_version": 4,
+     "created_at": "2026-10-19T23:08:12.290793+00:00",
+     "cutoff": "2026-10-19T23:08:00+00:00",
+     "cutoff_eligible": true,
+     "decision_id": 1,
+     "forecasters": [
+      {
+       "artifact_sha256": "06891d035c2156ad5c52b9be5a78656e934eea1926016de22c6e93ffdb287a01",
+       "family": "symbolic",
+       "feature_set": "fs-market-v1",
+       "id": "model:06891d035c2156ad"
+      },
+      {
+       "artifact_sha256": "a6d69da1f90519eedc146c1d6b8ea50fa4b464cea96132f159268cb5ee7bc407",
+       "family": "gbm",
+       "feature_set": "fs-market-v1",
+       "id": "model:a6d69da1f90519ee"
+      },
+      {
+       "artifact_sha256": "d316e849de67b8cd318606987d74208e866d8e1bba99d744179db788442b11b5",
+       "family": "logistic",
+       "feature_set": "fs-market-v1",
+       "id": "model:d316e849de67b8cd"
+      }
+     ],
+     "reasons": [],
+     "results": {
+      "constant-v1": {
+       "features": null,
+       "probability": "0.5",
+       "reasons": [],
+       "recorded_quote_fetches": null,
+       "selected_quotes": null
+      },
+      "midpoint-v1": {
+       "features": null,
+       "probability": null,
+       "reasons": [
+        "book_availability_after_cutoff"
+       ],
+       "recorded_quote_fetches": null,
+       "selected_quotes": null
+      },
+      "model:06891d035c2156ad": {
+       "features": {
+        "last_trade_gap_c": 0.005,
+        "log_open_interest_c": 13.134177317193783,
+        "log_volume_60m": 11.690882762222575,
+        "logit_mid_c": -0.34333332700115815,
+        "logit_pair_mid_c": -0.34333332700115815,
+        "mid_c": 0.415,
+        "mid_change_15m": 0.0,
+        "mid_change_45m": 0.0,
+        "overround_c": 0.01,
+        "pair_mid_c": 0.415,
+        "postseason": 1.0,
+        "selected_is_home": 0.0,
+        "spread_c": 0.01
+       },
+       "probability": "0.413415",
+       "reasons": [],
+       "recorded_quote_fetches": {
+        "latest_first_witnessed_at": "2026-10-19T23:06:11.891353+00:00",
+        "latest_retrieved_at": "2026-10-19T23:04:15.085299+00:00",
+        "note": "the decision records at most 20 fetch ids (sorted by id), not every fetch used",
+        "recorded_fetch_ids": 20,
+        "unwitnessed": 0
+       },
+       "selected_quotes": 70
+      },
+      "model:a6d69da1f90519ee": {
+       "features": {
+        "last_trade_gap_c": 0.005,
+        "log_open_interest_c": 13.134177317193783,
+        "log_volume_60m": 11.690882762222575,
+        "logit_mid_c": -0.34333332700115815,
+        "logit_pair_mid_c": -0.34333332700115815,
+        "mid_c": 0.415,
+        "mid_change_15m": 0.0,
+        "mid_change_45m": 0.0,
+        "overround_c": 0.01,
+        "pair_mid_c": 0.415,
+        "postseason": 1.0,
+        "selected_is_home": 0.0,
+        "spread_c": 0.01
+       },
+       "probability": "0.438094",
+       "reasons": [],
+       "recorded_quote_fetches": {
+        "latest_first_witnessed_at": "2026-10-19T23:06:11.891353+00:00",
+        "latest_retrieved_at": "2026-10-19T23:04:15.085299+00:00",
+        "note": "the decision records at most 20 fetch ids (sorted by id), not every fetch used",
+        "recorded_fetch_ids": 20,
+        "unwitnessed": 0
+       },
+       "selected_quotes": 70
+      },
+      "model:d316e849de67b8cd": {
+       "features": {
+        "last_trade_gap_c": 0.005,
+        "log_open_interest_c": 13.134177317193783,
+        "log_volume_60m": 11.690882762222575,
+        "logit_mid_c": -0.34333332700115815,
+        "logit_pair_mid_c": -0.34333332700115815,
+        "mid_c": 0.415,
+        "mid_change_15m": 0.0,
+        "mid_change_45m": 0.0,
+        "overround_c": 0.01,
+        "pair_mid_c": 0.415,
+        "postseason": 1.0,
+        "selected_is_home": 0.0,
+        "spread_c": 0.01
+       },
+       "probability": "0.461393",
+       "reasons": [],
+       "recorded_quote_fetches": {
+        "latest_first_witnessed_at": "2026-10-19T23:06:11.891353+00:00",
+        "latest_retrieved_at": "2026-10-19T23:04:15.085299+00:00",
+        "note": "the decision records at most 20 fetch ids (sorted by id), not every fetch used",
+        "recorded_fetch_ids": 20,
+        "unwitnessed": 0
+       },
+       "selected_quotes": 70
+      }
+     },
+     "scheduled_start": "2026-10-20T00:08:00+00:00",
+     "ticker": "KXMLBGAME-26OCT192008CLETB-CLE"
+    }
+   ],
+   "directory": "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models",
+   "evaluation_items": [
+    {
+     "cutoff_status": "eligible",
+     "game_id": 849815,
+     "outcome_reasons": [],
+     "outcome_status": "binary_scorable",
+     "paired_with_midpoint": null,
+     "publication_status": "published_timely",
+     "scores": {
+      "constant-v1": {
+       "brier": "0.25",
+       "log_loss": "0.6931471805599453094172321214581765680755"
+      },
+      "midpoint-v1": null,
+      "model:06891d035c2156ad": {
+       "brier": "0.170911962225",
+       "log_loss": "0.5334376938533558188189804655897074992976"
+      },
+      "model:a6d69da1f90519ee": {
+       "brier": "0.191926352836",
+       "log_loss": "0.5764207028644008718175652373436887501888"
+      },
+      "model:d316e849de67b8cd": {
+       "brier": "0.212883500449",
+       "log_loss": "0.6187691020310921177903647729963018925644"
+      }
+     },
+     "y": 0
+    }
+   ],
+   "quote_fetches_near_cutoff": [
+    {
+     "fetch_id": "2d526eea-fe06-4788-90a8-66c4dd4d520a",
+     "first_witnessed_at": "2026-10-19T23:02:11.493411+00:00",
+     "retrieved_at": "2026-10-19T23:00:13.688126+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "f8159608-27fc-49db-a7b9-290341d89e6e",
+     "first_witnessed_at": "2026-10-19T23:02:11.493411+00:00",
+     "retrieved_at": "2026-10-19T23:00:14.701603+00:00",
+     "stage": "event",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "21f77081-2945-4856-8a37-acd5cc5cbbe7",
+     "first_witnessed_at": "2026-10-19T23:04:11.734373+00:00",
+     "retrieved_at": "2026-10-19T23:02:13.872597+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "c9c8b660-7b34-4a76-b5a5-1edc7d07bdb7",
+     "first_witnessed_at": "2026-10-19T23:04:11.734373+00:00",
+     "retrieved_at": "2026-10-19T23:02:14.894593+00:00",
+     "stage": "event",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "6c742cd7-49d5-44ee-9cba-698795e69263",
+     "first_witnessed_at": "2026-10-19T23:06:11.891353+00:00",
+     "retrieved_at": "2026-10-19T23:04:14.070047+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "fc12cf3f-f62f-41f3-883d-4c90692cd41b",
+     "first_witnessed_at": "2026-10-19T23:06:11.891353+00:00",
+     "retrieved_at": "2026-10-19T23:04:15.085299+00:00",
+     "stage": "event",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "fc851e1f-83dc-40f3-8c41-3a4142ed1cc2",
+     "first_witnessed_at": "2026-10-19T23:08:12.217813+00:00",
+     "retrieved_at": "2026-10-19T23:06:14.260551+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "a2871153-ab0c-40eb-80ce-150dd091f6d6",
+     "first_witnessed_at": "2026-10-19T23:08:12.217813+00:00",
+     "retrieved_at": "2026-10-19T23:06:15.278829+00:00",
+     "stage": "event",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "f5f945fd-e082-4d12-b4fd-4f454882da1f",
+     "first_witnessed_at": "2026-10-19T23:10:12.578249+00:00",
+     "retrieved_at": "2026-10-19T23:08:24.781089+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "2c93b492-ab1d-4f25-81ed-ef97659e4ac7",
+     "first_witnessed_at": "2026-10-19T23:10:12.578249+00:00",
+     "retrieved_at": "2026-10-19T23:08:25.799099+00:00",
+     "stage": "event",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "3408586c-4601-4786-beaf-d5bcf4871961",
+     "first_witnessed_at": "2026-10-19T23:12:12.951801+00:00",
+     "retrieved_at": "2026-10-19T23:10:14.956045+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "4ee729cc-812c-4562-ba94-c4e718c4790e",
+     "first_witnessed_at": "2026-10-19T23:12:12.951801+00:00",
+     "retrieved_at": "2026-10-19T23:10:15.975537+00:00",
+     "stage": "event",
+     "state": "ok"
+    }
+   ],
+   "shadow_evaluate": {
+    "status": "partial",
+    "steps": [
+     {
+      "argv": [
+       "/Users/ashwin/Documents/github-repos/Vader-Intelligence-live-models/.venv/bin/python",
+       "-m",
+       "vader_intelligence.cli",
+       "--config",
+       "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/collector.toml",
+       "--db",
+       "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/shadow.sqlite3",
+       "settlement",
+       "refresh",
+       "--limit",
+       "20",
+       "--budget",
+       "120"
+      ],
+      "ended_at": "2026-10-20T05:16:47.214651+00:00",
+      "exit_code": 1,
+      "name": "shadow-settlement",
+      "result": {
+       "errors": [],
+       "mapping_states": {
+        "mapped": 18,
+        "quarantined": 2
+       },
+       "run_id": "0daa8549-f2cf-48d3-9659-a00a514a4e4d",
+       "scope": "bounded settlement evidence; quarantine is not a verified mapping",
+       "selection_truncated": true,
+       "status": "partial",
+       "targets": 20
+      },
+      "runtime_seconds": 33.38257537499885,
+      "started_at": "2026-10-20T05:16:09.405695+00:00",
+      "status": "partial",
+      "stderr": "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/state/shadow-settlement-2026-10-20T051609.405354+0000.stderr.log",
+      "stdout": "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/state/shadow-settlement-2026-10-20T051609.405354+0000.stdout.log"
+     },
+     {
+      "argv": [
+       "/Users/ashwin/Documents/github-repos/Vader-Intelligence-live-models/.venv/bin/python",
+       "-m",
+       "vader_intelligence.cli",
+       "--config",
+       "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/collector.toml",
+       "--db",
+       "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/shadow.sqlite3",
+       "research",
+       "run",
+       "--research-config",
+       "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/research.toml",
+       "--view",
+       "forward-shadow",
+       "--outcomes-as-of",
+       "2026-10-20T05:16:47.214788+00:00",
+       "--from",
+       "2026-10-20",
+       "--through",
+       "2026-10-20",
+       "--budget",
+       "120"
+      ],
+      "ended_at": "2026-10-20T05:16:47.459209+00:00",
+      "exit_code": 3,
+      "name": "shadow-research",
+      "result": {
+       "archive_after": {
+        "discovery_passes": 44,
+        "fetch_ceiling": 459,
+        "fetches": 459,
+        "forecast_bindings": 1,
+        "forecast_decisions": 1,
+        "latest_fetch_digest": "871d6a3de7d3bbb29834b6f2ecaf3ebcd5e14711fc6fd2f17f8044ea23a4d38b",
+        "schema_version": 6,
+        "settlement_versions": 59
+       },
+       "code_hash": "0d8674af2495ac145a32607b3d31fd08d4b1669ec0ba0e3c147b804c55502db7",
+       "dataset": "forward-shadow-models-20261019",
+       "errors": [],
+       "holdout_history": [],
+       "manifest": {
+        "archive": {
+         "discovery_passes": 44,
+         "fetch_ceiling": 459,
+         "fetches": 459,
+         "forecast_bindings": 1,
+         "forecast_decisions": 1,
+         "latest_fetch_digest": "871d6a3de7d3bbb29834b6f2ecaf3ebcd5e14711fc6fd2f17f8044ea23a4d38b",
+         "schema_version": 6,
+         "settlement_versions": 59
+        },
+        "dataset": "forward-shadow-models-20261019",
+        "development_through": null,
+        "forward_dataset": "forward-shadow-models-20261019",
+        "holdout_from": null,
+        "outcomes_as_of": "2026-10-20T05:16:47.214788+00:00",
+        "protocol": "c4147b5821ab8e2743f14fd11a63141c957e29dbfc5232b3a1121da3855a783c",
+        "source_ceiling": 459,
+        "start_date": "2026-10-20",
+        "through_date": "2026-10-20",
+        "view": "forward-shadow"
+       },
+       "protocol": "mlb-t60-v1",
+       "reconstruct": [],
+       "research_config_hash": "c4147b5821ab8e2743f14fd11a63141c957e29dbfc5232b3a1121da3855a783c",
+       "run_id": "a0f74ee9-3591-4cc0-a7e3-bb8916df29ab",
+       "runtime_seconds": 0.02798808299121447,
+       "segments": {
+        "whole": {
+         "cohorts": {
+          "f6bd5c201faba305bfab3ab766779053ccee62bcc09792446a2cb53ea46e7abb": {
+           "collector_config_hash": "f6bd5c201faba305bfab3ab766779053ccee62bcc09792446a2cb53ea46e7abb",
+           "errors": [],
+           "evaluation_id": 1,
+           "existing": false,
+           "mode": "forward_shadow",
+           "paired": {
+            "mean_brier_constant": null,
+            "mean_brier_delta": null,
+            "mean_brier_midpoint": null,
+            "mean_log_loss_constant": null,
+            "mean_log_loss_delta": null,
+            "mean_log_loss_midpoint": null,
+            "n": 0
+           },
+           "population": {
+            "E": 1,
+            "FK": 1,
+            "FM": 0,
+            "FP": 0,
+            "K": 1,
+            "M": 0,
+            "P": 0,
+            "U": 1,
+            "abstentions": 0,
+            "annotated_eligible_unattempted": 0,
+            "annotated_midpoint_unattempted": 0,
+            "decisions": 1,
+            "no_binding": 0,
+            "scored_constant": 1,
+            "scored_paired": 0,
+            "unattempted": 0,
+            "unresolved_candidates": 0
+           },
+           "status": "inconclusive",
+           "supersedes_id": null
+          }
+         },
+         "start_date": "2026-10-20",
+         "through_date": "2026-10-20"
+        }
+       },
+       "status": "inconclusive",
+       "view": "forward-shadow"
+      },
+      "runtime_seconds": 0.24423849998856895,
+      "started_at": "2026-10-20T05:16:47.214984+00:00",
+      "status": "inconclusive",
+      "stderr": "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/state/shadow-research-2026-10-20T051647.214962+0000.stderr.log",
+      "stdout": "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/state/shadow-research-2026-10-20T051647.214962+0000.stdout.log"
+     }
+    ]
+   }
+  },
+  "rule-v2": {
+   "book_fetches_near_cutoff": [
+    {
+     "fetch_id": "ec8b9562-b71e-4c90-a81f-c178d701fa33",
+     "first_witnessed_at": "2026-10-19T23:02:11.394520+00:00",
+     "retrieved_at": "2026-10-19T23:00:15.135149+00:00",
+     "stage": "book",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "2c04f2f3-1071-4df0-92c1-c20e95c875b7",
+     "first_witnessed_at": "2026-10-19T23:04:11.691643+00:00",
+     "retrieved_at": "2026-10-19T23:02:15.272338+00:00",
+     "stage": "book",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "79a25b07-a28a-4e09-933a-5fd23eb371ba",
+     "first_witnessed_at": "2026-10-19T23:06:11.860292+00:00",
+     "retrieved_at": "2026-10-19T23:04:15.546293+00:00",
+     "stage": "book",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "0143112d-1446-4b73-b67a-30466b53fa34",
+     "first_witnessed_at": "2026-10-19T23:08:12.180052+00:00",
+     "retrieved_at": "2026-10-19T23:06:15.727412+00:00",
+     "stage": "book",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "91da1521-0b56-4b92-b8ad-68a80853c488",
+     "first_witnessed_at": "2026-10-19T23:10:12.524602+00:00",
+     "retrieved_at": "2026-10-19T23:08:16.102750+00:00",
+     "stage": "book",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "af80ce19-5394-421a-acc4-1bf12990187f",
+     "first_witnessed_at": "2026-10-19T23:12:12.911244+00:00",
+     "retrieved_at": "2026-10-19T23:10:16.429417+00:00",
+     "stage": "book",
+     "state": "ok"
+    }
+   ],
+   "cycles": [
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 0,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:30:12.302614+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 1,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:32:12.538180+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 2,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:34:12.747565+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 3,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:36:13.078858+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 4,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:38:13.333660+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 5,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:40:13.562243+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 6,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:42:13.798248+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 7,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:44:14.129839+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 8,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:46:14.355297+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 9,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:48:14.598481+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 10,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:50:14.840949+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 11,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:52:10.125838+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 12,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:54:10.367955+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 13,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:56:10.673364+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 14,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T22:58:10.896275+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 15,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:00:11.121036+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 16,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:02:11.257324+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 17,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:04:11.525942+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 18,
+     "due": 0,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:06:11.700231+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 19,
+     "due": 1,
+     "eligible": 1,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 1,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:08:12.011048+00:00",
+     "tick_status": "complete"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 20,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:10:12.353220+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 21,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:12:12.753272+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 22,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:14:12.960941+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 23,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:16:13.222990+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 24,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:18:13.444646+00:00",
+     "tick_status": "inconclusive"
+    },
+    {
+     "abstained": 0,
+     "collector_status": "complete",
+     "cycle": 25,
+     "due": 1,
+     "eligible": 0,
+     "errors": [
+      "[]",
+      "[]"
+     ],
+     "exit_code": 0,
+     "publications": {
+      "allowed": 0,
+      "failed": 0,
+      "missed": 0,
+      "vetoed": 0
+     },
+     "started_at": "2026-10-19T23:20:13.621922+00:00",
+     "tick_status": "inconclusive"
+    }
+   ],
+   "decisions": [
+    {
+     "alternatives": [
+      "KXMLBGAME-26OCT192008CLETB-TB"
+     ],
+     "book_reasons": [
+      "book_availability_after_cutoff"
+     ],
+     "code_hash": "b9c268c014ac4aad7928cff04e39bb38f17a5bfdfeff64766a097bb4b311502c",
+     "config_hash": "f4bd3443a455e1438d4944b31df8bed435997ab021710c4180d4dd79f17fb84d",
+     "contract_version": 3,
+     "created_at": "2026-10-19T23:08:12.241786+00:00",
+     "cutoff": "2026-10-19T23:08:00+00:00",
+     "cutoff_eligible": true,
+     "decision_id": 1,
+     "forecasters": null,
+     "reasons": [],
+     "results": {
+      "constant-v1": {
+       "features": null,
+       "probability": "0.5",
+       "reasons": [],
+       "recorded_quote_fetches": null,
+       "selected_quotes": null
+      },
+      "midpoint-v1": {
+       "features": null,
+       "probability": null,
+       "reasons": [
+        "book_availability_after_cutoff"
+       ],
+       "recorded_quote_fetches": null,
+       "selected_quotes": null
+      }
+     },
+     "scheduled_start": "2026-10-20T00:08:00+00:00",
+     "ticker": "KXMLBGAME-26OCT192008CLETB-CLE"
+    }
+   ],
+   "directory": "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2",
+   "evaluation_items": [
+    {
+     "cutoff_status": "eligible",
+     "game_id": 849815,
+     "outcome_reasons": [],
+     "outcome_status": "binary_scorable",
+     "paired_with_midpoint": null,
+     "publication_status": "published_timely",
+     "scores": {
+      "constant-v1": {
+       "brier": "0.25",
+       "log_loss": "0.6931471805599453094172321214581765680755"
+      },
+      "midpoint-v1": null
+     },
+     "y": 0
+    }
+   ],
+   "quote_fetches_near_cutoff": [
+    {
+     "fetch_id": "5b760e84-db65-474d-b39a-6fcf469ce23e",
+     "first_witnessed_at": "2026-10-19T23:02:11.394520+00:00",
+     "retrieved_at": "2026-10-19T23:00:13.619385+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "6e014fdd-a581-4dc6-b28f-71e2cfae0e83",
+     "first_witnessed_at": "2026-10-19T23:02:11.394520+00:00",
+     "retrieved_at": "2026-10-19T23:00:14.634758+00:00",
+     "stage": "event",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "f35483d0-a043-4ad7-8efb-0b59718bab6f",
+     "first_witnessed_at": "2026-10-19T23:04:11.691643+00:00",
+     "retrieved_at": "2026-10-19T23:02:13.743226+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "82d3418a-739e-42f5-b5f1-30253105bdd1",
+     "first_witnessed_at": "2026-10-19T23:04:11.691643+00:00",
+     "retrieved_at": "2026-10-19T23:02:14.766847+00:00",
+     "stage": "event",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "a8f04f5d-64a6-4bc6-b4f3-b2d700476dba",
+     "first_witnessed_at": "2026-10-19T23:06:11.860292+00:00",
+     "retrieved_at": "2026-10-19T23:04:14.030093+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "43043b9b-3755-4e49-a86f-340de16f3f92",
+     "first_witnessed_at": "2026-10-19T23:06:11.860292+00:00",
+     "retrieved_at": "2026-10-19T23:04:15.042058+00:00",
+     "stage": "event",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "50137dc6-d169-4012-983e-d65e3c5977ce",
+     "first_witnessed_at": "2026-10-19T23:08:12.180052+00:00",
+     "retrieved_at": "2026-10-19T23:06:14.203870+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "ce8715c6-6168-421b-87a2-ac9b79a6a709",
+     "first_witnessed_at": "2026-10-19T23:08:12.180052+00:00",
+     "retrieved_at": "2026-10-19T23:06:15.224606+00:00",
+     "stage": "event",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "aa20a44f-d14b-4140-84c0-df14f5818193",
+     "first_witnessed_at": "2026-10-19T23:10:12.524602+00:00",
+     "retrieved_at": "2026-10-19T23:08:14.584907+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "87b0a03f-8aa4-40b5-a51a-749a32be4242",
+     "first_witnessed_at": "2026-10-19T23:10:12.524602+00:00",
+     "retrieved_at": "2026-10-19T23:08:15.598247+00:00",
+     "stage": "event",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "f547f18a-adff-47d1-91a6-4c6a0e066a74",
+     "first_witnessed_at": "2026-10-19T23:12:12.911244+00:00",
+     "retrieved_at": "2026-10-19T23:10:14.918685+00:00",
+     "stage": "markets",
+     "state": "ok"
+    },
+    {
+     "fetch_id": "ce314f00-a78c-482d-ad3c-5157763d5f53",
+     "first_witnessed_at": "2026-10-19T23:12:12.911244+00:00",
+     "retrieved_at": "2026-10-19T23:10:15.929169+00:00",
+     "stage": "event",
+     "state": "ok"
+    }
+   ],
+   "shadow_evaluate": {
+    "status": "partial",
+    "steps": [
+     {
+      "argv": [
+       "/Users/ashwin/Documents/github-repos/Vader-Intelligence-live-v2/.venv/bin/python",
+       "-m",
+       "vader_intelligence.cli",
+       "--config",
+       "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/collector.toml",
+       "--db",
+       "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/shadow.sqlite3",
+       "settlement",
+       "refresh",
+       "--limit",
+       "20",
+       "--budget",
+       "120"
+      ],
+      "ended_at": "2026-10-20T05:00:54.072913+00:00",
+      "exit_code": 1,
+      "name": "shadow-settlement",
+      "result": {
+       "errors": [],
+       "mapping_states": {
+        "mapped": 18,
+        "quarantined": 2
+       },
+       "run_id": "d106c127-973e-4a8e-8d66-730b5b5acdf7",
+       "scope": "bounded settlement evidence; quarantine is not a verified mapping",
+       "selection_truncated": true,
+       "status": "partial",
+       "targets": 20
+      },
+      "runtime_seconds": 32.77363662500284,
+      "started_at": "2026-10-20T05:00:20.075853+00:00",
+      "status": "partial",
+      "stderr": "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/state/shadow-settlement-2026-10-20T050020.075720+0000.stderr.log",
+      "stdout": "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/state/shadow-settlement-2026-10-20T050020.075720+0000.stdout.log"
+     },
+     {
+      "argv": [
+       "/Users/ashwin/Documents/github-repos/Vader-Intelligence-live-v2/.venv/bin/python",
+       "-m",
+       "vader_intelligence.cli",
+       "--config",
+       "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/collector.toml",
+       "--db",
+       "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/shadow.sqlite3",
+       "research",
+       "run",
+       "--research-config",
+       "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/research.toml",
+       "--view",
+       "forward-shadow",
+       "--outcomes-as-of",
+       "2026-10-20T05:00:54.073024+00:00",
+       "--from",
+       "2026-10-20",
+       "--through",
+       "2026-10-20",
+       "--budget",
+       "120"
+      ],
+      "ended_at": "2026-10-20T05:00:54.309307+00:00",
+      "exit_code": 3,
+      "name": "shadow-research",
+      "result": {
+       "archive_after": {
+        "discovery_passes": 27,
+        "fetch_ceiling": 306,
+        "fetches": 306,
+        "forecast_bindings": 1,
+        "forecast_decisions": 1,
+        "latest_fetch_digest": "4d59bbafe4fc8a14044bfb3648b138cb2c426a443dc5e41488a2afdebe1d1599",
+        "schema_version": 5,
+        "settlement_versions": 59
+       },
+       "code_hash": "b9c268c014ac4aad7928cff04e39bb38f17a5bfdfeff64766a097bb4b311502c",
+       "dataset": "forward-shadow-v2-20261019",
+       "errors": [],
+       "holdout_history": [],
+       "manifest": {
+        "archive": {
+         "discovery_passes": 27,
+         "fetch_ceiling": 306,
+         "fetches": 306,
+         "forecast_bindings": 1,
+         "forecast_decisions": 1,
+         "latest_fetch_digest": "4d59bbafe4fc8a14044bfb3648b138cb2c426a443dc5e41488a2afdebe1d1599",
+         "schema_version": 5,
+         "settlement_versions": 59
+        },
+        "dataset": "forward-shadow-v2-20261019",
+        "development_through": null,
+        "forward_dataset": "forward-shadow-v2-20261019",
+        "holdout_from": null,
+        "outcomes_as_of": "2026-10-20T05:00:54.073024+00:00",
+        "protocol": "f4bd3443a455e1438d4944b31df8bed435997ab021710c4180d4dd79f17fb84d",
+        "source_ceiling": 306,
+        "start_date": "2026-10-20",
+        "through_date": "2026-10-20",
+        "view": "forward-shadow"
+       },
+       "protocol": "mlb-t60-v1",
+       "reconstruct": [],
+       "research_config_hash": "f4bd3443a455e1438d4944b31df8bed435997ab021710c4180d4dd79f17fb84d",
+       "run_id": "43dc6f2b-3237-4269-8fc1-50611896ccfe",
+       "runtime_seconds": 0.023025124974083155,
+       "segments": {
+        "whole": {
+         "cohorts": {
+          "aa94f19a3a4370c9a92d49b0031d2f30c1b13349e3bc965bcaa9c691e4ceca0a": {
+           "collector_config_hash": "aa94f19a3a4370c9a92d49b0031d2f30c1b13349e3bc965bcaa9c691e4ceca0a",
+           "errors": [],
+           "evaluation_id": 1,
+           "existing": false,
+           "mode": "forward_shadow",
+           "paired": {
+            "mean_brier_constant": null,
+            "mean_brier_delta": null,
+            "mean_brier_midpoint": null,
+            "mean_log_loss_constant": null,
+            "mean_log_loss_delta": null,
+            "mean_log_loss_midpoint": null,
+            "n": 0
+           },
+           "population": {
+            "E": 1,
+            "FK": 1,
+            "FM": 0,
+            "FP": 0,
+            "K": 1,
+            "M": 0,
+            "P": 0,
+            "U": 1,
+            "abstentions": 0,
+            "annotated_eligible_unattempted": 0,
+            "annotated_midpoint_unattempted": 0,
+            "decisions": 1,
+            "no_binding": 0,
+            "scored_constant": 1,
+            "scored_paired": 0,
+            "unattempted": 0,
+            "unresolved_candidates": 0
+           },
+           "status": "inconclusive",
+           "supersedes_id": null
+          }
+         },
+         "start_date": "2026-10-20",
+         "through_date": "2026-10-20"
+        }
+       },
+       "status": "inconclusive",
+       "view": "forward-shadow"
+      },
+      "runtime_seconds": 0.23614070800249465,
+      "started_at": "2026-10-20T05:00:54.073178+00:00",
+      "status": "inconclusive",
+      "stderr": "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/state/shadow-research-2026-10-20T050054.073161+0000.stderr.log",
+      "stdout": "/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/state/shadow-research-2026-10-20T050054.073161+0000.stdout.log"
+     }
+    ]
+   }
+  }
+ },
+ "ticker": "KXMLBGAME-26OCT192008CLETB-CLE"
+}
