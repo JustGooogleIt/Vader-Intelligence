@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .references import digest
+from .selection import SELECTION_VERSIONS
 
 PROTOCOL_ID = "mlb-t60-v1"
 BASELINES = ("constant-v1", "midpoint-v1")
@@ -86,6 +87,10 @@ class Protocol:
             value = getattr(self, name)
             if not isinstance(value, str) or not 1 <= len(value) <= 128:
                 raise ValueError(f"{name} must be a bounded nonempty string")
+        # The midpoint book rule depends on it (decision D-016); an unknown version has
+        # no defined behavior, so it is refused rather than read as selection-v1.
+        if self.selection_version not in SELECTION_VERSIONS:
+            raise ValueError(f"selection_version must be one of {', '.join(SELECTION_VERSIONS)}")
         # Nonfinite or negative numeric settings are rejected; all are explicit ints
         # or the fixed epsilon string, so there is no float to admit.
         for name, value in asdict(self).items():

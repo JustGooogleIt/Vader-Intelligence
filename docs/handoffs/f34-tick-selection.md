@@ -36,6 +36,10 @@ explicit abstention, invoked by a finite `forecast tick`:
   `book_parse_error`, `book_stale`, `book_schedule_mismatch`). No backward search, no
   post-C snapshot. Arithmetic-level reasons (side missing, crossed, flagged) come from
   `baselines.midpoint`. The module stays import-pure (evidence imported lazily).
+  Correction (2026-10-20, decision D-016): as implemented, the default rule, now named
+  `selection-v1`, anchors on the latest retrieval received by C and abstains when that
+  retrieval was witnessed after C. The rule described above is the opt-in
+  `selection-v2` (#36).
 - **Decision generation** (`forecast/service.py:decide_opportunity`): composes
   `policy.cutoff_eligibility` and the F3.1 baselines into a **contract-2** decision pinned
   to its discovery pass. Constant emits `0.5` when the common checks pass; the midpoint

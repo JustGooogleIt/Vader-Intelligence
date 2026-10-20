@@ -498,7 +498,11 @@ def evaluate(
             elif origin == "unattempted":
                 ticker, yes_team = record["ticker"], record["yes_team_id"]
                 facts = forecast_service.cutoff_facts(
-                    db, binding=record, namespace=namespace, evidence_mode=binding_mode
+                    db,
+                    binding=record,
+                    namespace=namespace,
+                    evidence_mode=binding_mode,
+                    selection_version=protocol.selection_version,
                 )
                 item["cutoff_status"] = "unattempted"
                 item["cutoff_reasons"] = ["decision_missing"]
