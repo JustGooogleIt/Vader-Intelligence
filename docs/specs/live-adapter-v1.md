@@ -182,3 +182,15 @@ and balance mismatches indefinitely (safe, since buys stop, but never resolved).
   missing, and four minor gaps (a data-less acknowledgement ignored, two records for one
   ticker still blocking every market, and runbook remedies for fees, own unreadable
   records and `fill_conflict`), fixed as described above.
+
+## Revision: venue absence (2026-10-19, independent review findings F30, F32)
+
+- **Accepted orders survive a restart (F32).** The guard that an order the exchange
+  accepted is never reported "not found" lived only in gateway memory. `lookup` and
+  `cancel` now also use what the ledger records: the exchange order id of an exchange
+  event (the 201, a 409 resolved by lookup, a reconciliation that found the order), an
+  `accepted` event or a fill. After a restart, `lookup` scans the listing as before
+  (which detects duplicates), then GETs the recorded id; while neither shows the order
+  it raises `LookupInconclusive`, so reconciliation reports `lookup_failed:<coid>` and
+  the order keeps its reservation. Two recorded exchange ids, or a venue order other
+  than the recorded one, raise as duplicate exposure.
