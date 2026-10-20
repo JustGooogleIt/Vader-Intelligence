@@ -284,11 +284,19 @@ def _check_model(registry, dataset_id, model_id, split):
     return artifact_json
 
 
-def _guard_segment(registry, dataset_id, model_id, split, segment):
-    """Holdout: the pinned ledger key, refused when this model already used it. Other
-    segments: the split must end before the dataset's pinned holdout."""
+def _guard_segment(registry, dataset_id, model_id, split, segment, acknowledged=False):
+    """Holdout: refused unless acknowledged; the pinned ledger key, refused when this
+    model already used it. Other segments: the split must end before the dataset's
+    pinned holdout."""
     if segment not in SEGMENTS:
         raise ValueError(f"segment must be one of {SEGMENTS}")
+    if segment == "holdout" and acknowledged is not True:
+        # The library equivalent of the CLI's --acknowledge-holdout: a holdout run
+        # consumes the dataset's final holdout and the model's one ledger slot.
+        raise ValueError(
+            "the holdout segment requires acknowledge_holdout=True (it consumes the final"
+            " holdout and is recorded in the holdout ledger)"
+        )
     if segment != "holdout":
         readonly = getattr(registry, "readonly", False)
         splits.guard(registry, dataset_id, split, pin_if_missing=not readonly)
@@ -313,16 +321,18 @@ def run(
     directory=None,
     run_id=None,
     min_holdout_rows=training.MIN_EVALUATION_ROWS,
+    acknowledge_holdout=False,
 ):
     """Backtest a registered model on one segment of a registry dataset.
 
-    `holdout` is allowed only through this function's ledger entry, which is recorded
-    before any holdout result is computed or written (first use consumes the pinned
-    holdout, later uses by other models are reuses). With `grid`, a sensitivity table
-    over disposable ledgers; otherwise one run into `ledger_path`.
+    `holdout` requires `acknowledge_holdout=True` and is allowed only through this
+    function's ledger entry, which is recorded before any holdout result is computed or
+    written (first use consumes the pinned holdout, later uses by other models are
+    reuses). With `grid`, a sensitivity table over disposable ledgers; otherwise one run
+    into `ledger_path`.
     """
     _check_model(registry, dataset_id, model_id, split)
-    _guard_segment(registry, dataset_id, model_id, split, segment)
+    _guard_segment(registry, dataset_id, model_id, split, segment, acknowledge_holdout)
     check_archive(history_db, registry.dataset(dataset_id))
     rows = segment_rows(registry, dataset_id, split, segment)
     execution = execution_inputs(history_db, rows, run_id=run_id)
@@ -338,6 +348,7 @@ def run(
         ledger_path=ledger_path,
         directory=directory,
         min_holdout_rows=min_holdout_rows,
+        acknowledge_holdout=acknowledge_holdout,
     )
 
 
@@ -354,15 +365,17 @@ def simulate(
     ledger_path=None,
     directory=None,
     min_holdout_rows=training.MIN_EVALUATION_ROWS,
+    acknowledge_holdout=False,
 ):
     """`run` on execution inputs already built (by `execution_inputs`, or a labelled
-    synthetic payload); the same model, split, segment and holdout-ledger rules apply."""
+    synthetic payload); the same model, split, segment, holdout acknowledgement and
+    holdout-ledger rules apply."""
     if (grid is None) == (ledger_path is None):
         raise ValueError("give exactly one of grid or ledger_path")
     execution = load_execution(execution)
     manifest = registry.dataset(dataset_id)
     artifact_json = _check_model(registry, dataset_id, model_id, split)
-    key = _guard_segment(registry, dataset_id, model_id, split, segment)
+    key = _guard_segment(registry, dataset_id, model_id, split, segment, acknowledge_holdout)
     rows = segment_rows(registry, dataset_id, split, segment)
     if segment == "holdout" and len(rows) < min_holdout_rows:
         raise ValueError(f"insufficient holdout rows: {len(rows)}")

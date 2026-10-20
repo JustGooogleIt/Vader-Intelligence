@@ -35,7 +35,8 @@ Segments: `development` (in-sample), `validation` (selection-biased: it compares
 models) and `holdout`.
 
 **Holdout runs (revised after review, D-014).**
-- The holdout run requires `--acknowledge-holdout`.
+- The holdout run requires `--acknowledge-holdout`; the library functions `run` and
+  `simulate` require `acknowledge_holdout=True` the same way (finding F34).
 - The dataset's final holdout is *pinned* in the registry (`holdout_pins`; `vader dataset
   pin-holdout`, or the first writable training or snapshot use), and the run's split must
   hold out exactly from the pin.

@@ -954,6 +954,7 @@ def _backtest(args):
             segment=args.segment,
             grid=grid,
             ledger_path=args.ledger,
+            acknowledge_holdout=args.acknowledge_holdout,
         )
     finally:
         db.close()

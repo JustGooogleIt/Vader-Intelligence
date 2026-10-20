@@ -160,7 +160,7 @@ def test_holdout_backtest_is_recorded_in_the_holdout_ledger(store, config, tmp_p
         with pytest.raises(ValueError, match="insufficient holdout rows"):
             backtest.run(
                 registry, store.db, dataset_id, model_id, HOLDOUT, PaperConfig(),
-                segment="holdout", ledger_path=ledger,
+                segment="holdout", ledger_path=ledger, acknowledge_holdout=True,
             )  # fmt: skip
         assert not ledger.exists()
         assert registry.holdout_status(dataset_id, key)["untouched"]  # the floor consumes nothing
@@ -174,6 +174,7 @@ def test_holdout_backtest_is_recorded_in_the_holdout_ledger(store, config, tmp_p
             segment="holdout",
             grid=grid,
             min_holdout_rows=1,  # the SYNTHETIC archive has two holdout rows
+            acknowledge_holdout=True,
         )
         assert result["selection_biased"] is False
         assert result["holdout_ledger"]["evaluations"] == 1
@@ -193,6 +194,7 @@ def test_holdout_backtest_is_recorded_in_the_holdout_ledger(store, config, tmp_p
                 segment="holdout",
                 ledger_path=ledger,
                 min_holdout_rows=1,
+                acknowledge_holdout=True,
             )
         assert not ledger.exists()
     finally:
@@ -279,7 +281,7 @@ def test_a_reused_holdout_is_selection_biased_and_archives_must_match(store, con
         second = registry.register_model(
             other.to_json(), family="logistic", dataset_id=dataset_id, summary={"test": True}
         )
-        options = dict(segment="holdout", min_holdout_rows=1)
+        options = dict(segment="holdout", min_holdout_rows=1, acknowledge_holdout=True)
         first = backtest.run(
             registry, store.db, dataset_id, model_id, HOLDOUT, PaperConfig(),
             ledger_path=tmp_path / "a.sqlite3", **options,
@@ -343,3 +345,36 @@ def test_summary_takes_selection_bias_from_the_holdout_ledger():
     with pytest.raises(TypeError, match="selection_biased"):
         backtest.summary({}, **envelope)
     assert backtest.summary({}, **envelope, selection_biased=True)["selection_biased"] is True
+
+
+def test_library_holdout_runs_require_an_acknowledgement(store, config, tmp_path):
+    """F34 (R64): `simulate` and `run` take the final holdout only with an explicit
+    `acknowledge_holdout=True`, as the CLI requires --acknowledge-holdout. Without it
+    nothing is consumed, no ledger slot is taken and no paper ledger is written."""
+    registry, dataset_id, model_id = registered(store, config, tmp_path, HOLDOUT)
+    try:
+        key = splits.holdout_key(registry, dataset_id, HOLDOUT)
+        rows = backtest.segment_rows(registry, dataset_id, HOLDOUT, "holdout")
+        synthetic = backtest.execution_inputs(store.db, rows) | {
+            "source": {"interpretation": "synthetic", "run_id": None}
+        }
+        ledger = tmp_path / "h.sqlite3"
+        options = dict(segment="holdout", ledger_path=ledger, min_holdout_rows=1)
+        with pytest.raises(ValueError, match="acknowledge_holdout"):
+            backtest.simulate(
+                registry, synthetic, dataset_id, model_id, HOLDOUT, PaperConfig(), **options
+            )
+        with pytest.raises(ValueError, match="acknowledge_holdout"):
+            backtest.run(
+                registry, store.db, dataset_id, model_id, HOLDOUT, PaperConfig(), **options
+            )
+        assert not ledger.exists()
+        assert registry.holdout_status(dataset_id, key)["untouched"]
+        assert registry.holdout_evaluation(model_id, dataset_id, key) is None
+        result = backtest.run(
+            registry, store.db, dataset_id, model_id, HOLDOUT, PaperConfig(),
+            acknowledge_holdout=True, **options,
+        )  # fmt: skip
+        assert result["holdout_ledger"]["evaluations"] == 1
+    finally:
+        registry.close()
