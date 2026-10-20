@@ -254,14 +254,32 @@ def main():
             "4": 0,
         }
         invoke(ops + ["backup", "--source", str(legacy), "--destination", str(root / "lb.sqlite3")])
+        # Decision contract 4 (D-004): migration 006 to schema 6 keeps every row and the
+        # legacy classification; it is idempotent and the ops allowlist backs it up.
+        rc4 = invoke(legacy_core + ["forecast", "migrate", "--record-contract", "4"])
+        assert rc4["schema_version"] == 6 and rc4["record_contract"] == 4 and rc4["migrated"]
+        assert_schema(legacy, 6)
+        assert (
+            invoke(legacy_core + ["forecast", "migrate", "--record-contract", "4"])["migrated"]
+            is False
+        )
+        six = invoke(legacy_core + ["replay"])["forecast_storage"]
+        assert (
+            six["legacy_rows"] == 25
+            and six["record_contracts"]["forecast_receipts"]
+            == (legacy_replay["record_contracts"]["forecast_receipts"])
+        )
+        invoke(ops + ["backup", "--source", str(legacy), "--destination", str(root / "l6.sqlite3")])
+        assert_schema(root / "l6.sqlite3", 6)
     print(
         json.dumps(
             {
                 "status": "complete",
                 "synthetic": True,
                 "installed_module": location,
-                "schema_versions_exercised": [1, 2, 3, 4, 5],
+                "schema_versions_exercised": [1, 2, 3, 4, 5, 6],
                 "record_contracts_exercised": [1, 2, 3],
+                "record_contract_migrations": [3, 4],
                 "legacy_archives_exercised": ["draft-5811991-schema4"],
                 "checks": evidence,
             },

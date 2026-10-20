@@ -1,45 +1,100 @@
 # Roadmap run continuation note
 
-Durable checkpoint for the research-to-trading roadmap run (started 2026-10-18; user
-asked for Opus 5.5 for this work, including subagents). Resume from here; the backlog
-(`backlog.md`), decision log (`decisions.md`) and evidence index (`evidence-index.md`)
-hold the detail. This note always names the exact next action.
+Durable checkpoint for the research-to-trading roadmap run (started 2026-10-18; the user
+asked for Opus 5.5 for this work, including subagents, never Fable). Resume from here;
+the backlog (`backlog.md`), decision log (`decisions.md`), evidence index
+(`evidence-index.md`) and review packets (`review-packets.md`) hold the detail. This note
+always names the exact next action.
 
 ## Where the work lives
 
 | Item | Value |
 |---|---|
-| Main worktree | `/Users/ashwin/Documents/github-repos/Vader-Intelligence-roadmap` (attached to the `-claude` checkout; `uv sync --locked`, uv 0.12.19 at `../Vader-Intelligence/.venv/bin/uv`, Python 3.11.6) |
+| Main worktree | `/Users/ashwin/Documents/github-repos/Vader-Intelligence-roadmap` (`uv sync --locked`, uv 0.12.19 at `../Vader-Intelligence/.venv/bin/uv`, Python 3.11.6) |
 | Stack base | PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c31` |
-| Parallel worktrees | `-wt-execution-risk` (`feat/execution-risk`, done: `479cf7f`, `ed67bc6`, `220aec3`), `-wt-symbolic-engine` (`feat/symbolic-engine`, done: `1d36973`, `f614594`, `b2f184d`), `-wt-research-pods-core` (`feat/research-pods-core`, done: `b0b3288`, `0feb693`, `3c0a79a`), `-wt-models-library` (`feat/models-library`, agent running), `-wt-live-adapter` (`feat/live-adapter` from `feat/execution-risk`, agent running); all originally from `wip/deps` `2d6a98f` |
-| Pinned run worktrees | `-live-v2` (detached `622caad`, live shadow driver), `-history-run` (detached `f7d3263`, historical acquisition) |
-| Production | Read-only queries only; disk ~7 GiB free; no full copy of the 1.5 GB archive |
+| Pinned run worktrees | `-live-v2` (detached `622caad`, live rule-v2 shadow driver), `-live-models` (model shadow driver), `-history-run` / `-history-run2` (pinned acquisition code), `-verify` (now on `fix/activation-key-material`, #35) |
+| Finished subagent worktrees (cleanup) | `-wt-deps`, `-wt-execution-risk`, `-wt-symbolic-engine`, `-wt-research-pods-core`, `-wt-models-library`, `-wt-live-adapter` |
+| Research data (outside the repo) | `/Users/ashwin/Documents/Vader-Intelligence-research/{history,registry,pods-2026,pods-2025-2026,demo}` |
+| Production | `~/Documents/Vader-Intelligence-operations/20260930-first-deployment/production.sqlite3`: read-only queries only; never copied (disk ~10 GiB free) |
 
-## PR ledger (all drafts, none merged)
+## PR ledger (all drafts, none merged, none reviewed yet)
 
-| PR | Branch | Head | Scope |
-|---|---|---|---|
-| #17 | `fix/record-contract-3` | `f8642bf` | D-001 contract 3 / schema 5, contract 2 frozen, legacy archives from old code |
-| #18 | `feat/eligibility-rule-v2` | `622caad` | D-002 rule v2 (date-only postseason rules, ticker corroboration), mapping policy 2 |
-| #19 | `feat/schedule-revisions` | `74a60a8` | D-003 schedule changes after C unscored; evaluator v2 |
-| #20 | `feat/historical-acquisition` | `2f99f61` | A4 public historical acquisition (history profile, resumable) |
-| (next) | `feat/datasets-models` | `549d073`+ | B features, datasets, registry, holdout ledger; models library and training to integrate |
+| PR | Branch | Scope |
+|---|---|---|
+| #17 | `fix/record-contract-3` | D-001 contract 3 / schema 5, contract 2 frozen, legacy archives |
+| #18 | `feat/eligibility-rule-v2` | D-002 rule v2 for date-only postseason rules |
+| #19 | `feat/schedule-revisions` | D-003 schedule changes after C unscored |
+| #20 | `feat/historical-acquisition` | A4 public historical acquisition |
+| #21 | `feat/datasets-models` | B features, datasets, registry, models, training |
+| #22 | `feat/registered-forecasters` | D-004 decision contract 4, evaluation contract 2 |
+| #23 | `feat/symbolic-search` | C bounded symbolic regression |
+| #24 | `feat/paper-execution-risk` | D/E ledger, simulator, risk, Kelly |
+| #25 | `feat/kalshi-live-adapter` | F live adapter, disabled by default |
+| #26 | `feat/history-backtest` | D/H historical paper backtest, live-adapter dry run |
+| #27 | `feat/research-pods` | G orchestration, real operations, protected evaluator |
+| #28 | `feat/integration-demos` | H demos (E2E, recovery, real data, candle-vs-book) and run docs |
+| #29 | `perf/ledger-row-cache` | D-012 ledger parsed-row reuse (5× less CPU per paper run); read-only registry for non-holdout backtests |
+| #30 | `feat/pod-autopilot` | D-013 pod autopilot: development-only planners and a bounded loop of approved operations |
+| #31 | `fix/review-26-27` | repairs from the independent #26/#27 pre-review: D-014 pinned holdout, coordinator-only inputs, candidate-bound evidence, dry-run fidelity |
+| #32 | `fix/review-24-25` | repairs from the #24/#25 pre-review: live-adapter hardening (skew, TLS, writes, exits, bindings), ingest idempotency, fee bound, Kelly rounding |
+| #33 | `fix/review-17-23-28` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping, forecast-tick abstention, synthetic label, case-insensitive ops guard |
+| #34 | `feat/live-settlements` | F live settlement recording: venue settlements recorded only on an exact match with the ledger |
+| #35 | `fix/activation-key-material` | repair: the activation gate refuses encoded key material (also merged or misaligned runs); runbook note on canary risk limits within the notional caps |
+| #36 | `fix/book-selection-witnessed` | repair (D-016): opt-in `selection-v2` selects the midpoint's book as spec §4 says; default unchanged |
+| #37 | `fix/review-findings` | repairs for the independent review findings on #10–#28 (`review-findings.md`) |
 
-## Background processes (bounded; they terminate by themselves)
+Full SHAs are in the final handoff (`docs/handoffs/roadmap-handoff.md`).
+
+## Background processes (bounded; they end by themselves)
 
 | What | Where | Ends |
 |---|---|---|
-| Live forward-shadow driver, rule v2, test label, no launchd | `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/driver.sh` (cycles 22:30:10–23:20 UTC on 2026-10-19 around C = 23:08:00Z of `KXMLBGAME-26OCT192008CLETB`, then `shadow-evaluate` at 05:00 UTC 2026-10-20) | ≈05:05 UTC 2026-10-20 |
-| Historical acquisition 2025 then 2026 (default identity rules) | `/Users/ashwin/Documents/Vader-Intelligence-research/history/run-acquisition.sh` → `history.sqlite3` | ≈2 h after 05:10 UTC 2026-10-19 |
+| Live forward-shadow driver (rule v2, test label, no launchd) | `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2/driver.sh`; decision at C = 23:08:00Z for `KXMLBGAME-26OCT192008CLETB`, `shadow-evaluate` at 05:00 UTC 2026-10-20 | ≈05:05 UTC 2026-10-20 (decision recorded at 23:08:12Z) |
+| Model shadow driver (three 2026 pod models as registered forecasters) | `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models/driver.sh`; evaluation 05:15 UTC | ≈05:20 UTC 2026-10-20 (decision recorded at 23:08:12Z) |
 
-Follow-up acquisitions planned after it finishes (same archive, sequential): 2025 with
-`--identity-rules default,history-date-only --post-cutoff-seconds 900`; 2026 with
-`--no-pre-cutoff --post-cutoff-seconds 900` (execution-only windows).
+The acquisitions are complete (2025 date-only identities; 2026 execution windows, 4,810
+post-cutoff windows, none failed). The real-candle backtests are recorded in `docs/evidence/real-data-demo-20261019.md`
+§3 (2026) and §3b (two seasons); the autopilot is in §4.
 
 ## Next action
 
-Integrate the models library (when its agent reports) into `feat/datasets-models`: training
-pipeline (`models/train.py`) on registry datasets with chronological CV, OOF calibration,
-validation and one-time holdout via the ledger; CLI `vader dataset build|inspect`,
-`vader model train|evaluate`; then open the B PR. Then stack C (symbolic engine +
-integration), D/E (execution-risk), F (live adapter), G (pods), H (integration).
+Done so far:
+- The real-candle backtests (§3, §3b) and the autopilot (§4) are recorded.
+- Every PR has had an independent read-only pre-review, with repairs in #30–#33 and the
+  open items in the handoff (§3b, §6, §8).
+- 2026-10-19, live: both shadows decided at C = 23:08Z, and the publications were
+  allowed. The three model probabilities were 0.461, 0.438 and 0.413, against a market
+  mid of 0.415.
+  - The midpoint abstained in both shadows (`book_availability_after_cutoff`). An
+    independent read-only review traced this to `select_inputs` departing from spec §4.
+    It is D-016, repaired as an opt-in `selection-v2` in #36
+    (`fix/book-selection-witnessed`).
+  - The dry runs on the real decision are recorded. The logistic model would buy 8 YES
+    at 0.42; the 1.00 cap refuses that order. #35 gained the runbook note on canary
+    limits (`67b260a`, with caveats in `78eea4d`).
+  - #35's key-material test failed intermittently, about one run in three. `e9f4b89`
+    fixes the detector for runs merged with neighbouring text or misaligned. An
+    adversarial review then found that a body pasted as TOML comments passed every
+    gate. `5b7397e` fixes that, plus arrays, truncated and OpenSSH bodies, and slow RSA
+    validation. #35 is now at `5b7397e`, with 1361 passed.
+  - #36 is at `6a2bc50` (1379 passed), which merges #35's hardening; it was not rebased.
+    Its read-only pre-review found no correctness defect, and its test gaps are closed.
+  - Evidence: `docs/evidence/live-forward-20261019.md` and `.json`. The JSON is
+    regenerated by
+    `/private/tmp/claude-501/-Users-ashwin/cc9d4483-1bdc-4f4f-a532-a2811c7f035f/scratchpad/live-evidence/extract.py`
+    (read-only).
+
+Next:
+
+1. **After 05:00 UTC (rule v2) and 05:20 UTC (models) on 2026-10-20:** read both
+   `shadow-evaluate.json` reports. Re-run the extract, and add the settlement and
+   evaluation results to the evidence file. The fs-market-v1 models carry the D-015
+   caveat, and the stored midpoint abstained under selection-v1 (D-016).
+   - If the game has not settled by then, run the same `manage.py shadow-evaluate`
+     command once more after the drivers finish.
+2. **Final handoff:**
+   - verify every PR's head SHA against GitHub;
+   - write §11 (the head of #28) and add the live results;
+   - update the matrix, backlog and evidence index states;
+   - update the PR #28 description: "after fees" wording, #29–#36, D-014 to D-016,
+     live results, and the suite at the final head.

@@ -76,6 +76,7 @@ def digest(path):
 
 SHADOW_ROLE = "forward-shadow"
 SHADOW_KEYS = {"role", "research_config", "tick_budget", "forbidden_paths"}
+SHADOW_OPTIONAL = {"model_registry"}
 
 
 def validate_shadow(config):
@@ -87,9 +88,13 @@ def validate_shadow(config):
     that none of its own paths may equal or live under.
     """
     shadow = config["shadow"]
-    if not isinstance(shadow, dict) or set(shadow) != SHADOW_KEYS:
+    if (
+        not isinstance(shadow, dict)
+        or not SHADOW_KEYS <= set(shadow) <= SHADOW_KEYS | SHADOW_OPTIONAL
+    ):
         raise ValueError(
             "shadow block must have exactly role, research_config, tick_budget, forbidden_paths"
+            " (and optionally model_registry)"
         )
     if shadow["role"] != SHADOW_ROLE:
         raise ValueError(f"shadow role must be {SHADOW_ROLE!r}")
@@ -116,6 +121,11 @@ def validate_shadow(config):
         "collector_config": absolute(config["collector_config"]).resolve(),
         "research_config": research.resolve(),
     }
+    if "model_registry" in shadow:
+        registry = absolute(shadow["model_registry"])
+        if not registry.is_dir():
+            raise ValueError("shadow model_registry must be an existing absolute directory")
+        own["model_registry"] = registry.resolve()
     for name, path in own.items():
         for banned in resolved:
             if path == banned or banned in path.parents:
@@ -218,6 +228,8 @@ def tick_command(config):
         shadow["research_config"],
         "--budget",
         str(shadow["tick_budget"]),
+        # Registered forecasters (D-004) load their artifacts from the research registry.
+        *(["--model-registry", shadow["model_registry"]] if "model_registry" in shadow else []),
     ]
 
 

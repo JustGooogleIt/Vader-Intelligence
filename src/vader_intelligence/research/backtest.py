@@ -257,8 +257,42 @@ def run(
     """
     if segment not in SEGMENTS:
         raise ValueError(f"segment must be one of {SEGMENTS}")
+    rows = segment_rows(registry, dataset_id, split, segment)
+    execution = execution_inputs(history_db, rows, run_id=run_id)
+    return simulate(
+        registry,
+        execution,
+        dataset_id,
+        model_id,
+        split,
+        config,
+        segment=segment,
+        grid=grid,
+        ledger_path=ledger_path,
+        directory=directory,
+    )
+
+
+def simulate(
+    registry,
+    execution,
+    dataset_id,
+    model_id,
+    split,
+    config,
+    *,
+    segment="validation",
+    grid=None,
+    ledger_path=None,
+    directory=None,
+):
+    """`run` on execution inputs already built (by `execution_inputs`, or a labelled
+    synthetic payload); the same model, split, segment and holdout-ledger rules apply."""
+    if segment not in SEGMENTS:
+        raise ValueError(f"segment must be one of {SEGMENTS}")
     if (grid is None) == (ledger_path is None):
         raise ValueError("give exactly one of grid or ledger_path")
+    execution = load_execution(execution)
     manifest = registry.dataset(dataset_id)
     artifact_json = registry.model_artifact(model_id)
     artifact = ModelArtifact.from_dict(json.loads(artifact_json))
@@ -267,9 +301,9 @@ def run(
     if artifact.training.get("split", {}).get("key") != split.key:
         raise ValueError("backtest split differs from the model's training split")
     rows = segment_rows(registry, dataset_id, split, segment)
-    execution = execution_inputs(history_db, rows, run_id=run_id)
     forecast_inputs = forecasts(artifact_json, manifest, rows, model_id)
-    inputs = paper_inputs(execution, forecast_inputs, f"history:{segment}:{dataset_id[:16]}")
+    label = f"{execution['source']['interpretation']}:{segment}:{dataset_id[:16]}"
+    inputs = paper_inputs(execution, forecast_inputs, label)
     if not inputs.forecasts:
         raise ValueError("no forecast has execution data")
     if grid is None:
