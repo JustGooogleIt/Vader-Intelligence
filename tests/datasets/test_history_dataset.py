@@ -251,3 +251,26 @@ def test_date_only_identity_is_opt_in_and_flagged():
     assert interpret.identify(records(), two, rules)["reason"] == "ambiguous_game"
     with pytest.raises(ValueError):
         interpret.identify(records(), games, ("history-date-only",))
+
+
+@pytest.mark.parametrize("start", ["2025-07-04T19:05:00", "TBD", "2025-07-04", 1751670300])
+def test_date_only_identity_leaves_an_unparseable_start_unresolved(start):
+    """Review F22: under history-date-only an offset-less or non-ISO gameDate is a
+    per-event reason, never a ValueError out of identify."""
+    rule = (
+        "If {w} wins the Cincinnati vs Philadelphia professional baseball game originally"
+        " scheduled for Jul 4, 2025, then the market resolves to Yes."
+    )
+    records = []
+    for code, team in (("CIN", "Cincinnati"), ("PHI", "Philadelphia")):
+        raw = {
+            "ticker": f"KXMLBGAME-25JUL04CINPHI-{code}",
+            "event_ticker": "KXMLBGAME-25JUL04CINPHI",
+            "market_type": "binary",
+            "yes_sub_title": team,
+            "rules_primary": rule.format(w=team),
+        }
+        records.append({"ticker": raw["ticker"], "raw": raw})
+    game = synthetic.game(7, 113, 143, start, official="2025-07-04") | {"_fetch_id": "s"}
+    found = interpret.identify(records, {7: game}, ("default", interpret.DATE_ONLY_RULE))
+    assert found == {"status": "unresolved", "reason": "unparseable_start"}

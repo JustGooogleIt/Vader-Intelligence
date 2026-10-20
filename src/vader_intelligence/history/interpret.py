@@ -277,12 +277,15 @@ def _identify_date_only(event_markets, identities, games_by_id):
         return {"status": "unresolved", "reason": "home_away_reversed"}
     if game.get("doubleHeader", "N") != "N" or not game.get("gameDate"):
         return {"status": "unresolved", "reason": "doubleheader_or_start_unknown"}
+    start = _official_start(game)
+    if start is None:  # review F22: a per-event reason, never a ValueError
+        return {"status": "unresolved", "reason": "unparseable_start"}
     team_ids = sorted({first["away_id"], first["home_id"]})
     selected = next(m for m, i in zip(event_markets, identities) if i["team_id"] == team_ids[0])
     return {
         "status": "identified",
         "game_id": game["gamePk"],
-        "start": instant(game["gameDate"]).astimezone(timezone.utc).isoformat(),
+        "start": start.astimezone(timezone.utc).isoformat(),
         "official_date": day,
         "away_id": first["away_id"],
         "home_id": first["home_id"],
