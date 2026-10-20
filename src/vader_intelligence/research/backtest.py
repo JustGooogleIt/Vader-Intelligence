@@ -236,11 +236,12 @@ def summary(
     rows,
     n_forecasts,
     execution,
-    selection_biased=None,
+    selection_biased,
 ):
     """The backtest envelope around a simulator report (or sensitivity table).
 
-    `selection_biased` defaults to "not the holdout"; a reused holdout is biased too."""
+    `selection_biased` is required: true for every segment but a holdout's first use as
+    the registry's holdout ledger records it (a reused holdout is biased too)."""
     days = sorted(r["official_date"] for r in rows)
     quoted = {s["ticker"] for s in execution["snapshots"]}
     return {
@@ -248,7 +249,7 @@ def summary(
         "simulated": True,
         "notice": NOTICE,
         "segment": segment,
-        "selection_biased": segment != "holdout" if selection_biased is None else selection_biased,
+        "selection_biased": bool(selection_biased),
         "model_id": model_id,
         "dataset_id": dataset_id,
         "rows": len(rows),

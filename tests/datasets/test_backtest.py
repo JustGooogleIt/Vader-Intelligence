@@ -299,3 +299,47 @@ def test_a_reused_holdout_is_selection_biased_and_archives_must_match(store, con
             backtest.check_archive(store.db, forged)
     finally:
         registry.close()
+
+
+def test_cli_refuses_several_depths_for_one_ledger_run(tmp_path):
+    """N-26b (fixed in 9f06a3d): one --ledger run takes one --assumed-depth; nothing is
+    silently ignored."""
+    args = parser().parse_args(
+        [
+            "backtest",
+            "run",
+            "--registry",
+            str(tmp_path / "r"),
+            "--history-db",
+            str(tmp_path / "h.sqlite3"),
+            "--dataset",
+            "d",
+            "--model",
+            "m",
+            "--development-through",
+            "2026-09-01",
+            "--validation-through",
+            "2026-09-15",
+            "--ledger",
+            str(tmp_path / "l.sqlite3"),
+            "--assumed-depth",
+            "5",
+            "--assumed-depth",
+            "25",
+        ]
+    )
+    with pytest.raises(ValueError, match="one --assumed-depth"):
+        execute(args)
+    assert not (tmp_path / "r").exists() and not (tmp_path / "l.sqlite3").exists()
+
+
+def test_summary_takes_selection_bias_from_the_holdout_ledger():
+    """N-26c: no default derived from the segment name, which called a reused holdout
+    unbiased; the caller passes what the registry's holdout ledger recorded."""
+    execution = {"snapshots": [], "markets": {}, "skipped": {}, "window_seconds": 60}
+    envelope = dict(
+        segment="holdout", model_id="m", dataset_id="d", rows=[], n_forecasts=0, execution=execution
+    )
+    with pytest.raises(TypeError, match="selection_biased"):
+        backtest.summary({}, **envelope)
+    assert backtest.summary({}, **envelope, selection_biased=True)["selection_biased"] is True
