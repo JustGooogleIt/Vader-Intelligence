@@ -107,7 +107,7 @@ def candle_historical(end):
     }
 
 
-def handler_factory(calls, *, page_size_pages=2, fail_ticker=None):
+def handler_factory(calls, *, page_size_pages=2, fail_ticker=None, schedule=None):
     def handler(request):
         calls.append(request)
         path = request.url.path.removeprefix("/trade-api/v2")
@@ -122,7 +122,7 @@ def handler_factory(calls, *, page_size_pages=2, fail_ticker=None):
             assert query["status"] == "settled"
             return response(data={"markets": SETTLED, "cursor": ""})
         if request.url.host == "statsapi.mlb.com":
-            return response(data=SCHEDULE)
+            return response(data=schedule or SCHEDULE)
         if path.endswith("/candlesticks"):
             ticker = path.split("/")[-2]
             if ticker == fail_ticker:
@@ -338,3 +338,35 @@ def test_execution_candles_are_a_separate_stage_features_never_read(store, confi
     assert feature and all(c["end"] <= limit for c in feature)
     assert any(c["end"] > limit for c in execution)
     assert [c for c in execution if c["end"] <= limit] == feature
+
+
+def with_start(pk, start):
+    """SCHEDULE with one game's provider gameDate replaced."""
+    games = [
+        g | {"gameDate": start} if g["gamePk"] == pk else g for g in SCHEDULE["dates"][0]["games"]
+    ]
+    return {"dates": [{"date": DAY, "games": games}]}
+
+
+@pytest.mark.parametrize("start", ["2026-09-20T17:10:00", "TBD", "2026-09-20", 1790010600])
+def test_an_unparseable_official_start_is_one_unresolved_event(store, config, start):
+    """Review F20: an offset-less or non-ISO gameDate on one candidate leaves that event
+    unresolved (`unparseable_start`); the others identify and the run fetches candles."""
+    calls = []
+    result = acquire(store, config, calls, handler={"schedule": with_start(900001, start)})
+    assert result["status"] == "complete", result
+    assert result["identified_events"] == 1
+    assert result["unresolved_by_reason"] == {"start_differs": 1, "unparseable_start": 1}
+    candle_paths = sorted(r.url.path for r in calls if r.url.path.endswith("/candlesticks"))
+    assert [p.rsplit("/", 2)[-2] for p in candle_paths] == [
+        "KXMLBGAME-26SEP201610HOUATH-ATH",
+        "KXMLBGAME-26SEP201610HOUATH-HOU",
+    ]
+    summary = interpret.summary(store.db)
+    assert summary["unresolved_by_reason"]["unparseable_start"] == 1
+    # A second candidate with the exact start cannot be proven unique beside it.
+    games = interpret.schedule(store.db)
+    twin = games[900001] | {"gamePk": 900009, "gameDate": "2026-09-20T17:10:00Z"}
+    records = interpret.events(interpret.markets(store.db))["KXMLBGAME-26SEP201310PHINYM"]
+    found = interpret.identify(records, games | {900009: twin})
+    assert found == {"status": "unresolved", "reason": "unparseable_start"}
