@@ -15,6 +15,7 @@ how a model family is evaluated.
 import hashlib
 import json
 import numbers
+import sqlite3
 from datetime import datetime, timedelta
 
 from ..features import definitions, quotes
@@ -77,12 +78,19 @@ def game_context(db, schedule_fetch_id, game_id):
 class ForecasterRunner:
     """Loads registered artifacts once and computes their forecasts for one decision."""
 
-    def __init__(self, artifacts, predict, verify=None):
+    def __init__(
+        self,
+        artifacts,
+        predict,
+        verify=None,
+        *,
+        missing="artifact missing or failed registry verification",
+    ):
         """`artifacts`: {sha256: artifact JSON bytes, or None when the registry has no such
         artifact}. A missing artifact, or one that fails `verify`, is kept as an
-        unavailable forecaster that abstains on every decision (D-004); a digest mismatch
-        or a feature set that is unknown or not forward capable is a configuration error
-        refused here, before any write."""
+        unavailable forecaster that abstains on every decision (D-004), a missing one with
+        the reason `missing`; a digest mismatch or a feature set that is unknown or not
+        forward capable is a configuration error refused here, before any write."""
         self.predict = predict
         self.models = {}
         for sha, data in sorted(artifacts.items()):
@@ -92,7 +100,7 @@ class ForecasterRunner:
                     "feature_set": "unavailable",
                     "family": "unavailable",
                     "names": [],
-                    "error": "artifact missing or failed registry verification",
+                    "error": missing,
                 }
                 continue
             if hashlib.sha256(data).hexdigest() != sha:
@@ -269,12 +277,22 @@ def verify_artifact(data, names):
 
 def runner_from_registry(registry_root, protocol):
     """A runner for the protocol's forecasters read (and verified) from a research registry;
-    None when the protocol registers none. A missing or unloadable artifact abstains."""
+    None when the protocol registers none. A missing or unloadable artifact abstains, and
+    a registry that cannot be opened read-only (absent, or without its database) makes
+    every forecaster unavailable, so the baselines still decide (review F49)."""
     if not protocol.forecasters:
         return None
     from ..research.registry import Registry
 
-    registry = Registry(registry_root, readonly=True)
+    try:
+        registry = Registry(registry_root, readonly=True)
+    except (OSError, sqlite3.Error) as exc:
+        return ForecasterRunner(
+            dict.fromkeys(protocol.forecasters),
+            predict_artifact,
+            verify=verify_artifact,
+            missing=f"registry unavailable: {type(exc).__name__}: {exc}",
+        )
     try:
         artifacts = {}
         for sha in protocol.forecasters:

@@ -376,3 +376,64 @@ def test_an_invalid_model_output_abstains_and_the_decision_is_still_recorded(
         if output in invalid:
             assert reasons[output] == ["model_output_invalid:" + detail]
     assert journal.integrity(store.db)["integrity"] == "verified"
+
+
+def unopenable_registry(tmp_path, layout):
+    root = tmp_path / "registry"
+    if layout == "no_database":
+        root.mkdir()  # a directory, but no research.sqlite3
+    return root
+
+
+@pytest.mark.parametrize("layout", ["missing", "no_database"])
+def test_an_unopenable_registry_abstains_every_forecaster_and_baselines_decide(
+    tmp_path, store, config, layout
+):
+    """F49: a registry that cannot be opened read-only makes every registered forecaster
+    unavailable (each abstains); the baselines still decide."""
+    from vader_intelligence.forecast.forecasters import runner_from_registry
+
+    to_schema6(store)
+    sha, _ = stub_artifact()
+    proto = Protocol(dataset="models", forecasters=[sha, "f" * 64])
+    runner = runner_from_registry(unopenable_registry(tmp_path, layout), proto)
+    collect(store, config, origin=at(18, 3))
+    tick_at_runner(store, proto, at(18, 3, 30), runner)
+    due = tick_at_runner(store, proto, at(18, 5, 30), runner)
+    assert due["decisions_eligible"] == 1 and not due["errors"]
+    (payload,) = [
+        json.loads(r[0]) for r in store.db.execute("SELECT payload_json FROM forecast_decisions")
+    ]
+    assert payload["results"]["constant-v1"]["probability"] == "0.5"
+    assert payload["results"]["midpoint-v1"]["probability"] is not None
+    assert len(payload["forecasters"]) == 2
+    for entry in payload["forecasters"]:
+        result = payload["results"][entry["id"]]
+        assert result["probability"] is None and result["inputs"] == {}
+        (reason,) = result["reasons"]
+        assert reason.startswith("model_unavailable:registry unavailable:"), reason
+    assert journal.integrity(store.db)["integrity"] == "verified"
+
+
+@pytest.mark.parametrize("layout", ["missing", "no_database"])
+def test_the_cli_tick_runs_when_the_registry_cannot_be_opened(tmp_path, store, config, layout):
+    """F49 through the CLI: building the runner no longer fails before the tick."""
+    from vader_intelligence.cli import execute, parser
+
+    to_schema6(store)
+    store.close()
+    sha, _ = stub_artifact()
+    research_toml = tmp_path / "research.toml"
+    research_toml.write_text(f'[research]\ndataset = "cli"\nforecasters = ["{sha}"]\n')
+    argv = ["--db", config.database, "forecast", "tick", "--research-config", str(research_toml)]
+    argv += ["--model-registry", str(unopenable_registry(tmp_path, layout))]
+    ran = execute(parser().parse_args(argv))
+    assert ran["status"] in ("complete", "inconclusive") and not ran["errors"]
+    from vader_intelligence.storage import Store
+
+    reopened = Store(config.database, min_free_bytes=1, readonly=True)
+    try:
+        runs = reopened.db.execute("SELECT id, status FROM runs WHERE kind='forecast-tick'")
+        assert [tuple(r) for r in runs] == [(ran["run_id"], ran["status"])]
+    finally:
+        reopened.close()
