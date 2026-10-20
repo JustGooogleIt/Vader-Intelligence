@@ -14,8 +14,10 @@ Order and separation:
    chunked to the 31-day command bound; the forward view evaluates the forward dataset
    as published.
 2. Each split segment (`development` before `holdout`, or `whole`) is evaluated once
-   per collector configuration cohort present in the dataset. Cohorts and record
-   modes are never pooled; a segment's results are keyed by cohort hash.
+   per collector configuration cohort pinned by the segment's decisions; a cohort of
+   the run with no decision in a segment is listed under `cohorts_without_decisions`.
+   Cohorts and record modes are never pooled; a segment's results are keyed by cohort
+   hash.
 3. Everything is idempotent by construction: decisions and evaluations have content
    keys, so a repeated or resumed run reports `existing` results and writes nothing
    new.
@@ -73,13 +75,24 @@ def _chunks(start, through):
         current = end + timedelta(days=1)
 
 
-def _cohorts(db, protocol, dataset, modes):
+def _cohorts(db, protocol, dataset, modes, start, through):
+    """Collector cohorts pinned by the dataset's decisions scheduled in [start, through],
+    the scope in which `evaluate` looks for them; [None] when none is pinned there."""
     rows = db.execute(
         "SELECT DISTINCT json_extract(payload_json,'$.manifest.discovery.collector_config_hash')"
         " FROM forecast_decisions WHERE protocol=? AND json_extract(payload_json,'$.dataset')=?"
         " AND json_extract(payload_json,'$.config_hash')=?"
-        " AND mode IN (" + ",".join("?" for _ in modes) + ") ORDER BY 1",
-        (protocol.protocol_id, dataset, protocol.config_hash, *modes),
+        " AND mode IN (" + ",".join("?" for _ in modes) + ")"
+        " AND substr(json_extract(payload_json,'$.scheduled_start'),1,10) BETWEEN ? AND ?"
+        " ORDER BY 1",
+        (
+            protocol.protocol_id,
+            dataset,
+            protocol.config_hash,
+            *modes,
+            start.isoformat(),
+            through.isoformat(),
+        ),
     ).fetchall()
     hashes = sorted(r[0] for r in rows if r[0] is not None)
     return hashes or [None]
@@ -237,14 +250,20 @@ def run(
             "synthetic",
             "forward_shadow" if view == "forward-shadow" else "historical_reconstruction",
         )
-        cohorts = _cohorts(db, protocol, dataset, modes)
+        run_cohorts = _cohorts(db, protocol, dataset, modes, start_date, through_date)
         for segment, seg_start, seg_through in segments:
             if segment == "holdout":
                 summary["holdout_history"] = _holdout_history(db, dataset, seg_start, seg_through)
+            cohorts = _cohorts(db, protocol, dataset, modes, seg_start, seg_through)
             entry = {
                 "start_date": seg_start.isoformat(),
                 "through_date": seg_through.isoformat(),
                 "cohorts": {},
+                # A cohort of the run that decided nothing in this segment is listed, not
+                # evaluated there (evaluate refuses a cohort its scope does not pin).
+                "cohorts_without_decisions": [
+                    c for c in run_cohorts if c is not None and c not in cohorts
+                ],
             }
             summary["segments"][segment] = entry
             for cohort in cohorts:

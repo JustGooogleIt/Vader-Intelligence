@@ -22,9 +22,11 @@ Steps, in temporal order:
 1. **Reconstruction** (cutoff-reconstruction view only): `forecast reconstruct` over
    the range in ≤31-day chunks, bindings in cutoff order, into the explicit study
    namespace. The forward view evaluates the forward dataset as actually published.
-2. **Evaluation**: one `evaluate` per segment and per collector cohort found in the
-   dataset's decisions (`collector_config_hash` pin). Cohorts and record modes are never
-   pooled; each result is keyed by cohort hash.
+2. **Evaluation**: one `evaluate` per segment and per collector cohort found in that
+   segment's decisions (`collector_config_hash` pin); a cohort of the run with no
+   decision in a segment is listed under the segment's `cohorts_without_decisions`, not
+   evaluated there. Cohorts and record modes are never pooled; each result is keyed by
+   cohort hash.
 3. **Resume**: decisions and evaluations have content keys, so a repeated or resumed run
    reports `existing: true` and writes nothing new. A budget exhaustion is `partial` with
    nothing written by the interrupted step.

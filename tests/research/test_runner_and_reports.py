@@ -20,6 +20,7 @@ from test_materialization import (  # noqa: E402
     AS_OF,
     evaluate_at,
     forward_slice,
+    other_cohort_abstention,
     settle,
     settlement_evidence,
 )
@@ -176,6 +177,37 @@ def test_holdout_history_lists_every_earlier_overlapping_evaluation(store, confi
     assert history[other_view["evaluation_id"]]["view"] == "cutoff-reconstruction"
     assert history[other_view["evaluation_id"]]["start_date"] is None
     assert history[observed["evaluation_id"]]["research_config_hash"] == PROTO.config_hash
+
+
+def test_a_cohort_with_no_decision_in_a_segment_is_reported_not_evaluated(
+    store, config, monkeypatch
+):
+    """Collector cohorts are found per segment (review F13): cohort `other` decided only a
+    development game and the fixture cohort only the holdout game; neither is evaluated
+    where it decided nothing, and the run does not fail."""
+    forward_slice(store, config)
+    settle(store, config, monkeypatch, settlement_evidence())
+    other = other_cohort_abstention(store, start=at(20, 0) - timedelta(days=2))
+    real = json.loads(
+        store.db.execute("SELECT payload_json FROM forecast_decisions WHERE id=1").fetchone()[0]
+    )["manifest"]["discovery"]["collector_config_hash"]
+    result = run_at(
+        store,
+        at(23, 40),
+        view="forward-shadow",
+        start_date=GAME_DAY - timedelta(days=3),
+        through_date=GAME_DAY,
+        development_through=GAME_DAY - timedelta(days=1),
+        holdout_from=GAME_DAY,
+    )
+    assert result["status"] == "complete" and result["errors"] == []
+    development, holdout = result["segments"]["development"], result["segments"]["holdout"]
+    assert list(development["cohorts"]) == [other]
+    assert development["cohorts_without_decisions"] == [real]
+    assert development["cohorts"][other]["population"]["decisions"] == 1
+    assert list(holdout["cohorts"]) == [real]
+    assert holdout["cohorts_without_decisions"] == [other]
+    assert holdout["cohorts"][real]["population"]["scored_paired"] == 1
 
 
 def test_budget_exhaustion_is_partial_and_writes_no_evaluation(store, config, monkeypatch):

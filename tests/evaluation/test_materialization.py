@@ -400,10 +400,9 @@ def test_game_without_binding_is_counted_from_the_frozen_manifest(store, config)
     assert item["cutoff_status"] == "no_binding" and item["outcome_status"] == "identity_unresolved"
 
 
-def test_mixed_collector_cohorts_are_evaluated_separately(store, config, monkeypatch):
-    forward_slice(store, config)
-    settle(store, config, monkeypatch, settlement_evidence())
-    # A second collector configuration wrote a pass that pins another decision.
+def other_cohort_abstention(store, game_id=900002, start=at(20, 0)):
+    """A second collector configuration wrote a pass that pins another decision (an
+    abstention for `game_id` at `start`). Returns that cohort's collector hash."""
     other_run, other_config = "other-collector", {"max_pages": 7}
     store.db.execute(
         "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
@@ -462,13 +461,13 @@ def test_mixed_collector_cohorts_are_evaluated_separately(store, config, monkeyp
         "references": [],
         "dataset": PROTO.dataset,
         "protocol": PROTO.protocol_id,
-        "game_id": 900002,
+        "game_id": game_id,
         "unresolved_key": None,
         "ticker": None,
         "yes_team_id": None,
         "horizon": 3600,
-        "scheduled_start": "2026-09-27T20:00:00+00:00",
-        "cutoff": "2026-09-27T19:00:00+00:00",
+        "scheduled_start": start.isoformat(),
+        "cutoff": (start - timedelta(hours=1)).isoformat(),
         "binding_id": None,
         "discovery_id": pass_id,
         "selection_version": PROTO.selection_version,
@@ -490,6 +489,14 @@ def test_mixed_collector_cohorts_are_evaluated_separately(store, config, monkeyp
         "supersedes_id": None,
     }
     journal.append(store.db, "forecast_decisions", abstention)
+    return digest(other_config)
+
+
+def test_mixed_collector_cohorts_are_evaluated_separately(store, config, monkeypatch):
+    forward_slice(store, config)
+    settle(store, config, monkeypatch, settlement_evidence())
+    other_config = {"max_pages": 7}
+    assert other_cohort_abstention(store) == digest(other_config)
     with pytest.raises(ValueError, match="separate cohort"):
         evaluate_at(store, at(23, 40), view="forward-shadow")
     real_hash = json.loads(
