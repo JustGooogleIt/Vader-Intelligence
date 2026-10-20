@@ -13,7 +13,10 @@ Trust boundary:
   the candidate is rejected with the evaluator's reasons;
 - `record_shadow`, `record_paper` and `evaluate_holdout` add the later evidence. The
   holdout is evaluated at most once per candidate and is recorded in both ledgers (the
-  registry's per dataset/split ledger and the pod store's per candidate ledger).
+  registry's per dataset/split ledger and the pod store's per candidate ledger);
+- paper evidence comes only from `paper_backtest`: execution inputs built here from the
+  dataset's verified history archive, conservative execution without an assumed depth,
+  and a summary stored as a coordinator-only artifact.
 
 Validation is selection-biased by construction (it compares many pod proposals); the
 number of candidates proposed on the same snapshot is part of every evaluator record.
@@ -54,6 +57,7 @@ EVALUATOR_VERSION = "pods-evaluator-v1"
 BASELINES = ("market:mid_c", "market:pair_mid_c", "constant")
 DEFAULT_MIN_N = 100
 INPUT_KINDS = (SNAPSHOT_KIND, EXECUTION_KIND)
+SUMMARY_KIND = "paper_backtest_summary"  # coordinator-only (RESERVED_ARTIFACT_KINDS)
 
 
 @dataclass(frozen=True)
@@ -356,12 +360,61 @@ def record_shadow(store, candidate_id, evaluation, now=None) -> str:
     return promote(store, candidate_id, "shadow_tested", [evidence], now)
 
 
-def paper_evidence(store, candidate_id, summary) -> PaperReportRecord:
-    """Paper evidence from a coordinator-run historical backtest (`research.backtest.run`)
-    of this candidate's own model, dataset and split on its validation segment.
+def _conservative(config):
+    """Refuse execution settings other than the conservative ones paper evidence needs.
 
-    The simulator has no path around the risk engine, so `risk_checks_bypassed` is zero by
-    construction; decisions are the forecasts the strategy processed.
+    `config` is a `PaperConfig.to_dict()`. Candles carry no sizes, so an assumed depth is
+    a labelled SCENARIO (D-010), never conservative evidence."""
+    require(
+        config.get("assumed_depth") is None,
+        "paper evidence: an assumed depth is a labelled scenario (D-010), never conservative",
+    )
+    require(config.get("maker_fill_model") == "none", "paper evidence requires maker model none")
+    require(config.get("book_state_rule") == "worst_of_bracketing", "paper evidence: worst_of")
+
+
+def paper_backtest(store, registry, history_db, candidate_id, config, ledger_path, now=None):
+    """The coordinator-run historical backtest paper evidence comes from (D-008).
+
+    The candidate's own model, dataset and split on its validation segment, one run into
+    the new `ledger_path` under conservative execution (maker model none, worst-of-
+    bracketing books, no assumed depth). The execution inputs are built here from the
+    dataset's verified history archive and stored as a coordinator input; the summary,
+    which records their digest, is stored as a coordinator-only `paper_backtest_summary`
+    (the only summary `paper_evidence` accepts). Returns the summary.
+    """
+    spec = candidate_record(store, candidate_id)["spec"]
+    _conservative(config.to_dict())
+    split = SplitDefinition(**spec["split"])
+    execution_sha = execution_snapshot(store, registry, history_db, spec["dataset_id"], split, now)
+    summary = backtest.run(
+        registry,
+        history_db,
+        spec["dataset_id"],
+        spec["model_sha256"],
+        split,
+        config,
+        segment="validation",
+        ledger_path=ledger_path,
+    )
+    require(
+        summary["execution_inputs"]["sha256"] == execution_sha,
+        "the backtest ran on other execution inputs than the coordinator stored",
+    )
+    store.put_input(json_text(summary).encode(), SUMMARY_KIND, now)
+    return summary
+
+
+def paper_evidence(store, candidate_id, summary) -> PaperReportRecord:
+    """Paper evidence from a `paper_backtest` summary of this candidate's own model,
+    dataset and split on its validation segment.
+
+    The summary must be one the coordinator stored, on execution inputs it built from
+    the verified history archive and stored, under conservative execution without an
+    assumed depth; the record names that source, the inputs' digest and the (absent)
+    depth scenario. The simulator has no path around the risk engine, so
+    `risk_checks_bypassed` is zero by construction; decisions are the forecasts the
+    strategy processed.
     """
     spec = candidate_record(store, candidate_id)["spec"]
     require(summary.get("kind") == "historical-paper-backtest", "not a backtest summary")
@@ -370,9 +423,17 @@ def paper_evidence(store, candidate_id, summary) -> PaperReportRecord:
     require(summary.get("dataset_id") == spec["dataset_id"], "backtest of another dataset")
     require(summary.get("segment") == "validation", "paper evidence uses the validation segment")
     require("note" not in summary, "a pod's own backtest is never paper evidence")
-    config = summary["report"]["manifest"]["config"]
-    require(config["maker_fill_model"] == "none", "paper evidence requires maker model none")
-    require(config["book_state_rule"] == "worst_of_bracketing", "paper evidence: worst_of")
+    execution = summary.get("execution_inputs") or {}
+    require(
+        execution.get("source") == "history_archive",
+        "paper evidence needs execution inputs built from the verified history archive,"
+        " never supplied ones",
+    )
+    manifest = summary["report"]["manifest"]
+    require(manifest.get("kind") == "paper-run", "paper evidence needs a single-ledger run")
+    _conservative(manifest["config"])
+    coordinator_input(store, content_hash(summary), SUMMARY_KIND)
+    coordinator_input(store, execution["sha256"], EXECUTION_KIND)
     return PaperReportRecord(
         candidate_id=candidate_id,
         report_id=content_hash(summary),
@@ -381,11 +442,22 @@ def paper_evidence(store, candidate_id, summary) -> PaperReportRecord:
         n_decisions=summary["forecasts"],
         period_start=summary["period"]["start"],
         period_end=summary["period"]["end"],
+        execution_source=execution["source"],
+        execution_inputs_sha256=execution["sha256"],
+        assumed_depth=None,
     )
 
 
 def record_paper(store, candidate_id, paper: PaperReportRecord, approval, now=None) -> str:
+    """Promote to paper_approved on the evidence of a stored `paper_backtest` summary."""
     require(isinstance(approval, OperatorApprovalRecord), "an operator approval is required")
+    require(isinstance(paper, PaperReportRecord), "a PaperReportRecord is required")
+    coordinator_input(store, paper.report_id, SUMMARY_KIND)
+    summary = json.loads(store.artifacts.get_bytes(paper.report_id))
+    require(
+        paper == paper_evidence(store, candidate_id, summary),
+        "the paper record differs from the evidence of its backtest summary",
+    )
     return promote(store, candidate_id, "paper_approved", [paper, approval], now)
 
 

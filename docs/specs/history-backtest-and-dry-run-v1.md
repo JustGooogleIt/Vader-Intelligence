@@ -53,6 +53,15 @@ models) and `holdout`.
 **Archive check.** The history archive must be the one the dataset was built from: the
 fetch at the dataset's recorded ceiling must have the recorded digest.
 
+**Execution provenance (finding F40).** Every summary records `execution_inputs`
+(`source`, the payload's `interpretation`, and the `sha256` of its canonical JSON), and
+the simulator's input label leads with the source. The source is `history_archive` only
+when `run` built the inputs from the verified archive; inputs handed to `simulate`
+(labelled synthetic quotes, stored copies) are `supplied`, whatever the payload claims.
+`run` and `simulate` refuse inputs that name a market outside the segment rows or
+settle one against the dataset's label. Paper evidence for a research candidate comes
+only from `pods.evaluator.paper_backtest` (archive-built inputs, no assumed depth).
+
 **Counting.** `markets_with_execution_data` counts markets with at least one quote in the
 window; `markets` counts all of them.
 

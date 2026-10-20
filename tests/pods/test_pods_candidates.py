@@ -71,6 +71,8 @@ def paper(candidate_id, **overrides):
         n_decisions=80,
         period_start="2026-10-01",
         period_end="2026-10-15",
+        execution_source="history_archive",
+        execution_inputs_sha256="3" * 64,
     )
     values.update(overrides)
     return PaperReportRecord(**values)
@@ -160,6 +162,11 @@ def test_lifecycle_refuses_skipped_states_and_missing_or_untyped_evidence(pods, 
         [approval(candidate)],
         [paper(candidate, risk_checks_bypassed=1), approval(candidate)],
         [paper(candidate, execution_assumptions="optimistic"), approval(candidate)],
+        # F40: the record names archive-built execution inputs and no depth scenario.
+        [paper(candidate, execution_source=None), approval(candidate)],
+        [paper(candidate, execution_source="supplied"), approval(candidate)],
+        [paper(candidate, execution_inputs_sha256=None), approval(candidate)],
+        [paper(candidate, assumed_depth="10"), approval(candidate)],
     ):
         with pytest.raises(PromotionRefused):
             promote(pods.store, candidate, "paper_approved", evidence)
