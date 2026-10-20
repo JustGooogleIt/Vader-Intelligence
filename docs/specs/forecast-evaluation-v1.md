@@ -379,6 +379,15 @@ A pending attempt is reported but is not a completed snapshot. No query may use
 absolute nearest-time distance or a post-C response. A stale latest snapshot is
 not replaced with a different contract's fresh one.
 
+Implementation note (decision D-016, 2026-10-20): the protocol's `selection_version`
+names the implemented rule.
+- `selection-v2` implements this paragraph as written.
+- `selection-v1`, the default kept so that existing cohorts are unchanged, anchors on
+  the latest attempt *received* by C and abstains (`book_availability_after_cutoff`)
+  when that attempt was witnessed after C. Under the tick-before-collection order that
+  is the usual case. It also gives `book_availability_after_cutoff`, not `book_stale`,
+  in the reviewer's 350-second example below.
+
 Requirements: successful untruncated response with verified blob hash; supported
 parser; matching ticker/game/eligibility evidence; pregame at C; no schedule-start
 revision between the book's eligibility proof and C; age in `[0,300]`; both YES and

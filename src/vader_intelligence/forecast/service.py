@@ -32,7 +32,7 @@ from . import evidence
 from .baselines import InvalidBook, constant, midpoint
 from .policy import EvidenceTimes, cutoff_eligibility, utc
 from .references import reference
-from .selection import Contract, select_contract, select_inputs
+from .selection import SELECTION_V1, SELECTION_V2, Contract, select_contract, select_inputs
 
 HORIZON = 3600
 GAME_NUMBER = re.compile(r"G([12])$")
@@ -350,10 +350,11 @@ class CutoffFacts:
         return self.common.eligible
 
 
-def cutoff_facts(db, *, binding, namespace, evidence_mode):
+def cutoff_facts(db, *, binding, namespace, evidence_mode, selection_version=SELECTION_V1):
     """Read-only computation of the common eligibility, renewal and midpoint input for a
     binding at its cutoff. Used by the decision writer and by evaluation annotations of
-    unattempted opportunities; writes nothing."""
+    unattempted opportunities; writes nothing. `selection_version` chooses the midpoint
+    book rule (`selection.select_inputs`)."""
     game_id = binding["game_id"]
     ticker = binding["ticker"]
     cutoff = utc(datetime.fromisoformat(binding["cutoff"]))
@@ -396,6 +397,7 @@ def cutoff_facts(db, *, binding, namespace, evidence_mode):
         namespace=namespace,
         mode=evidence_mode,
         scheduled_start=binding["scheduled_start"],
+        version=selection_version,
     )
     midpoint_probability = None
     midpoint_reasons = list(reasons)
@@ -469,7 +471,13 @@ def decide_opportunity(
     evidence_mode = "forward_shadow" if mode == "historical_reconstruction" else mode
     contract = decision_contract(store, protocol, runner)
     binding = load_binding(db, binding_id)
-    facts = cutoff_facts(db, binding=binding, namespace=namespace, evidence_mode=evidence_mode)
+    facts = cutoff_facts(
+        db,
+        binding=binding,
+        namespace=namespace,
+        evidence_mode=evidence_mode,
+        selection_version=protocol.selection_version,
+    )
     projection, renewal, inputs = facts.projection, facts.renewal, facts.inputs
     cutoff_eligible = facts.cutoff_eligible
     reasons = list(facts.reasons)
@@ -624,7 +632,12 @@ def redecide(db, decision_id, namespace):
         return stored["cutoff_eligible"], stored["results"]
     binding = load_binding(db, binding_id)
     mode = stored["manifest"].get("evidence_mode") or stored["mode"]
-    facts = cutoff_facts(db, binding=binding, namespace=namespace, evidence_mode=mode)
+    # Every decision not labelled selection-v2 was computed by the selection-v1 rule (the
+    # label was not read before selection-v2 existed).
+    version = SELECTION_V2 if stored.get("selection_version") == SELECTION_V2 else SELECTION_V1
+    facts = cutoff_facts(
+        db, binding=binding, namespace=namespace, evidence_mode=mode, selection_version=version
+    )
     return {
         "cutoff_eligible": facts.cutoff_eligible,
         "stored_cutoff_eligible": stored["cutoff_eligible"],
