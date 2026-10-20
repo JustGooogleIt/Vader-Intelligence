@@ -1,0 +1,514 @@
+{
+  "steps": [
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "snapshot",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--dataset",
+        "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+        "--development-through",
+        "2025-12-31",
+        "--validation-through",
+        "2026-08-31"
+      ],
+      "result": {
+        "development_rows": 2101,
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "snapshot_sha256": "701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904",
+        "status": "complete",
+        "validation_rows": 2027
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "execution-snapshot",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--dataset",
+        "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+        "--history-db",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/history/history.sqlite3",
+        "--development-through",
+        "2025-12-31",
+        "--validation-through",
+        "2026-08-31"
+      ],
+      "result": {
+        "execution_inputs_sha256": "6947af3e706d7025f5ae85561639e6af66f3efb1609d6ac8ffc6efab85d6890b",
+        "status": "complete"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "backtest",
+        "run",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--history-db",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/history/history.sqlite3",
+        "--dataset",
+        "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+        "--model",
+        "d9d84aa49b5a8863bb2ca88d765f10f8fdbda1a292ae6d17261d52dcb9dcf51e",
+        "--development-through",
+        "2025-12-31",
+        "--validation-through",
+        "2026-08-31",
+        "--segment",
+        "validation",
+        "--assumed-depth",
+        "5",
+        "--ledger",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026/backtest-ledgers/logistic-depth-5.sqlite3"
+      ],
+      "result": {
+        "fills": 547,
+        "forecasts": 2027,
+        "forecasts_without_intent": {
+          "edge_below_threshold": 1477,
+          "no_quote": 1
+        },
+        "markets_with_execution_data": 2027,
+        "model_id": "d9d84aa49b5a8863bb2ca88d765f10f8fdbda1a292ae6d17261d52dcb9dcf51e",
+        "orders": 549,
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-03-25"
+        },
+        "pnl": {
+          "cash": "1002.28",
+          "equity_conservative": "1002.28",
+          "equity_mid": "1002.28",
+          "fees": "21.58",
+          "marks_missing": [],
+          "net_deposits": "1000",
+          "realized": "2.28",
+          "reserved_cash": "0",
+          "unrealized_conservative": "0",
+          "unrealized_mid": "0"
+        },
+        "rejections_by_reason": {},
+        "rows": 2027,
+        "scenario": {
+          "assumed_depth": "5",
+          "extra_slippage_ticks": 0,
+          "fee_schedule": "kalshi-2026-02-general",
+          "fee_verified": false,
+          "latency": {
+            "decision_ms": [
+              0,
+              0
+            ],
+            "submit_ms": [
+              250,
+              250
+            ]
+          }
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "skipped": {},
+        "unidentifiable": 0,
+        "verification": [],
+        "wall_seconds": 69.2
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "backtest",
+        "run",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--history-db",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/history/history.sqlite3",
+        "--dataset",
+        "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+        "--model",
+        "d9d84aa49b5a8863bb2ca88d765f10f8fdbda1a292ae6d17261d52dcb9dcf51e",
+        "--development-through",
+        "2025-12-31",
+        "--validation-through",
+        "2026-08-31",
+        "--segment",
+        "validation",
+        "--assumed-depth",
+        "25",
+        "--ledger",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026/backtest-ledgers/logistic-depth-25.sqlite3"
+      ],
+      "result": {
+        "fills": 524,
+        "forecasts": 2027,
+        "forecasts_without_intent": {
+          "edge_below_threshold": 1477,
+          "no_quote": 1
+        },
+        "markets_with_execution_data": 2027,
+        "model_id": "d9d84aa49b5a8863bb2ca88d765f10f8fdbda1a292ae6d17261d52dcb9dcf51e",
+        "orders": 526,
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-03-25"
+        },
+        "pnl": {
+          "cash": "977.32",
+          "equity_conservative": "977.32",
+          "equity_mid": "977.32",
+          "fees": "101.08",
+          "marks_missing": [],
+          "net_deposits": "1000",
+          "realized": "-22.68",
+          "reserved_cash": "0",
+          "unrealized_conservative": "0",
+          "unrealized_mid": "0"
+        },
+        "rejections_by_reason": {
+          "drawdown_stop": 23,
+          "kill_switch_engaged": 22
+        },
+        "rows": 2027,
+        "scenario": {
+          "assumed_depth": "25",
+          "extra_slippage_ticks": 0,
+          "fee_schedule": "kalshi-2026-02-general",
+          "fee_verified": false,
+          "latency": {
+            "decision_ms": [
+              0,
+              0
+            ],
+            "submit_ms": [
+              250,
+              250
+            ]
+          }
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "skipped": {},
+        "unidentifiable": 0,
+        "verification": [],
+        "wall_seconds": 68.7
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "backtest",
+        "run",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--history-db",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/history/history.sqlite3",
+        "--dataset",
+        "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+        "--model",
+        "86646fec31f2d4de5e1622fd573ef66e8c45c1eadcd9e302bc102e6052277ac4",
+        "--development-through",
+        "2025-12-31",
+        "--validation-through",
+        "2026-08-31",
+        "--segment",
+        "validation",
+        "--assumed-depth",
+        "5",
+        "--ledger",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026/backtest-ledgers/gradient_boosting-depth-5.sqlite3"
+      ],
+      "result": {
+        "fills": 1121,
+        "forecasts": 2027,
+        "forecasts_without_intent": {
+          "edge_below_threshold": 895,
+          "no_quote": 1
+        },
+        "markets_with_execution_data": 2027,
+        "model_id": "86646fec31f2d4de5e1622fd573ef66e8c45c1eadcd9e302bc102e6052277ac4",
+        "orders": 1131,
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-03-25"
+        },
+        "pnl": {
+          "cash": "962.64",
+          "equity_conservative": "962.64",
+          "equity_mid": "962.64",
+          "fees": "44.34",
+          "marks_missing": [],
+          "net_deposits": "1000",
+          "realized": "-37.36",
+          "reserved_cash": "0",
+          "unrealized_conservative": "0",
+          "unrealized_mid": "0"
+        },
+        "rejections_by_reason": {},
+        "rows": 2027,
+        "scenario": {
+          "assumed_depth": "5",
+          "extra_slippage_ticks": 0,
+          "fee_schedule": "kalshi-2026-02-general",
+          "fee_verified": false,
+          "latency": {
+            "decision_ms": [
+              0,
+              0
+            ],
+            "submit_ms": [
+              250,
+              250
+            ]
+          }
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "skipped": {},
+        "unidentifiable": 6,
+        "verification": [],
+        "wall_seconds": 71.5
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "backtest",
+        "run",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--history-db",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/history/history.sqlite3",
+        "--dataset",
+        "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+        "--model",
+        "86646fec31f2d4de5e1622fd573ef66e8c45c1eadcd9e302bc102e6052277ac4",
+        "--development-through",
+        "2025-12-31",
+        "--validation-through",
+        "2026-08-31",
+        "--segment",
+        "validation",
+        "--assumed-depth",
+        "25",
+        "--ledger",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026/backtest-ledgers/gradient_boosting-depth-25.sqlite3"
+      ],
+      "result": {
+        "fills": 913,
+        "forecasts": 2027,
+        "forecasts_without_intent": {
+          "edge_below_threshold": 895,
+          "no_quote": 1
+        },
+        "markets_with_execution_data": 2027,
+        "model_id": "86646fec31f2d4de5e1622fd573ef66e8c45c1eadcd9e302bc102e6052277ac4",
+        "orders": 923,
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-03-25"
+        },
+        "pnl": {
+          "cash": "963.1",
+          "equity_conservative": "963.1",
+          "equity_mid": "963.1",
+          "fees": "183.08",
+          "marks_missing": [],
+          "net_deposits": "1000",
+          "realized": "-36.9",
+          "reserved_cash": "0",
+          "unrealized_conservative": "0",
+          "unrealized_mid": "0"
+        },
+        "rejections_by_reason": {
+          "drawdown_stop": 208,
+          "kill_switch_engaged": 207
+        },
+        "rows": 2027,
+        "scenario": {
+          "assumed_depth": "25",
+          "extra_slippage_ticks": 0,
+          "fee_schedule": "kalshi-2026-02-general",
+          "fee_verified": false,
+          "latency": {
+            "decision_ms": [
+              0,
+              0
+            ],
+            "submit_ms": [
+              250,
+              250
+            ]
+          }
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "skipped": {},
+        "unidentifiable": 6,
+        "verification": [],
+        "wall_seconds": 69.2
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "backtest",
+        "run",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--history-db",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/history/history.sqlite3",
+        "--dataset",
+        "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+        "--model",
+        "1ee191c40748cd6590ea430ef649db64bdcb8f0c779cfd63eaa83602a4e4dd4f",
+        "--development-through",
+        "2025-12-31",
+        "--validation-through",
+        "2026-08-31",
+        "--segment",
+        "validation",
+        "--assumed-depth",
+        "5",
+        "--ledger",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026/backtest-ledgers/symbolic-depth-5.sqlite3"
+      ],
+      "result": {
+        "fills": 1,
+        "forecasts": 2027,
+        "forecasts_without_intent": {
+          "edge_below_threshold": 2025,
+          "no_quote": 1
+        },
+        "markets_with_execution_data": 2027,
+        "model_id": "1ee191c40748cd6590ea430ef649db64bdcb8f0c779cfd63eaa83602a4e4dd4f",
+        "orders": 1,
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-03-25"
+        },
+        "pnl": {
+          "cash": "1001.45",
+          "equity_conservative": "1001.45",
+          "equity_mid": "1001.45",
+          "fees": "0.03",
+          "marks_missing": [],
+          "net_deposits": "1000",
+          "realized": "1.45",
+          "reserved_cash": "0",
+          "unrealized_conservative": "0",
+          "unrealized_mid": "0"
+        },
+        "rejections_by_reason": {},
+        "rows": 2027,
+        "scenario": {
+          "assumed_depth": "5",
+          "extra_slippage_ticks": 0,
+          "fee_schedule": "kalshi-2026-02-general",
+          "fee_verified": false,
+          "latency": {
+            "decision_ms": [
+              0,
+              0
+            ],
+            "submit_ms": [
+              250,
+              250
+            ]
+          }
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "skipped": {},
+        "unidentifiable": 0,
+        "verification": [],
+        "wall_seconds": 68.3
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "backtest",
+        "run",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--history-db",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/history/history.sqlite3",
+        "--dataset",
+        "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+        "--model",
+        "1ee191c40748cd6590ea430ef649db64bdcb8f0c779cfd63eaa83602a4e4dd4f",
+        "--development-through",
+        "2025-12-31",
+        "--validation-through",
+        "2026-08-31",
+        "--segment",
+        "validation",
+        "--assumed-depth",
+        "25",
+        "--ledger",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026/backtest-ledgers/symbolic-depth-25.sqlite3"
+      ],
+      "result": {
+        "fills": 1,
+        "forecasts": 2027,
+        "forecasts_without_intent": {
+          "edge_below_threshold": 2025,
+          "no_quote": 1
+        },
+        "markets_with_execution_data": 2027,
+        "model_id": "1ee191c40748cd6590ea430ef649db64bdcb8f0c779cfd63eaa83602a4e4dd4f",
+        "orders": 1,
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-03-25"
+        },
+        "pnl": {
+          "cash": "1007.26",
+          "equity_conservative": "1007.26",
+          "equity_mid": "1007.26",
+          "fees": "0.14",
+          "marks_missing": [],
+          "net_deposits": "1000",
+          "realized": "7.26",
+          "reserved_cash": "0",
+          "unrealized_conservative": "0",
+          "unrealized_mid": "0"
+        },
+        "rejections_by_reason": {},
+        "rows": 2027,
+        "scenario": {
+          "assumed_depth": "25",
+          "extra_slippage_ticks": 0,
+          "fee_schedule": "kalshi-2026-02-general",
+          "fee_verified": false,
+          "latency": {
+            "decision_ms": [
+              0,
+              0
+            ],
+            "submit_ms": [
+              250,
+              250
+            ]
+          }
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "skipped": {},
+        "unidentifiable": 0,
+        "verification": [],
+        "wall_seconds": 70.6
+      }
+    }
+  ]
+}
