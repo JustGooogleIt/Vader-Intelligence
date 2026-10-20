@@ -29,6 +29,10 @@ Specification: `docs/specs/live-adapter-v1.md`. API facts and their verification
    - in the macOS Keychain as a generic password (`security add-generic-password -s
      <service> -a <account> -w` and paste the PEM when prompted).
    The activation file holds only the key id (a UUID) and the provider reference.
+   The `no_key_material` gate refuses a key pasted in any common form, including
+   comments, TOML arrays and truncated bodies. It also refuses any text containing
+   `-----BEGIN` or `PRIVATE KEY` (upper case), even in a comment or a Keychain service
+   name. Reword such text; do not weaken the gate.
 5. The account is dedicated to this system (primary subaccount, no manual trading, no
    other bot). Any foreign order or fill makes reconciliation fail closed.
 6. The trading shard is funded: MLB markets are on exchange shard 3 (facts §12);
