@@ -398,6 +398,7 @@ def paper_backtest(params: PaperBacktestParams, ctx):
         rows=snapshot.validation,
         n_forecasts=len(inputs.forecasts),
         execution=execution,
+        selection_biased=True,  # validation rows: never out-of-sample evidence
     ) | {"note": NOT_EVIDENCE}
     _emit_json(ctx, "paper_backtest.json", payload, PAPER_KIND)
     return {
