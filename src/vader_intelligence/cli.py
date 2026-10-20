@@ -879,7 +879,9 @@ def _backtest(args):
             "assumed_depth": (None, *depths),
         }
     split = SplitDefinition(args.development_through, args.validation_through, args.embargo_days)
-    registry = Registry(args.registry)
+    # Only a holdout run writes (its holdout-ledger entry); other segments read the
+    # registry read-only, so several backtests can run at once.
+    registry = Registry(args.registry, readonly=args.segment != "holdout")
     db = open_archive(args.history_db)
     try:
         result = backtest.run(
