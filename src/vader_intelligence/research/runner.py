@@ -22,9 +22,10 @@ Order and separation:
 
 Held-out observations: the protocol is fixed (hash recorded) before any evaluation of
 the run, the development segment is evaluated before the holdout segment, the two
-ranges may not overlap, and the summary lists every earlier evaluation of the same
-holdout range in this dataset together with the protocol hash it used, so a reviewer
-can see whether a protocol was changed after its holdout was observed. v1 has no
+ranges may not overlap, and the summary lists every earlier evaluation in this dataset
+whose period overlaps the holdout range, in any view, together with the protocol hash
+it used, so a reviewer can see whether a protocol was changed after its holdout was
+observed. v1 has no
 tunable parameter, so this framework records provenance; it does not claim to prevent
 every form of researcher leakage.
 """
@@ -84,17 +85,31 @@ def _cohorts(db, protocol, dataset, modes):
     return hashes or [None]
 
 
-def _holdout_history(db, dataset, view, start, through):
+def _holdout_history(db, dataset, start, through):
+    """Every earlier evaluation of the dataset, in any view, whose period overlaps the
+    holdout range (an open start or end overlaps everything on that side): each one may
+    have observed a holdout outcome."""
     rows = db.execute(
         "SELECT id, json_extract(payload_json,'$.config_hash'),"
-        " json_extract(payload_json,'$.code_hash'), json_extract(payload_json,'$.created_at')"
-        " FROM evaluation_runs WHERE json_extract(payload_json,'$.dataset')=? AND view=?"
-        " AND json_extract(payload_json,'$.report.period.start_date')=?"
-        " AND json_extract(payload_json,'$.report.period.through_date')=? ORDER BY id",
-        (dataset, view, start.isoformat(), through.isoformat()),
+        " json_extract(payload_json,'$.code_hash'), json_extract(payload_json,'$.created_at'),"
+        " view, json_extract(payload_json,'$.report.period.start_date'),"
+        " json_extract(payload_json,'$.report.period.through_date')"
+        " FROM evaluation_runs WHERE json_extract(payload_json,'$.dataset')=?"
+        " AND COALESCE(json_extract(payload_json,'$.report.period.start_date')<=?, 1)"
+        " AND COALESCE(json_extract(payload_json,'$.report.period.through_date')>=?, 1)"
+        " ORDER BY id",
+        (dataset, through.isoformat(), start.isoformat()),
     ).fetchall()
     return [
-        {"evaluation_id": r[0], "research_config_hash": r[1], "code_hash": r[2], "created_at": r[3]}
+        {
+            "evaluation_id": r[0],
+            "research_config_hash": r[1],
+            "code_hash": r[2],
+            "created_at": r[3],
+            "view": r[4],
+            "start_date": r[5],
+            "through_date": r[6],
+        }
         for r in rows
     ]
 
@@ -225,9 +240,7 @@ def run(
         cohorts = _cohorts(db, protocol, dataset, modes)
         for segment, seg_start, seg_through in segments:
             if segment == "holdout":
-                summary["holdout_history"] = _holdout_history(
-                    db, dataset, view, seg_start, seg_through
-                )
+                summary["holdout_history"] = _holdout_history(db, dataset, seg_start, seg_through)
             entry = {
                 "start_date": seg_start.isoformat(),
                 "through_date": seg_through.isoformat(),

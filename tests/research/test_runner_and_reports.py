@@ -16,7 +16,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "forecast"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "evaluation"))
 from _f34 import GAME_ID, at, collect, protocol, tick_at, to_schema4  # noqa: E402
 from conftest import Clock  # noqa: E402
-from test_materialization import AS_OF, forward_slice, settle, settlement_evidence  # noqa: E402
+from test_materialization import (  # noqa: E402
+    AS_OF,
+    evaluate_at,
+    forward_slice,
+    settle,
+    settlement_evidence,
+)
 
 from vader_intelligence.cli import execute, parser  # noqa: E402
 from vader_intelligence.config import Config  # noqa: E402
@@ -135,6 +141,41 @@ def test_split_evaluates_development_before_holdout_and_records_history(store, c
     )
     assert again["holdout_history"][0]["evaluation_id"] == hold["evaluation_id"]
     assert again["holdout_history"][0]["research_config_hash"] == PROTO.config_hash
+
+
+def test_holdout_history_lists_every_earlier_overlapping_evaluation(store, config, monkeypatch):
+    """An evaluation that scored a holdout game is history whatever its range or view
+    (review F12): a whole-range forward evaluation and an open-range simulated
+    reconstruction evaluation both observed GAME_DAY."""
+    forward_slice(store, config)
+    settle(store, config, monkeypatch, settlement_evidence())
+    span = {"start_date": GAME_DAY - timedelta(days=3), "through_date": GAME_DAY}
+    whole = run_at(store, at(23, 40), view="forward-shadow", **span)
+    observed = next(iter(whole["segments"]["whole"]["cohorts"].values()))
+    assert observed["population"]["scored_paired"] == 1  # the holdout game was scored
+    other_view = evaluate_at(store, at(23, 41), view="cutoff-reconstruction")
+    before = evaluate_at(
+        store,
+        at(23, 42),
+        view="forward-shadow",
+        start_date=GAME_DAY - timedelta(days=3),
+        through_date=GAME_DAY - timedelta(days=1),
+    )
+    split = run_at(
+        store,
+        at(23, 50),
+        view="forward-shadow",
+        development_through=GAME_DAY - timedelta(days=1),
+        holdout_from=GAME_DAY,
+        **span,
+    )
+    history = {h["evaluation_id"]: h for h in split["holdout_history"]}
+    assert list(history) == [observed["evaluation_id"], other_view["evaluation_id"]]
+    assert before["evaluation_id"] not in history  # ends before the holdout range
+    assert history[observed["evaluation_id"]]["view"] == "forward-shadow"
+    assert history[other_view["evaluation_id"]]["view"] == "cutoff-reconstruction"
+    assert history[other_view["evaluation_id"]]["start_date"] is None
+    assert history[observed["evaluation_id"]]["research_config_hash"] == PROTO.config_hash
 
 
 def test_budget_exhaustion_is_partial_and_writes_no_evaluation(store, config, monkeypatch):

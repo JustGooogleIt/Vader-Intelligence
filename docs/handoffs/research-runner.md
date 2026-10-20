@@ -31,8 +31,9 @@ Steps, in temporal order:
 
 **Split and held-out observations.** `--development-through D --holdout-from H` with
 `start ≤ D < H ≤ through`; the two ranges never overlap; development is evaluated before
-holdout; the summary's `holdout_history` lists every earlier evaluation of exactly that
-holdout range in the dataset with the protocol and code hash it used. The protocol is
+holdout; the summary's `holdout_history` lists every earlier evaluation in the dataset
+whose period overlaps the holdout range, in any view (an open-ended period overlaps),
+with its view, period and the protocol and code hash it used. The protocol is
 hashed and recorded before any evaluation. v1 has no tunable parameter, so there is
 nothing to fit; the framework records enough provenance to audit the experiment and
 does not claim to prevent every form of researcher leakage (a reviewer changing the
