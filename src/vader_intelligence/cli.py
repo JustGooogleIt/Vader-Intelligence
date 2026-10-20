@@ -87,9 +87,9 @@ def parser():
     evaluate.add_argument(
         "--record-contract",
         type=int,
-        choices=[2, 3],
-        default=3,
-        help="decisions of this record contract only (2 = legacy cohort; default 3)",
+        choices=[2, 3, 4],
+        help="decisions of this record contract only (default: the archive's current"
+        " contract, 4 on schema 6, else 3; 2 = legacy cohort)",
     )
     evaluation = commands.add_parser("evaluation", help="read-only evaluation inspection")
     evaluation_commands = evaluation.add_subparsers(dest="evaluation_command", required=True)

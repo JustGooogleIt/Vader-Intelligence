@@ -703,3 +703,51 @@ def test_evaluate_and_inspect_through_the_cli(tmp_path, monkeypatch):
         "3": 0,
         "4": 0,
     }
+
+
+def test_evaluate_through_the_cli_defaults_to_the_archive_record_contract(tmp_path, monkeypatch):
+    """On schema 6 new decisions are contract 4; the CLI must evaluate them by default and
+    accept --record-contract 4 (review F25), as `evaluate()` itself does."""
+    path = tmp_path / "evaluate6.sqlite3"
+    config = Config(database=str(path), min_free_bytes=1)
+
+    def cli(*args):
+        return execute(parser().parse_args(["--db", str(path), *args]))
+
+    cli("db-init")
+    cli("settlement", "migrate")
+    cli("forecast", "migrate")
+    cli("forecast", "migrate", "--record-contract", "4")
+    store = Store(path, min_free_bytes=1)
+    try:
+        assert store.schema_version() == 6
+        collect(store, config, origin=at(18, 3))
+        tick_at(store, PROTO, at(18, 3, 30))
+        assert tick_at(store, PROTO, at(18, 5, 30))["decisions_eligible"] == 1
+        settle(store, config, monkeypatch, settlement_evidence())
+    finally:
+        store.close()
+    research = tmp_path / "research.toml"
+    research.write_text(f'[research]\ndataset = "{PROTO.dataset}"\n')
+    base = (
+        "evaluate",
+        "--research-config",
+        str(research),
+        "--view",
+        "forward-shadow",
+        "--outcomes-as-of",
+        AS_OF.isoformat(),
+    )
+    result = cli(*base)
+    report = result["report"]
+    assert result["status"] == "complete" and report["record_contract"] == 4
+    assert report["population"]["scored_paired"] == 1 and report["excluded_decisions"] == []
+    explicit = cli(*base, "--record-contract", "4")
+    assert explicit["existing"] is True and explicit["evaluation_id"] == result["evaluation_id"]
+    legacy = cli(*base, "--record-contract", "3")
+    assert legacy["status"] == "inconclusive" and legacy["report"]["record_contract"] == 3
+    assert legacy["report"]["excluded_decisions"] == [
+        {"id": 1, "contract": 4, "reason": "other_contract"}
+    ]
+    with pytest.raises(SystemExit):
+        parser().parse_args(["evaluate", *base[1:], "--record-contract", "5"])
