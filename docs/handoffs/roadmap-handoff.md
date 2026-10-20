@@ -27,6 +27,15 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #26 | `feat/history-backtest` | `1e02613ef1ce79f2bc473c3fb5537f3b1d7072b4` | D/H candle backtest, live dry run (D-010, D-011) | 1217 passed |
 | #27 | `feat/research-pods` | `145735cf6ba04820870e181a5ac02bff5050ffe7` | G orchestration, operations, protected evaluator (D-008) | 1272 passed |
 | #28 | `feat/integration-demos` | final head in §11 | H demos, ops model registry, run documents | 1275 passed |
+| #29 | `perf/ledger-row-cache` | `26dceed2f8fad8b22320845b40d6d3b755265057` | ledger parsed-row reuse (D-012); read-only registry for non-holdout backtests | 1279 passed |
+| #30 | `feat/pod-autopilot` | `d744766d96ebb869a9e8ab6ab1fc1c40e9ca5262` | G pod autopilot: development-only planners, bounded loop (D-013) | 1294 passed |
+| #31 | `fix/review-26-27` | `e4b6770baf7332697720819bd86a0a8a7e13ea6c` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | 1303 passed |
+| #32 | `fix/review-24-25` | `3827df2adea441b33bdef56d0a48c226d5e89aa7` | repairs from the #24/#25 pre-review: skew latch, TLS trust, ambiguous writes, exits, ingest idempotency, Kelly rounding | 1317 passed |
+| #33 | `fix/review-17-23-28` | `4e44ef5877b2a3311e64a1081639ed0950017a12` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping, forecast tick abstention, synthetic label, case-insensitive ops guard | 1321 passed |
+| #34 | `feat/live-settlements` | `d1ced5f291acc23509af108ee1af16907b71c808` | F live settlement recording: venue settlements recorded only after a clean fills reconciliation and an exact match with the ledger (every venue-reported fill, counts, payout, no fee); operator resolution through the ledger | 1344 passed |
+| #35 | `fix/activation-key-material` | `5b7397ef37edaa42c102039eee07b3895e87e27c` | repair of the #25 activation gate: `no_key_material` also refuses a key pasted as base64 or hex (also merged, misaligned, commented out, in an array, truncated or damaged) or as an OpenSSH body; runbook note: canary risk limits within the notional caps | 1361 passed |
+| #36 | `fix/book-selection-witnessed` | `6a2bc506e98b97a07ca7c3c83e4585ab9530eaba` | repair (D-016): opt-in `selection_version = "selection-v2"` selects the midpoint's book as spec §4 says (latest received **and** witnessed by C); `selection-v1` default and stored decisions unchanged; merges #35's hardening | 1379 passed |
+| #37 | `fix/review-findings` | `7a61f3f670893c36961bf6ff19a9dad3dbd50a18` | repairs for the independent (Grok) review findings on #10–#28, one commit per finding (`docs/roadmap/review-findings.md`); no new capability | 1461 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -39,13 +48,14 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
 
 | Status | Items |
 |---|---|
-| **Demonstrated on real data** | rule v2 on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts, 2026-10-19); historical acquisition (2025 + 2026, with 2026 execution windows); datasets; training of logistic, gradient boosting and symbolic models; research pods and the protected evaluator on 2026 and on 2025→2026; candle vs collected book at C; paper backtest (simulated execution) on real 2026 validation candles through pods and the coordinator, which agree exactly |
-| **Demonstrated on synthetic data (asserted in the suite)** | full chain proposed → validated → shadow_tested → paper_approved with hand-checked numbers; one-time holdout in both ledgers; dry-run order request; recovery from worker and coordinator SIGKILL, backtest crashes, live create timeout |
+| **Demonstrated on real data** | rule v2 on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts, 2026-10-19); historical acquisition (2025 + 2026, with 2026 execution windows); datasets; training of logistic, gradient boosting and symbolic models; research pods and the protected evaluator on 2026 and on 2025→2026; the pod autopilot (heuristic planner) on the 2026 snapshot; candle vs collected book at C; paper backtest (simulated execution) on real 2026 validation candles through pods and the coordinator, which agree exactly, and on the two-season validation set |
+| **Demonstrated on synthetic data (asserted in the suite)** | full chain proposed → validated → shadow_tested → paper_approved with hand-checked numbers (through #36; since #37, F40, paper approval needs the coordinator's archive-built, depth-free backtest, which is tested on the synthetic history archive, and the E2E demo stops at shadow_tested); one-time holdout in both ledgers; dry-run order request; recovery from worker and coordinator SIGKILL, backtest crashes, live create timeout |
 | **Implemented, simulated only** | paper simulator, risk engine, Kelly; Kalshi live adapter against a deterministic exchange double; dry-run gateway |
-| **Pending tonight (bounded jobs running)** | live rule-v2 forward decision at C = 23:08Z for `KXMLBGAME-26OCT192008CLETB`; live forward shadow with the three 2026 pod models as registered forecasters; two-season real-candle backtest (2,027 validation rows) |
+| **Demonstrated live (forward, one game)** | rule-v2 and contract-4 decisions at C = 23:08Z 2026-10-19 for `KXMLBGAME-26OCT192008CLETB`, publication allowed, no input witnessed after C; the three pod models as registered forecasters (0.461, 0.438, 0.413 vs market mid 0.415); the live-adapter dry run on that real decision (one signed, unsent request; refused by the 1.00 cap). The midpoint abstained in both shadows: selection-v1 departs from spec §4 (D-016), and selection-v2 (#36), read-only on the same archives, gives 0.4150. `docs/evidence/live-forward-20261019.md` |
+| **Demonstrated live: settlement and evaluation (one game)** | The game settled y = 0 (TB won), and both evaluations ran. The decision was published timely and the constant scored. Model Brier scores: symbolic 0.1709, gradient boosting 0.1919, logistic 0.2129, constant 0.25; there is no paired midpoint (D-016). One game is not evidence of skill |
 | **Untested** | the live canary (`docs/live-canary-runbook.md`, never executed); exchange acceptance of any request; fee schedules against real fills |
 | **Blocked** | A5 NBA/NFL (D-005: no authorized official free schedule source) |
-| **Not done by decision** | one-time holdout of a final candidate (D-009: no candidate validated; the 2026 holdout is untouched) |
+| **Not done by decision** | one-time holdout of a final candidate (D-009: no candidate validated; the 2026 holdout is untouched, and since #31 it is enforced: the real datasets are pinned at 2026-09-02, D-014) |
 
 ## 3. Real-data findings (historical retrieval; not forward evidence; not edge)
 
@@ -56,22 +66,99 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
   (CI −0.0031, +0.0039), gradient boosting +0.0095 (CI +0.0035, +0.0158), symbolic
   (`logit_mid_c`) −0.0004 (CI −0.0017, +0.0010, halves disagree). All rejected.
 - The symbolic search's best expressions are the market's own midpoint or log-odds.
+- The pod autopilot on the 2026 snapshot refined grids on development cross-validation
+  over three rounds and then stopped. Both best models were rejected by the protected
+  evaluator: gradient boosting is significantly worse than market mid (+0.0121, CI
+  +0.0015 to +0.0232), and the symbolic `tanh(logit_pair_mid_c)` is the market itself.
 - Candle vs collected book at C (12 postseason games): mid and spread identical; book
   best-level sizes 11k–5.9M (archive units).
 - Paper backtest on real 2026 validation candles. This is a simulation, and selection
   biased.
   - Without assumed depth nothing fills, because candles have no sizes.
-  - Under assumed depth 5 or 25, every scenario with fills loses money, both after and
-    before fees. For example, gradient boosting at depth 25 on the general schedule
-    loses 67.50 after fees (43.45 of fees) on a $1,000 bankroll.
+  - Under assumed depth 5 or 25, every scenario with fills has a negative point
+    estimate after fees. Before fees all but one are negative too: gradient boosting at
+    depth 5 under the 0.5× schedule is +3.32. For example, gradient boosting at depth 25 on
+    the general schedule loses 67.50 after fees (43.45 of fees) on a $1,000 bankroll.
+    Every 95% interval, from a bootstrap over markets, contains zero.
   - One extra slippage tick means no fill (the limit is the decision-time ask), and
     latency below one minute changes nothing.
   - In one run, the risk engine's daily loss stop engaged the kill switch, and that
     stopped the run.
   - The pods (verified input copies, no archive access) and the coordinator produced
     identical numbers in all 36 shared scenarios.
+- Paper backtest on the two-season validation set (2,027 games, one ledger per candidate
+  and depth). The signs are mixed:
+  - logistic at depth 5: +2.28 after fees (CI −41.52, +48.96);
+  - gradient boosting at depth 25: −36.90 after fees (CI −361.18, +319.65), but +146.18
+    before them.
+  - Every interval for rows with more than one trade contains zero; the symbolic model
+    traded once, so its rows have no meaningful interval. Fees are the largest systematic
+    cost.
+  - The 15% drawdown stop engaged the kill switch in both depth-25 runs.
+  - The near-market symbolic model traded once.
 
 Details: `docs/evidence/real-data-demo-20261019.md`.
+
+## 3b. Independent pre-review (before Codex)
+
+Three read-only Opus reviewers examined the newest code (#26, #27, #29, #30) and probed
+each finding in temp directories.
+
+- **#29 (ledger cache):** judged sound.
+- **#30 (autopilot):** the confirmed findings were fixed in `d744766`: malformed provider
+  values, a non-finite-JSON gap, the record ordering, the budget across runs and fold
+  comparability.
+- **#26 and #27:** one critical gap, the unpinned holdout, and several major ones:
+  - forgeable pod inputs and diagnostics run on another snapshot;
+  - a silent constant baseline;
+  - unbound paper evidence;
+  - holdout ledgers that were not crash-safe;
+  - holdout results written before their ledger entry;
+  - phantom dry-run exposure and an overstated dry-run claim.
+
+  All confirmed findings are fixed in #31.
+- **#24 and #25:** no critical finding. The activation boundary, secret handling, write
+  semantics, Decimal money and the accounting identity all held.
+  - Fixed in #32:
+    - a stale or cached `Date` header that could stop shutdown from cancelling;
+    - the TLS trust store following the environment;
+    - ambiguous 4xx answers to order creation;
+    - notional caps blocking exits;
+    - sell coverage ignoring recent fills;
+    - startup reconciliation completing early;
+    - risk-limit and environment bindings;
+    - non-idempotent resent venue events;
+    - fees above their bound;
+    - a Kelly rounding edge case.
+  - Implemented afterwards in #34 (a new capability, kept out of #32):
+    - live settlement recording;
+    - late fills on settled tickers (they stay refused; with #34 such a fill
+      contradicts the venue's own final fill count or settled counts).
+    - #34's own read-only Opus pre-review found two major defects in its first commit
+      (a settlement recorded while netted fills were missing; conflicts that could not
+      be cleared) and two minor ones; all four were confirmed by probes and fixed in
+      `a02d762`. A second pass found no sequence that settles with venue fills
+      missing, and four minor fail-closed gaps, fixed in `d1ced5f`.
+  - Repaired afterwards in #35: `no_key_material` detected only PEM armour.
+  - Documented, not changed:
+    - fractional quantity steps over-reserving fees;
+    - reduce-only sells under unknown state (by design; guarded by venue coverage);
+    - ACLs on the key file (only the mode bits are checked).
+
+- **#17–#23 and #28:** no critical finding. Contract versioning, rule v2, sticky C,
+  leakage guards, lineage, training hygiene and the production ops path all held.
+  - Fixed in #33:
+    - a postponed game could be scored through a stale settlement mapping (#19);
+    - one unloadable artifact stopped the whole forecast tick (#22);
+    - synthetic acquisitions were labelled real (#20);
+    - the ops forbidden-path guard was case-sensitive on a case-insensitive volume. It
+      predates #28, and a shadow database could have aliased the production archive.
+  - Also corrected: the evidence-doc claims flagged by the #28 review (a row positive
+    before fees, `clip_to_limits` false, single-trade intervals).
+  - Documented, not changed: `last_trade_gap_c` semantics (D-015), forecaster
+    populations, contract-4 auditability, and the #17–#19 minors.
+
+Codex review remains the user's step.
 
 ## 4. Reproduction
 
@@ -114,7 +201,16 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #17–#25 | 835, 868, 873, 881, 953, 960, 1022, 1105, 1209 passed (2 deselected each); ruff clean |
 | #26 | 1217 passed, 2 deselected |
 | #27 | 1272 passed, 2 deselected |
-| #28 | 1275 passed, 2 deselected; wheel smoke complete (schemas 1–6); ops 43 passed |
+| #28 | 1275 passed, 2 deselected (re-run at `2730d1b`; later commits change docs only); wheel smoke complete (schemas 1–6); ops 43 passed |
+| #29 | 1279 passed, 2 deselected; the real 2026 scenario gives the same report apart from `code_hash`, with CPU time down from 78 s to 16 s |
+| #30 | 1294 passed, 2 deselected (15 new autopilot tests); wheel built at this head imports `pods.planner` and `pods.autopilot`, and its smoke test is complete (schemas 1–6). A read-only Opus review of #29 and #30 found nothing critical; its confirmed findings on #30 were fixed in `d744766` |
+| #31 | 1303 passed, 2 deselected (9 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
+| #32 | 1317 passed, 2 deselected (14 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
+| #33 | 1321 passed, 2 deselected (4 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
+| #34 | 1344 passed, 2 deselected (23 new tests) at `d1ced5f`; ruff clean; the synthetic e2e and recovery demos complete (at `9cca473`; no packaging or schema change) |
+| #35 | 1361 passed, 2 deselected (17 new tests) at `5b7397e`; ruff clean. History: at `7686513`, 1352 passed, but the wrapped-body form failed about one run in three; `e9f4b89` fixed merged and misaligned runs (1355 passed). An independent adversarial review then found that a body pasted as TOML comments passed every gate; `5b7397e` fixes that, plus arrays, truncated, damaged and OpenSSH bodies, and slow RSA validation. On 8 keys per form, the earlier check misses each new form every time and the new one finds every one. No new false positives (0 of 3000 random runs); the worst 64 KiB input takes 0.05 s |
+| #36 | 1379 passed, 2 deselected at `6a2bc50`, which merges #35's hardening (1373 at `45ea196`, 18 new tests); ops 44 passed; ruff clean. A mutant that makes v2 behave like v1 fails five tests. An independent pre-review found no correctness defect: 0 mismatches against a §4 oracle over 900 cutoffs, and v1 identical to the old code. Its three surviving mutants are now killed. Read-only on the real 2026-10-19 archives, v1 reproduces the recorded abstention and v2 gives midpoint 0.4150 |
+| #37 | 1461 passed, 2 deselected (82 new tests) at `7a61f3f`; ops 46 passed; ruff clean. Plain `pytest -q` collects the same 1463 tests as `python -m pytest` (F7). Each regression test failed on the unfixed code first |
 
 ## 6. Data and model limitations
 
@@ -128,6 +224,25 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
   collect regular-season books.
 - Fee schedules are unverified (higher-fee default); Kalshi API facts marked unverified
   are listed in `docs/live-canary-runbook.md` §6 (A1–A20).
+- **`last_trade_gap_c` (D-015).** It is not the same feature from candles and from live
+  listings. The fs-market-v1 models in tonight's forward shadow see a forward input
+  distribution they were not trained on. The one forward value (0.005) lies inside the
+  2026 history distribution, which proves nothing about the rest.
+- **Midpoint at C (D-016).** The implemented book selection (selection-v1, the
+  default) departs from specification §4. It anchors on the latest book *received* by
+  C, which under the tick-then-collect order is normally witnessed after C. So the
+  midpoint abstains at almost every cutoff, as it did in both shadows tonight, and
+  forward evaluations compare a model with the constant only. #36 adds the specified
+  rule as an opt-in `selection-v2`. Cohorts and archives made with selection-v1,
+  including tonight's, keep that behavior.
+- **Forecaster populations.** A forecaster is scored wherever it gave a probability; only
+  its `paired_with_midpoint` block shares the midpoint's population.
+- Holdout-period data that was read:
+  - The candle-vs-book check (§3) read market *features* (mid, spread) at C for 16
+    postseason games dated after the 2026-09-02 holdout pin. It read no outcome and
+    scored no model.
+  - Tonight's forward shadow scores live games in that date range. Those games are
+    forward evidence, not dataset rows.
 - Backtest execution: candles cannot resolve sub-minute latency. Slippage is a worse fill
   price that must stay within the limit; with take-at-ask limits, one tick means no
   fill rather than a worse price. Paper runs cost time quadratic in the input count
@@ -153,32 +268,58 @@ post-only order, cancel, reconcile, shutdown (never executed).
 3. D-009: whether a two-season split should define a new holdout before further model
    work; the current 2026 holdout stays untouched.
 4. D-008 default criteria (CI below zero and both halves) — stricter or looser?
-5. Backtest slippage semantics: keep "slippage = no fill at a touch limit", or add a
+5. D-015: drop or redefine `last_trade_gap_c` in an `fs-market-v2` before the next
+   model work.
+6. D-016: #36 repairs the midpoint book selection as an opt-in `selection-v2`. Should
+   new research configurations default to it? The current default stays selection-v1,
+   so no existing cohort hash changes.
+7. Backtest slippage semantics: keep "slippage = no fill at a touch limit", or add a
    strategy limit offset (pay up to k ticks) so the slippage axis measures price?
-6. Live activation (demo canary) — only after review; requires the user's own key.
+8. Live activation (demo canary) — only after review; requires the user's own key.
 
 ## 9. Cleanup (not done automatically)
 
-- Background jobs: live rule-v2 driver (`/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2`), model shadow driver (`.../20261019-models`), follow-up acquisition (`/Users/ashwin/Documents/Vader-Intelligence-research/history/run-acquisition-2.sh`); all end by themselves (last ≈05:20 UTC 2026-10-20).
-- Worktrees (with their venvs): `Vader-Intelligence-wt-{deps,execution-risk,symbolic-engine,research-pods-core,models-library,live-adapter}` (finished subagent work, integrated), `-live-v2`, `-live-models`, `-history-run`, `-history-run2` (pinned run code). Local branches `wip/deps`, `feat/execution-risk`, `feat/symbolic-engine`, `feat/research-pods-core`, `feat/models-library`, `feat/live-adapter` are superseded by the stack.
-- Data directories (outside the repo): `/Users/ashwin/Documents/Vader-Intelligence-research/{history (≈0.3 GB),registry,pods-2026,pods-2025-2026 (with backtest-ledgers/),demo}`, `/Users/ashwin/Documents/Vader-Intelligence-shadow/{20261019-rule-v2,20261019-models}`, the session scratchpad.
+- Background jobs: live rule-v2 driver (`/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2`), model shadow driver (`.../20261019-models`); both end by themselves (last ≈05:20 UTC 2026-10-20). The acquisitions and backtests have finished.
+- Worktrees (with their venvs): `Vader-Intelligence-wt-{deps,execution-risk,symbolic-engine,research-pods-core,models-library,live-adapter}` (finished subagent work, integrated), `-live-v2`, `-live-models`, `-history-run`, `-history-run2` (pinned run code), `-verify` (holds `fix/activation-key-material`, #35; also used for head verification). Local branches `wip/deps`, `feat/execution-risk`, `feat/symbolic-engine`, `feat/research-pods-core`, `feat/models-library`, `feat/live-adapter` are superseded by the stack.
+- Data directories (outside the repo): `/Users/ashwin/Documents/Vader-Intelligence-research/{history (≈0.3 GB),registry,pods-2026,pods-2025-2026 (with backtest-ledgers/),demo}`, `/Users/ashwin/Documents/Vader-Intelligence-shadow/{20261019-rule-v2,20261019-models}`, the session scratchpad (profiles, single-run ledgers, the wheel venv).
+- Research pods added in `pods-2026` by the autopilot demos: `auto-baseline`, `auto-symbolic` (2 rejected candidates) and `auto2-*` (planning only). The orchestration store is append-only, so they stay as history.
 
 ## 10. Next highest-value work
 
 1. Review and merge decisions for #17–#20 (the evidence foundation).
 2. Forward evidence: keep forward shadows with registered forecasters running through the
    rest of the postseason and next season; forward data is the only unbiased test.
+   New shadows should set `selection_version = "selection-v2"` (#36, D-016), so forward
+   decisions carry a market-midpoint score. Recipe for one bounded game, modelled on
+   `/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models`:
+   1. Make a new directory.
+   2. Copy `collector.toml` (rule v1 and v2) and the `registry/` from that directory.
+   3. Write `research.toml` with a new `dataset`, the same three `forecasters` and
+      `selection_version = "selection-v2"`.
+   4. Initialize and migrate the archive (`docs/forward-shadow.md`, "Start"); the
+      registered forecasters need record contract 4.
+   5. Run `ops/manage.py configure` with `--test-label`, `--shadow-research-config`,
+      `--shadow-model-registry` and `--forbid` for each production path. Run it from a
+      checkout at the #36 head or later.
+   6. Copy `driver.sh` and change only `D`, `W`, the first slot (about 72 minutes before
+      C) and the evaluation date and time.
+
+   No launchd and no paid call; public GET endpoints only.
 3. Features beyond the market: the market-only feature set cannot beat its own midpoint by
    construction; team/pitcher/lineup features with forward availability are the next
    research question (the `fs-full-v1` team features exist but are research-only).
 4. Execution realism: collect order books (not candles) for the trading window to
    measure depth at arrival before any canary.
-5. Simulator cost: make `Ledger.projection()` incremental (apply rows written since the
-   cached projection). Today it re-reads and re-parses the whole ledger after every
-   write, which makes a paper run quadratic. One 401-row scenario takes 80–95 s, and 185
-   of 207 profiled seconds are in the projection. This touches the authoritative ledger,
-   so it belongs in its own reviewed PR.
-6. Only after forward evidence of edge: the demo canary per the runbook.
+5. Simulator cost.
+   - #29 (D-012) removes the re-parsing: committed ledger rows are parsed once. On a
+     401-row scenario, CPU time falls from 78 s to 16 s.
+   - The projection is still recomputed in full after every write (15 of 42 profiled
+     seconds), so a paper run is still quadratic, with a much smaller constant.
+   - An incremental projection is the remaining step. It changes how the authoritative
+     ledger derives state, so it needs its own review.
+6. Before any live use: verify the settlement-record assumptions of #34 (runbook
+   A21–A23) on demo; they are unverified and fail closed.
+7. Only after forward evidence of edge: the demo canary per the runbook.
 
 ## 11. Final head of #28
 

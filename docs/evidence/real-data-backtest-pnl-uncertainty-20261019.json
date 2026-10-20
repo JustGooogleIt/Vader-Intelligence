@@ -1,0 +1,264 @@
+{
+  "kind": "paper-backtest-pnl-uncertainty",
+  "method": "net realized P&L per market (one order per market) recomputed from each ledger's fills and archived settlements: quantity x (settlement value of the bought side - price) - fee; 95% interval = 2.5th/97.5th percentiles of 2000 bootstrap resamples of markets (seed 0); se_total = sd x sqrt(n). Simulation on archived candles under assumed depth; selection biased (validation segment).",
+  "two_season_validation": {
+    "gradient_boosting-depth-25": {
+      "boot95": [
+        -361.18,
+        319.65
+      ],
+      "contracts": "10677",
+      "fees": "183.08",
+      "kill_switch": [
+        {
+          "at": "2026-08-05T17:35:00+00:00",
+          "reason": "auto: drawdown_stop"
+        }
+      ],
+      "last_fill": "2026-08-04T23:40:00.250000+00:00",
+      "markets": 913,
+      "net": -36.9,
+      "net_per_contract": -0.0035,
+      "se_total": 175.39
+    },
+    "gradient_boosting-depth-5": {
+      "boot95": [
+        -103.21,
+        28.33
+      ],
+      "contracts": "2242",
+      "fees": "44.34",
+      "kill_switch": [],
+      "last_fill": "2026-08-31T23:10:00.250000+00:00",
+      "markets": 1121,
+      "net": -37.36,
+      "net_per_contract": -0.0167,
+      "se_total": 32.92
+    },
+    "logistic-depth-25": {
+      "boot95": [
+        -281.24,
+        225.08
+      ],
+      "contracts": "5890",
+      "fees": "101.08",
+      "kill_switch": [
+        {
+          "at": "2026-08-24T21:40:00+00:00",
+          "reason": "auto: drawdown_stop"
+        }
+      ],
+      "last_fill": "2026-08-23T19:15:00.250000+00:00",
+      "markets": 524,
+      "net": -22.68,
+      "net_per_contract": -0.0039,
+      "se_total": 128.26
+    },
+    "logistic-depth-5": {
+      "boot95": [
+        -41.52,
+        48.96
+      ],
+      "contracts": "1094",
+      "fees": "21.58",
+      "kill_switch": [],
+      "last_fill": "2026-08-31T23:40:00.250000+00:00",
+      "markets": 547,
+      "net": 2.28,
+      "net_per_contract": 0.0021,
+      "se_total": 23.24
+    },
+    "symbolic-depth-25": {
+      "boot95": [
+        7.26,
+        7.26
+      ],
+      "contracts": "10",
+      "fees": "0.14",
+      "kill_switch": [],
+      "last_fill": "2026-05-13T01:10:00.250000+00:00",
+      "markets": 1,
+      "net": 7.26,
+      "net_per_contract": 0.726,
+      "se_total": 0.0
+    },
+    "symbolic-depth-5": {
+      "boot95": [
+        1.45,
+        1.45
+      ],
+      "contracts": "2",
+      "fees": "0.03",
+      "kill_switch": [],
+      "last_fill": "2026-05-13T01:10:00.250000+00:00",
+      "markets": 1,
+      "net": 1.45,
+      "net_per_contract": 0.725,
+      "se_total": 0.0
+    }
+  },
+  "validation_2026": {
+    "note": "single ledgers rerun with #29/#30 code (identical reports to the grid, matches_grid)",
+    "runs": {
+      "06891d03-kalshi-2026-02-general-25": {
+        "boot95": [
+          -141.95,
+          69.0
+        ],
+        "fees": "18.45",
+        "fills": 100,
+        "matches_grid": true,
+        "net": "-38.88",
+        "orders": 100,
+        "recomputed_net": -38.88,
+        "rejections": {}
+      },
+      "06891d03-kalshi-2026-02-general-5": {
+        "boot95": [
+          -25.47,
+          12.35
+        ],
+        "fees": "3.91",
+        "fills": 100,
+        "matches_grid": true,
+        "net": "-6.99",
+        "orders": 100,
+        "recomputed_net": -6.99,
+        "rejections": {}
+      },
+      "06891d03-kalshi-2026-02-mlb-multiplier-0.5-assumed-25": {
+        "boot95": [
+          -173.69,
+          79.79
+        ],
+        "fees": "14.12",
+        "fills": 145,
+        "matches_grid": true,
+        "net": "-43.6",
+        "orders": 145,
+        "recomputed_net": -43.6,
+        "rejections": {}
+      },
+      "06891d03-kalshi-2026-02-mlb-multiplier-0.5-assumed-5": {
+        "boot95": [
+          -30.26,
+          15.9
+        ],
+        "fees": "2.9",
+        "fills": 145,
+        "matches_grid": true,
+        "net": "-6.7",
+        "orders": 145,
+        "recomputed_net": -6.7,
+        "rejections": {}
+      },
+      "a6d69da1-kalshi-2026-02-general-25": {
+        "boot95": [
+          -226.12,
+          103.79
+        ],
+        "fees": "43.45",
+        "fills": 220,
+        "matches_grid": true,
+        "net": "-67.5",
+        "orders": 220,
+        "recomputed_net": -67.5,
+        "rejections": {}
+      },
+      "a6d69da1-kalshi-2026-02-general-5": {
+        "boot95": [
+          -40.65,
+          15.71
+        ],
+        "fees": "8.66",
+        "fills": 220,
+        "matches_grid": true,
+        "net": "-13.36",
+        "orders": 220,
+        "recomputed_net": -13.36,
+        "rejections": {}
+      },
+      "a6d69da1-kalshi-2026-02-mlb-multiplier-0.5-assumed-25": {
+        "boot95": [
+          -186.28,
+          103.85
+        ],
+        "fees": "17.29",
+        "fills": 169,
+        "matches_grid": true,
+        "net": "-48.31",
+        "orders": 169,
+        "recomputed_net": -48.31,
+        "rejections": {
+          "daily_loss_stop": 8,
+          "kill_switch_engaged": 84
+        }
+      },
+      "a6d69da1-kalshi-2026-02-mlb-multiplier-0.5-assumed-5": {
+        "boot95": [
+          -30.7,
+          28.6
+        ],
+        "fees": "5.08",
+        "fills": 254,
+        "matches_grid": true,
+        "net": "-1.76",
+        "orders": 254,
+        "recomputed_net": -1.76,
+        "rejections": {}
+      },
+      "d316e849-kalshi-2026-02-general-25": {
+        "boot95": [
+          -83.12,
+          54.05
+        ],
+        "fees": "8.79",
+        "fills": 51,
+        "matches_grid": true,
+        "net": "-17.33",
+        "orders": 51,
+        "recomputed_net": -17.33,
+        "rejections": {}
+      },
+      "d316e849-kalshi-2026-02-general-5": {
+        "boot95": [
+          -16.08,
+          9.84
+        ],
+        "fees": "1.9",
+        "fills": 51,
+        "matches_grid": true,
+        "net": "-3.58",
+        "orders": 51,
+        "recomputed_net": -3.58,
+        "rejections": {}
+      },
+      "d316e849-kalshi-2026-02-mlb-multiplier-0.5-assumed-25": {
+        "boot95": [
+          -114.1,
+          83.73
+        ],
+        "fees": "8.76",
+        "fills": 94,
+        "matches_grid": true,
+        "net": "-15.52",
+        "orders": 94,
+        "recomputed_net": -15.52,
+        "rejections": {}
+      },
+      "d316e849-kalshi-2026-02-mlb-multiplier-0.5-assumed-5": {
+        "boot95": [
+          -20.86,
+          15.38
+        ],
+        "fees": "1.88",
+        "fills": 94,
+        "matches_grid": true,
+        "net": "-2.74",
+        "orders": 94,
+        "recomputed_net": -2.74,
+        "rejections": {}
+      }
+    }
+  }
+}
