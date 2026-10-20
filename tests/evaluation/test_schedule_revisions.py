@@ -12,9 +12,13 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "forecast"))
 from _f34 import at, collect, fixture_data, tick_at, to_schema4
+from conftest import Clock
 from test_collector import handler_for
+from test_eligibility_rule_v2 import V2
 from test_materialization import (
     PROTO,
     evaluate_at,
@@ -23,8 +27,13 @@ from test_materialization import (
     settle,
     settlement_evidence,
 )
+from test_rule_v2_pipeline import PROTO as V2_PROTO
+from test_rule_v2_pipeline import dated_settlement, run_slice
 
+from vader_intelligence.config import Config
 from vader_intelligence.evaluation import outcomes
+from vader_intelligence.evaluation.service import evaluate
+from vader_intelligence.storage import Store
 
 
 def postponed(evidence):
@@ -93,6 +102,47 @@ def test_outcome_join_without_a_decided_start_keeps_the_old_disposition(store, c
         scheduled_start=at(19, 5),
     )
     assert decided.status == "schedule_changed_after_decision" and not decided.scorable
+
+
+@pytest.mark.parametrize(
+    "game_date", ["2026-09-28T17:05:00 EDT", "TBD", "2026-09-28T17:05:00", "2026-09-28"]
+)
+def test_an_unreadable_mapped_start_is_a_disposition_not_an_exception(
+    tmp_path, monkeypatch, game_date
+):
+    """Mapping policy 2 stores the provider's gameDate verbatim and, on the
+    rescheduledFromDate path, never parses it (review F19): a start the evaluator cannot
+    read as an aware instant cannot confirm the horizon, so it is reported, not raised."""
+    config = Config(database=str(tmp_path / "v2.sqlite3"), min_free_bytes=1, eligibility_rules=V2)
+    store = Store(config.database, min_free_bytes=1)
+    try:
+        run_slice(store, config)  # rule-v2 cohort: eligible decision for 19:05Z, published
+        evidence = postponed(dated_settlement())
+        evidence["schedule"]["dates"][0]["games"][0]["gameDate"] = game_date
+        settle(store, config, monkeypatch, evidence)
+        mapping = json.loads(
+            store.db.execute(
+                "SELECT data_json FROM settlement_versions WHERE kind='mapping'"
+            ).fetchone()[0]
+        )
+        assert mapping["status"] == "mapped" and mapping["mapping_policy"] == 2
+        assert mapping["scheduled_start"] == game_date
+        clock = Clock()
+        clock.origin = at(23, 45)
+        result = evaluate(
+            store,
+            V2_PROTO,
+            view="forward-shadow",
+            outcomes_as_of=at(23, 30),
+            clock=clock.now,
+            monotonic=clock.mono,
+        )
+        report = result["report"]
+        assert report["outcome_status"] == {"schedule_changed_after_decision": 1}
+        assert report["outcome_reasons"] == {"mapping_start_unknown": 1}
+        assert report["scores"]["paired"]["n"] == 0 and result["status"] == "inconclusive"
+    finally:
+        store.close()
 
 
 def moved_handler(start):

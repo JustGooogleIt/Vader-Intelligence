@@ -20,10 +20,9 @@ evaluation may use either lineage.
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
 
 from ..forecast.references import reference, run_source_mode
-from ..settlement.models import kalshi_result
+from ..settlement.models import instant, kalshi_result
 from .scoring import arithmetic
 from .settlement import finalized_binary
 
@@ -107,7 +106,8 @@ def join(
     mapping confirms the same game but at another start (a postponement or time change
     after the decision, decision D-003), the opportunity is no longer a horizon-3600
     forecast of that game: the disposition is `schedule_changed_after_decision`,
-    explicit and never scored. A mapping without a start cannot confirm the horizon.
+    explicit and never scored. A mapping without a start it states as an aware instant
+    (missing, unparseable or offset-less) cannot confirm the horizon.
     """
     if mode not in MODES:
         raise ValueError("unknown evaluation mode")
@@ -203,10 +203,13 @@ def join(
     if mapping_data.get("game_id") != game_id:
         return Outcome("identity_changed", ("mapping_game_mismatch",), **base)
     if scheduled_start is not None:
-        played = mapping_data.get("scheduled_start")
-        if not isinstance(played, str):
+        try:
+            played = instant(mapping_data.get("scheduled_start"))
+        except ValueError:
+            # Policy 2 keeps the provider's gameDate verbatim: a missing, unparseable or
+            # offset-less start is reported, never raised and never taken as a move.
             return Outcome("schedule_changed_after_decision", ("mapping_start_unknown",), **base)
-        if datetime.fromisoformat(played.replace("Z", "+00:00")) != scheduled_start:
+        if played != scheduled_start:
             return Outcome(
                 "schedule_changed_after_decision",
                 ("start_moved:" + str(mapping_data.get("reason")),),
