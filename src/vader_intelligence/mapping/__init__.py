@@ -279,11 +279,13 @@ def _resolve_v2(schedule, identity, result):
         return reject("doubleheader_requires_game_number")
     if game.get("status", {}).get("startTimeTBD") is not False:
         return reject("start_time_unknown")
-    exact = (
-        game.get("officialDate") == day
-        and game.get("gameDate") is not None
-        and instant(game["gameDate"]) == instant(identity["ticker_start"])
-    )
+    try:
+        # The provider start must be an offset-aware ISO instant (review F19), as
+        # rule v2 eligibility requires; anything else quarantines rather than raising.
+        start = instant(game.get("gameDate"))
+    except ValueError:
+        return reject("start_time_unknown")
+    exact = game.get("officialDate") == day and start == instant(identity["ticker_start"])
     result.update(
         status="mapped",
         reason="exact_original_date" if exact else "evidenced_schedule_change",
