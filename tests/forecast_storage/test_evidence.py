@@ -55,12 +55,14 @@ class Archive:
         return digest(configuration)
 
     def witness_run(self, run_id, namespace=NS):
+        # Started before every observation these tests place around T0: a receipt never
+        # predates its witness run (evidence.PROOF).
         self.db.execute(
             "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
             (
                 run_id,
                 "forecast-witness",
-                iso(T0),
+                iso(T0 - timedelta(days=1)),
                 None,
                 "running",
                 RunProvenanceV1(

@@ -173,6 +173,10 @@ class Store:
             raise
 
     def start_run(self, provenance, started_at=None):
+        if provenance.kind == "forecast-witness":
+            # Receipts are operational proof only under this run kind (D-001), so the
+            # generic run API never creates it; forecast.witness writes its own run.
+            raise ValueError("forecast-witness runs are created only by the forecast witness")
         with self.transaction():
             self.db.execute(
                 "INSERT INTO runs(id,kind,started_at,status,provenance_json) VALUES (?,?,?,?,?)",

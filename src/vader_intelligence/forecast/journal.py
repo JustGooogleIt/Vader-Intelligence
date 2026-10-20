@@ -109,8 +109,9 @@ def validate_links(db, table, p, rules="current"):
     frozen rule set of the draft code at PR #10/#11 (5811991), used by `integrity` only
     to recognise contract-1/2 rows that code legitimately wrote (decision D-001): it
     differs exactly in the PR #12 hunks marked `if current:` below (persisted lineage,
-    the operational-witness rule for contract-2 receipts, scored-item provenance) and in
-    the typed-reference derivation. A draft-valid row is preserved, never admitted.
+    the operational-witness rule for contract-2 receipts, scored-item provenance), in the
+    later witness-run start bound (stack review F3) and in the typed-reference
+    derivation. A draft-valid row is preserved, never admitted.
     """
     if rules not in RULES:
         raise ValueError("unknown rule set")
@@ -118,7 +119,9 @@ def validate_links(db, table, p, rules="current"):
     contract = contracts.version(table, p)
     if not current and not legacy_capable(table, contract):
         raise ValueError(f"contract {contract} of {table} has only the current rule set")
-    run = db.execute("SELECT kind,provenance_json FROM runs WHERE id=?", (p["run_id"],)).fetchone()
+    run = db.execute(
+        "SELECT kind,provenance_json,started_at FROM runs WHERE id=?", (p["run_id"],)
+    ).fetchone()
     if run is None or (run[0] == "fixture" and p["mode"] != "synthetic"):
         raise ValueError("missing run or synthetic lineage mismatch")
     provenance = json.loads(run[1])
@@ -270,6 +273,16 @@ def validate_links(db, table, p, rules="current"):
                     f"contract-{contract} receipt requires the operational witness run that"
                     " observed it"
                 )
+            # The witness samples its run start before any observation, so a receipt
+            # observed earlier was not observed by that run (stack review F3). Compared
+            # exactly as evidence.PROOF compares it, so writer and reader cannot diverge.
+            if current and (
+                db.execute(
+                    "SELECT julianday(?) >= julianday(?)", (p["observed_at"], run[2])
+                ).fetchone()[0]
+                != 1
+            ):
+                raise ValueError(f"contract-{contract} receipt predates its witness run")
             if contract == 3 and tool.get("source_lineage") not in ("live", "synthetic"):
                 raise ValueError("contract-3 receipt requires a witness run with lineage")
         earliest = (

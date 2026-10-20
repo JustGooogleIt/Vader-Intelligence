@@ -355,3 +355,38 @@ def test_exact_retry_of_every_stored_row_returns_its_id_after_migration(era, tmp
         assert replayed > 0
     finally:
         db.close()
+
+
+@pytest.mark.parametrize("era", sorted(ARCHIVES))
+def test_witness_run_start_bound_changes_no_legacy_receipt(era, tmp_path):
+    """Stack review F3 bound a receipt to its witness run's start. Every witness receipt
+    the older code wrote was observed at or after its run started, so the bound changes
+    no proof status (the amended era keeps its 12 proof receipts) and no classification
+    (asserted by the open/verify/classify and migration tests above)."""
+    path = materialize(era, tmp_path)
+    db = sqlite3.connect(path)
+    try:
+        bound = " AND julianday(r.observed_at) >= julianday(w.started_at)"
+        assert evidence.PROOF.count(bound) == 1
+        unbounded = evidence.PROOF.replace(bound, "")
+        own = "=json_extract(r.payload_json,'$.observer_namespace')"
+        ids = {
+            text: [
+                row[0]
+                for row in db.execute(
+                    "SELECT r.id FROM forecast_receipts r WHERE"
+                    + text.replace("=?", own, 1)
+                    + " ORDER BY r.id"
+                )
+            ]
+            for text in (evidence.PROOF, unbounded)
+        }
+        assert ids[evidence.PROOF] == ids[unbounded] == proof_receipts(db)
+        assert len(ids[evidence.PROOF]) == (12 if era == "amended" else 0)
+        early = db.execute(
+            "SELECT COUNT(*) FROM forecast_receipts r JOIN runs w ON w.id=r.run_id"
+            " WHERE w.kind='forecast-witness' AND julianday(r.observed_at)<julianday(w.started_at)"
+        ).fetchone()[0]
+        assert early == 0
+    finally:
+        db.close()

@@ -13,6 +13,8 @@ Operational-witness boundary: a contract-2 receipt is admissible only when writt
 ``forecast-witness`` run whose provenance names the receipt's observer namespace and
 session (enforced by the journal), so a receipt supplied through the journal API by any
 other caller is never availability proof and can never occupy a witness receipt key.
+Only this module creates that run kind (``Store.start_run`` refuses it), and a receipt
+observed before its witness run started is refused by the journal and is not proof.
 
 Lineage: a fetch's mode comes from its writing run's persisted source lineage
 (``references.run_source_mode``), never from the witness clock alone; an injected clock
@@ -110,7 +112,8 @@ def witness(
     code_hash = source_hash()
     run_id, session = str(uuid.uuid4()), str(uuid.uuid4())
     lineage = "synthetic" if injected else "live"
-    store.start_run(
+    _start_run(
+        store,
         RunProvenanceV1(
             run_id,
             RUN_KIND,
@@ -261,6 +264,17 @@ def witness(
     summary["elapsed_seconds"] = monotonic() - base_mono
     store.finish_run(run_id, status, summary)
     return summary
+
+
+def _start_run(store, provenance, started_at):
+    """The only writer of forecast-witness runs (Store.start_run refuses the kind). The
+    start is sampled before any observation, and the journal and PROOF refuse a receipt
+    observed before its witness run started."""
+    with store.transaction():
+        store.db.execute(
+            "INSERT INTO runs(id,kind,started_at,status,provenance_json) VALUES (?,?,?,?,?)",
+            (provenance.run_id, RUN_KIND, started_at, "running", provenance.to_json()),
+        )
 
 
 def _receipt_mode(injected, subject_mode):
