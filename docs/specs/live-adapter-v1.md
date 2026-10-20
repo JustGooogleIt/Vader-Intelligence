@@ -212,5 +212,8 @@ and balance mismatches indefinitely (safe, since buys stop, but never resolved).
   - `Executor.cancel` also sends a cancel for an order whose only terminal record is a
     reconciled `not_found`; the venue's answer is recorded, but a terminal order is never
     reopened. Fills of such an order are still recorded against it.
+  - One-way change: a ledger holding a `reconciled`/`absent` event cannot be projected
+    by code before this revision, which refuses the unknown status. That fails closed,
+    and no live ledger exists yet; the ledger's version is unchanged.
   - Paper is unchanged: `PaperExchange.lookup` never returns `None` for a submitted
     order and its open orders are the ledger's.

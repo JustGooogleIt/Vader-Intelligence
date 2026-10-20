@@ -161,7 +161,7 @@ def main(argv=None):
                     date.fromisoformat(value)
                 # Named before the first step: an overlap-skipped step has no start time,
                 # and a repeated name would fail the next overlap instead of reporting it.
-                stamp = runner.utc().replace(":", "").replace("+00:00", "Z")
+                stamp = runner.utc().replace("+00:00", "Z").replace(":", "")
                 report_path = Path(config["state"]) / (
                     f"shadow-evaluate-{stamp}-{os.getpid()}-{uuid.uuid4().hex[:12]}.json"
                 )
