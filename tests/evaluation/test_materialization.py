@@ -348,6 +348,99 @@ def test_mlb_disagreement_is_an_annotation_not_a_label(store, config, monkeypatc
     assert result["report"]["mlb_annotation"] == {"False": 1}
 
 
+def test_receipt_predating_its_witness_run_never_makes_a_publication_timely(
+    store, config, monkeypatch
+):
+    """Stack review F11: the evaluator's publication status uses the shared proof
+    predicate, so a forged witness receipt (a forecast-witness run inserted around the run
+    API, holding a trusted receipt observed inside the publication window but before the
+    run started) is not a publication receipt: the decision is unconfirmed, not scored."""
+    import vader_intelligence.forecast.tick as tick_module
+    from vader_intelligence.forecast import contracts
+    from vader_intelligence.forecast.references import reference
+
+    to_schema4(store)
+    collect(store, config, origin=at(18, 3))
+    tick_at(store, PROTO, at(18, 3, 30))
+    real_witness, calls = tick_module.witness, []
+
+    def without_publication_witness(*args, **kwargs):
+        calls.append(None)
+        return {"status": "complete"} if len(calls) == 3 else real_witness(*args, **kwargs)
+
+    monkeypatch.setattr(tick_module, "witness", without_publication_witness)
+    due = tick_at(store, PROTO, at(18, 5, 30))
+    monkeypatch.setattr(tick_module, "witness", real_witness)
+    assert due["publications"]["allowed"] == 1
+    db = store.db
+    publication_id, publication_digest = db.execute(
+        "SELECT id, digest FROM forecast_publications"
+    ).fetchone()
+    tool = {"observer_namespace": NS, "session_id": "forged", "source_lineage": "synthetic"}
+    db.execute(
+        "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
+        (
+            "forged-witness",
+            "forecast-witness",
+            at(18, 30).isoformat(),
+            None,
+            "running",
+            RunProvenanceV1(
+                "forged-witness", "forecast-witness", "a" * 64, {}, tool_configuration=tool
+            ).to_json(),
+            None,
+        ),
+    )
+    ref = reference(db, "forecast_publications", {"id": publication_id})
+    forged = dict(
+        schema_version=1,
+        contract_version=3,
+        run_id="forged-witness",
+        created_at=at(18, 30).isoformat(),
+        code_hash="a" * 64,
+        config_hash=digest({}),
+        mode="synthetic",
+        references=[ref],
+        subject_kind="publication",
+        fetch_id=None,
+        binding_id=None,
+        publication_id=publication_id,
+        discovery_id=None,
+        subject_digest=publication_digest,
+        observed_at=at(18, 5, 31).isoformat(),
+        session_id="forged",
+        observer_namespace=NS,
+        monotonic_offset="0",
+        clock_status="trusted",
+    )
+    with pytest.raises(ValueError, match="predates its witness run"):
+        journal.validate_links(db, "forecast_receipts", forged)
+    # Present anyway, inserted around the journal as the pre-fix journal accepted it.
+    db.execute(
+        "INSERT INTO forecast_receipts(idempotency_key,run_id,subject_kind,fetch_id,binding_id,"
+        "publication_id,discovery_id,observed_at,digest,payload_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (
+            contracts.key("forecast_receipts", forged),
+            "forged-witness",
+            "publication",
+            None,
+            None,
+            publication_id,
+            None,
+            forged["observed_at"],
+            digest(forged),
+            contracts.validate("forecast_receipts", forged),
+        ),
+    )
+    settle(store, config, monkeypatch, settlement_evidence())
+    result = evaluate_at(store, at(23, 40), view="forward-shadow")
+    item = items_of(store, result["evaluation_id"])[f"game:{GAME_ID}"]
+    assert item["publication_status"] == "publication_unconfirmed"
+    assert item["publication_reasons"] == ["receipt_missing"] and item["receipt_id"] is None
+    assert all(score is None for score in item["scores"].values())
+    assert result["report"]["population"]["FP"] == 0
+
+
 # ------------------------------------------------------------------ population
 
 
