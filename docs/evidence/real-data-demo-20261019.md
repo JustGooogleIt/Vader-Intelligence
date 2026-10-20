@@ -9,7 +9,10 @@ nothing is evidence of edge. The final holdout (official dates after 2026-09-01)
 ## 1. Research pods on the 2026 dataset
 
 Dataset `a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435`
-(`mlb-2026-history-fs-market-v1`, forward-capable market features). Split: development
+(`mlb-2026-history-fs-market-v1`, forward-capable market features). Task parameters, pod
+outputs, symbolic search summaries and robustness reports for §1 and §1b:
+`docs/evidence/real-data-pods-details-20261019.json`, a read-only extract of the
+orchestration stores. Split: development
 ≤ 2026-07-31, validation 2026-08-02..2026-08-31 (1-day embargo). Snapshot
 `77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a`: 1,611
 development rows, 401 validation rows. Commands and outputs:
@@ -95,7 +98,7 @@ Inputs:
   markets, plus the archived settlements;
 - strategy: take at the decision-time ask when the edge after fees is at least 0.02.
   The order is IOC.
-- paper risk engine: simulation-default limits, clipped to limits, $1,000 bankroll.
+- paper risk engine: simulation-default limits, not clipped (an intent beyond a limit is refused, `clip_to_limits: false`), $1,000 bankroll.
 
 Two paths ran over the same rows:
 
@@ -144,11 +147,19 @@ What the grid shows:
 - **Latency has no effect.** The 250 ms and 1,250 ms rows are identical, because both
   arrivals fall inside the same one-minute candle. Candles cannot resolve sub-minute
   latency.
-- **Every row with fills loses money, both after and before fees.** Realized P&L plus
-  fees is negative in every row; for example, gradient boosting at depth 25 on the
-  general schedule loses 67.50 after fees and 24.05 before them. Losses grow with assumed
-  depth. The lower assumed fee schedule lets more forecasts clear the edge threshold;
-  they lose as well.
+- **Every row with fills has a negative point estimate after fees; all but one are
+  negative before fees too; none is distinguishable from zero.**
+  - The exception is gradient boosting at depth 5 under the assumed 0.5× schedule:
+    −1.76 after fees, +3.32 before them (corrected after review).
+  - For example, gradient boosting at depth 25 on the general schedule loses 67.50 after
+    fees and 24.05 before them. Losses grow with assumed depth, and the lower assumed fee
+  schedule lets more forecasts clear the edge threshold; they lose as well.
+  - **Uncertainty.** P&L was recomputed per market from rerun single ledgers, which
+    matched the grid exactly in all 12 rows, and bootstrapped over markets. Every 95%
+    interval contains zero. Gradient boosting at depth 25, general schedule: −67.50
+    (−226.12, +103.79). Logistic at depth 5: −3.58 (−16.08, +9.84).
+  - Source: `docs/evidence/real-data-backtest-pnl-uncertainty-20261019.json`.
+  - The grid shows the strategy failing to make money, not losing reliably.
 - **† The paper risk engine stopped this run.** This row placed 85 fewer orders than its
   no-fill row (169 against 254). A single-ledger rerun shows why:
   - 147 forecasts fell below the edge threshold and 85 intents were refused;
@@ -168,8 +179,114 @@ changed in this run.
 
 ## 3b. Paper backtest on the two-season validation set (2,027 rows)
 
-Running: `real_data_demo.py backtest --coordinator single --skip-pod-backtest` (one
-ledger per candidate and assumed depth 5 or 25, general fee schedule, 0 slippage,
-250 ms latency, six parallel processes). Because of the quadratic cost, the full grid
-would take about 40 hours here. §3 already established that the dropped axes give no
-fills (one slippage tick, no depth) or change nothing (latency).
+The §1b candidates were developed on 2025 and validated on 2026-03-25..2026-08-31:
+
+- snapshot `701f77c4…`;
+- execution inputs `6947af3e706d7025f5ae85561639e6af66f3efb1609d6ac8ffc6efab85d6890b`,
+  which cover all 2,027 markets.
+
+The quadratic run cost (§3) makes the full grid impractical here, so this run used one
+ledger per candidate and assumed depth:
+
+- general fee schedule (unverified), 0 extra slippage, 250 ms latency;
+- run by `real_data_demo.py backtest --coordinator single --skip-pod-backtest`;
+- output: `docs/evidence/real-data-backtest-2025-2026-20261019.json`.
+
+§3 had shown that the dropped axes give no fills (one slippage tick, no depth) or change
+nothing (latency).
+
+**Run times.**
+- The original runs took 20–41 min each on the old code while sharing the CPU. These
+  come from the process elapsed times; they are not in the JSON.
+- The JSON's `wall_seconds` (68–71 s) are from the rerun that resumed the finished
+  ledgers to record all six results.
+- The logistic depth-5 run, repeated on #29's code into a fresh ledger, gave an
+  identical report in 4.3 min.
+
+The uncertainty is computed as in §3: per-market net P&L from each ledger, with a
+bootstrap over markets.
+
+| Candidate | Depth | Orders / fills | Net realized (95% CI) | Fees | Before fees | Risk-engine refusals |
+|---|---|---|---|---|---|---|
+| logistic `d9d84aa4…` | 5 | 549 / 547 | +2.28 (−41.52, +48.96) | 21.58 | +23.86 | none |
+| logistic | 25 | 526 / 524 | −22.68 (−281.24, +225.08) | 101.08 | +78.40 | drawdown stop on 2026-08-24, then kill switch (23 / 22) |
+| gradient boosting `86646fec…` | 5 | 1,131 / 1,121 | −37.36 (−103.21, +28.33) | 44.34 | +6.98 | none |
+| gradient boosting | 25 | 923 / 913 | −36.90 (−361.18, +319.65) | 183.08 | +146.18 | drawdown stop on 2026-08-05, then kill switch (208 / 207) |
+| symbolic `1ee191c4…` | 5 | 1 / 1 | +1.45 | 0.03 | +1.48 | none |
+| symbolic | 25 | 1 / 1 | +7.26 | 0.14 | +7.40 | none |
+
+Reading:
+
+- **Signs are mixed, and every interval for rows with more than one trade contains
+  zero.** Logistic at depth 5 is slightly positive after fees, and several rows are
+  positive before fees but negative after. None of this is distinguishable from zero.
+  The symbolic rows have a single trade each, so their intervals are degenerate and
+  meaningless.
+- **Fees.** They are the largest systematic cost: 21.58–183.08 against before-fee totals
+  of 6.98–146.18.
+- **The risk engine stopped both depth-25 runs.** The 15% drawdown stop on conservative
+  equity engaged the kill switch on 5 and 24 August. Later forecasts were refused (the
+  refusal-reason counts are in the table), so those runs did not trade to the end of the
+  period.
+- **The symbolic model (`logit_mid_c`, a recalibration of the market) traded once in
+  2,027 games.** It almost never differs from the ask by the edge threshold plus fees.
+- **Unidentifiable orders.** Six gradient-boosting orders were
+  `execution_unidentifiable` (a quote gap around arrival); they did not fill.
+- **Agreement with the evaluator.** Together with the §1b evaluator results (gradient
+  boosting significantly worse than mid on log loss, logistic indistinguishable), the
+  backtest gives no indication of edge. A positive simulated total here would not have
+  been evidence of edge either: the rows are selection biased, depth is assumed, and
+  fees are unverified.
+
+## 4. Pod autopilot on the 2026 snapshot (#30)
+
+`tests/integration/autopilot_demo.py` (#30) ran on the §1 snapshot (`77ffe832…`, 1,611
+development and 401 validation rows) in the existing orchestration root. Two runs:
+
+- **Run A** (#30 at `aebec9c`): pods `auto-baseline` and `auto-symbolic`, with
+  `--accept-best`. Output: `docs/evidence/real-data-autopilot-2026-20261019.json`.
+- **Run B** (#30 at `4c9cf73`, after the logistic refinement fix): pods `auto2-*`, with
+  `--plan-only`, which accepts no candidate. Output:
+  `docs/evidence/real-data-autopilot-2026-planonly-20261019.json`.
+- Every task's parameters and development-only scores, for both runs:
+  `docs/evidence/real-data-autopilot-2026-tasks-20261019.json`.
+
+**The paid-call boundary.** A vendor-planner round on `auto-baseline` stopped with
+`paid_calls_disabled` and submitted no task.
+
+**Heuristic planner, baseline pod.** Three rounds, six `train_model` tasks, all on
+development rows. Scores are the selected configuration's chronological
+cross-validation log loss on development rows:
+
+| Round | Logistic grid → selected (dev CV) | Gradient boosting grid → selected (dev CV) |
+|---|---|---|
+| 1 | default C {0.01, 0.1, 1, 10} → 0.01 (0.68756) | default (8 configs) → lr 0.05, 100 iterations, 7 leaves (0.69191) |
+| 2 | {0.00033, 0.001, 0.0033} → 0.0033 (0.68687) | lr {0.025, 0.05} × iterations {100, 200} × leaves {3, 7, 14} → lr 0.025, 100, 3 leaves (0.68525) |
+| 3 | A: {0.01, 0.033, 0.1} → 0.01 (0.68756); B: {0.00183, 0.0033, 0.00577} → 0.0033 (0.68687) | lr {0.0125, 0.025} × {100, 200} × leaves {3, 6} → unchanged (0.68525) |
+
+- Both families then stopped: no score improved by 0.0005, so the planner proposed
+  nothing.
+- In run A, the round-3 logistic grid extended *upward*, although the best C lay between
+  earlier grids. Commit `4c9cf73` makes refinement bracket the best C between its
+  nearest tried neighbours (run B).
+- Identical tasks reproduced identical scores in both runs.
+
+**Heuristic planner, symbolic pod.** Two searches:
+
+- the default search found `pair_mid_c` (inner-split log loss 0.68545);
+- a search twice as large found `tanh(logit_pair_mid_c)` (0.68536);
+- the improvement was below 0.0005, so the planner stopped. Both expressions are the
+  market's own midpoint.
+
+**Protected evaluator (run A, one candidate per pod).** Validation was recomputed from
+the registry against market mid on 401 paired rows, where mid scores 0.67105:
+
+| Candidate | Validation log loss | Paired delta (95% CI) | Halves | Decision |
+|---|---|---|---|---|
+| gradient boosting (best dev CV 0.68525) | 0.68312 | +0.01206 (+0.00146, +0.02321) | +0.0036, +0.0194 | rejected: significantly worse than the market |
+| symbolic `tanh(logit_pair_mid_c)` | 0.67620 | +0.00515 (−0.00403, +0.01391) | −0.0010, +0.0105 | rejected |
+
+The snapshot now records 5 proposals: the 3 from §1 and these 2. Run B added none. The
+holdout was not read. The autopilot behaves as specified, and on these market-only
+features it reaches the same conclusion as the operator-run pods: nothing beats the
+market midpoint.
