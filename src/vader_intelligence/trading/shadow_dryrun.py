@@ -61,10 +61,15 @@ def _select(db, forecaster_id, mode):
     is itself of `mode` (a forward-shadow decision cannot be corrected forward)."""
     if mode not in DECISION_MODES:
         raise ValueError(f"decision mode must be one of {DECISION_MODES}")
+    # Only a correction of the same mode supersedes: a reconstruction that corrects a
+    # forward decision leaves the forward record effective for forward use (the live
+    # path would have acted on it, and evaluation still scores it).
     superseded = {
         row[0]
         for row in db.execute(
             "SELECT supersedes_id FROM forecast_decisions WHERE supersedes_id IS NOT NULL"
+            " AND mode=?",
+            (mode,),
         )
     }
     out, excluded = [], {"other_mode": 0, "superseded": 0}

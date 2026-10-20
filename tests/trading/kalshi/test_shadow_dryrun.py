@@ -205,7 +205,9 @@ def test_only_effective_forward_shadow_decisions_are_dry_run(store, config, tmp_
     no_network()
     db = open_archive(config.database)
     try:
-        assert [d[0] for d in shadow_dryrun.decisions(db, forecaster)] == [forward]
+        # A reconstruction that corrects a forward decision does not supersede it for
+        # forward use: the live path would have acted on it.
+        assert [d[0] for d in shadow_dryrun.decisions(db, forecaster)] == [forward, corrected]
         assert [d[0] for d in shadow_dryrun.decisions(db, forecaster, "synthetic")] == [
             correction  # a decision and its correction never both yield an order
         ]
@@ -216,6 +218,6 @@ def test_only_effective_forward_shadow_decisions_are_dry_run(store, config, tmp_
             shadow_dryrun.decisions(db, forecaster, "historical_reconstruction")
     finally:
         db.close()
-    assert result["decision_mode"] == "forward_shadow" and result["decisions"] == 1
-    assert [o["decision_id"] for o in result["outcomes"]] == [forward]
-    assert result["decisions_excluded"] == {"other_mode": 4, "superseded": 1}
+    assert result["decision_mode"] == "forward_shadow" and result["decisions"] == 2
+    assert [o["decision_id"] for o in result["outcomes"]] == [forward, corrected]
+    assert result["decisions_excluded"] == {"other_mode": 4, "superseded": 0}
