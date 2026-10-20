@@ -108,7 +108,14 @@ def candle_historical(end):
 
 
 def handler_factory(
-    calls, *, page_size_pages=2, fail_ticker=None, schedule=None, unavailable_ticker=None
+    calls,
+    *,
+    page_size_pages=2,
+    fail_ticker=None,
+    schedule=None,
+    unavailable_ticker=None,
+    historical=HISTORICAL,
+    settled=SETTLED,
 ):
     def handler(request):
         calls.append(request)
@@ -118,11 +125,11 @@ def handler_factory(
             return response(data={"market_settled_ts": "2026-09-19T00:00:00Z"})
         if path == "/historical/markets":
             if query.get("cursor") == "c1":
-                return response(data={"markets": HISTORICAL[1:], "cursor": ""})
-            return response(data={"markets": HISTORICAL[:1], "cursor": "c1"})
+                return response(data={"markets": historical[1:], "cursor": ""})
+            return response(data={"markets": historical[:1], "cursor": "c1"})
         if path == "/markets":
             assert query["status"] == "settled"
-            return response(data={"markets": SETTLED, "cursor": ""})
+            return response(data={"markets": settled, "cursor": ""})
         if request.url.host == "statsapi.mlb.com":
             return response(data=schedule or SCHEDULE)
         if path.endswith("/candlesticks"):
@@ -393,3 +400,33 @@ def test_the_request_bound_counts_logical_requests_and_reports_http_attempts(sto
         parser().parse_args(["history", "acquire", "--help"])
     help_text = " ".join(capsys.readouterr().out.split())
     assert "logical requests" in help_text and "attempts_made" in help_text
+
+
+def test_a_market_in_both_listings_keeps_the_historical_tier(store, config):
+    """Review N-20c: Kalshi archives settled markets one way (live endpoints stop
+    returning them after the historical cutoff), so a ticker the historical listing
+    returns uses the historical candle endpoint even if the settled listing also lists it."""
+    calls = []
+    result = acquire(store, config, calls, handler={"settled": SETTLED + HISTORICAL})
+    assert result["status"] == "complete" and result["identified_events"] == 2
+    candle_paths = sorted(r.url.path for r in calls if r.url.path.endswith("/candlesticks"))
+    assert [p for p in candle_paths if "PHINYM" in p] == [
+        "/trade-api/v2/historical/markets/KXMLBGAME-26SEP201310PHINYM-NYM/candlesticks",
+        "/trade-api/v2/historical/markets/KXMLBGAME-26SEP201310PHINYM-PHI/candlesticks",
+    ]
+    records = interpret.markets(store.db)
+    assert {records[m["ticker"]]["source"] for m in HISTORICAL} == {"historical"}
+    assert {records[m["ticker"]]["source"] for m in SETTLED} == {"live"}
+
+
+@pytest.mark.parametrize("historical_first", [True, False])
+def test_the_listing_tier_does_not_depend_on_retrieval_order(store, config, historical_first):
+    """Across runs, whichever listing was retrieved later, the historical tier wins."""
+    tiers = [
+        {"historical": HISTORICAL, "settled": SETTLED},
+        {"historical": [], "settled": SETTLED + HISTORICAL},
+    ]
+    for handler in tiers if historical_first else reversed(tiers):
+        assert acquire(store, config, [], handler=handler)["status"] == "complete"
+    records = interpret.markets(store.db)
+    assert {records[m["ticker"]]["source"] for m in HISTORICAL} == {"historical"}

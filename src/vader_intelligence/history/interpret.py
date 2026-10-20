@@ -42,6 +42,7 @@ RULE_DATE_ONLY = re.compile(
     r" for ([A-Z][a-z]{2} \d{1,2}, \d{4}), then the market resolves to Yes\."
 )
 TICKER_DATE_ONLY = re.compile(r"KXMLBGAME-(\d{2})([A-Z]{3})(\d{2})([A-Z]+?)(G[12])?")
+# Read in this order: the historical tier first, so a live record never replaces it.
 LISTING_STAGES = {"hist-markets": "historical", "hist-settled": "live"}
 
 
@@ -73,13 +74,21 @@ def cutoff(db, run_id=None):
 
 
 def markets(db, run_id=None):
-    """Latest archived listing of every KXMLBGAME market: ticker → record."""
+    """Latest archived listing of every KXMLBGAME market: ticker → record.
+
+    Within a tier the latest retrieval wins. A ticker the historical listing returned
+    keeps its historical record even when the settled-markets (live) listing also returns
+    it, whichever was retrieved later (review N-20c): Kalshi archives settled markets one
+    way (markets settled before `market_settled_ts` move to `/historical/*` and live
+    endpoints stop returning them), so its candles come from the historical endpoint."""
     out = {}
     for stage, source in LISTING_STAGES.items():
         for fetch_id, retrieved_at, data, _ in _bodies(db, run_id, stage):
             for market in data.get("markets", []):
                 ticker = market.get("ticker")
                 if not isinstance(ticker, str) or not ticker.startswith("KXMLBGAME-"):
+                    continue
+                if source == "live" and out.get(ticker, {}).get("source") == "historical":
                     continue
                 out[ticker] = {
                     "ticker": ticker,
