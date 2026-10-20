@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from hypothesis import assume, given, settings
+from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 
 from vader_intelligence.trading.kelly import adjusted_probability, full_kelly, scale_to_cap, size
@@ -111,6 +111,15 @@ def test_zero_when_probability_at_or_below_cost(q, p, fee, kf, roll):
     assert full_kelly(q, p + fee) == 0 and _qty(q, p, fee, kf, roll) == 0
 
 
+@example(
+    q=D(75) / 1000,
+    p=D(1) / 100,
+    fee=D(1) / 100,
+    kf=D(24) / 100,
+    roll=Decimal(22344),
+    existing=D(0) / 100,
+    cap=D(2) / 100,
+)  # found by hypothesis: add / cost rounded up, buying 1e-37 beyond the allowance
 @settings(max_examples=300, deadline=None)
 @given(
     q=probability,

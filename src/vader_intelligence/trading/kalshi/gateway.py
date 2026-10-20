@@ -100,6 +100,8 @@ from .mapping import (
 
 LIVE_PREFIX = "vi-live-"
 PAGE_LIMIT = 200
+# Sell fills this long before a positions read still count against it (clock margin).
+POSITION_FILL_MARGIN_SECONDS = 60
 MAX_PAGES = 100
 _CURSOR = re.compile(r"ts:(\d{1,12})\Z")
 _SERIES = re.compile(r"[A-Z0-9][A-Z0-9_]{0,59}\Z")
@@ -196,12 +198,15 @@ class KalshiGateway:
         max_lookup_age_seconds=3 * 86400,
         lookup_margin_seconds=300,
         fills_overlap_seconds=3600,
+        risk_limits_hash=None,
     ):
         if ledger.environment != "live":
             raise EnvironmentMismatch("the Kalshi gateway writes only to a live ledger")
         markets = tuple(markets)
         if not markets or not all(isinstance(m, MarketRule) for m in markets):
             raise ValueError("at least one MarketRule is required")
+        self.risk_limits_hash = risk_limits_hash  # the limits acknowledged at activation
+        self._positions_at = None  # local time of the last positions() read
         self.max_order_notional = positive(max_order_notional, "max_order_notional")
         self.max_daily_notional = positive(max_daily_notional, "max_daily_notional")
         if self.max_order_notional > self.max_daily_notional:
@@ -268,9 +273,10 @@ class KalshiGateway:
 
     @in_exact
     def _daily_notional(self, order):
-        """Gross notional (quantity x limit) of this UTC day's ledger orders, including
-        `order`; only orders definitively never placed (refused locally or rejected by
-        the exchange with a 4xx) are left out."""
+        """Gross notional (quantity x limit) of this UTC day's ledger buy orders,
+        including `order`; only orders definitively never placed (refused locally or
+        rejected by the exchange) are left out. Covered sells reduce exposure and are not
+        capped, so a position can always be exited."""
         day = order.created_at.date()
         total = ZERO
         for state in self.ledger.projection().orders.values():
@@ -278,7 +284,8 @@ class KalshiGateway:
                 state.status == "rejected"
                 and (state.reason or "").startswith(("local:", "exchange:"))
             )
-            if placed and state.order.created_at.date() == day:
+            buy = state.order.action == "buy"
+            if placed and buy and state.order.created_at.date() == day:
                 total += state.order.quantity * state.order.limit_price
         return total
 
@@ -297,10 +304,15 @@ class KalshiGateway:
         request, refusal = prepare(order, self.markets)
         if refusal is not None:
             return None, refusal
-        if order.quantity * order.limit_price > self.max_order_notional:
-            return None, "order_notional_cap"
-        if self._daily_notional(order) > self.max_daily_notional:
-            return None, "daily_notional_cap"
+        if order.action == "buy":
+            if self.risk_limits_hash is not None:
+                _, current = self.ledger.current_limits()
+                if current != self.risk_limits_hash:
+                    return None, "risk_limits_changed_since_activation"
+            if order.quantity * order.limit_price > self.max_order_notional:
+                return None, "order_notional_cap"
+            if self._daily_notional(order) > self.max_daily_notional:
+                return None, "daily_notional_cap"
         if order.action == "sell" and not self._venue_covers(order):
             return None, "venue_position_insufficient"
         return request, None
@@ -312,6 +324,18 @@ class KalshiGateway:
         only immediate-or-cancel orders can carry `reduce_only` (facts §2.1)."""
         held = self._venue_positions.get(order.ticker)
         venue = held.quantity(order.side) if held is not None else ZERO
+        if self._positions_at is not None:  # sells filled since that read (conservative)
+            since = self._positions_at - timedelta(seconds=POSITION_FILL_MARGIN_SECONDS)
+            venue -= sum(
+                (
+                    f.quantity
+                    for f in self.ledger.fills()
+                    if f.action == "sell"
+                    and (f.ticker, f.side) == (order.ticker, order.side)
+                    and f.exchange_ts >= since
+                ),
+                ZERO,
+            )
         committed = sum(
             (
                 s.remaining
@@ -585,16 +609,18 @@ class KalshiGateway:
                 holdings[ticker] = Holding(
                     ticker, yes_qty=max(position, ZERO), no_qty=max(-position, ZERO)
                 )
+        read_at = self._now()
         resting = self.resting_orders()
-        self._venue_positions = holdings
-        self._positions_seen = True
         active = {c for c, s in self.ledger.projection().orders.items() if s.active}
         strays = sorted(v.order_id for v in resting if v.client_order_id not in active)
-        if strays:
+        if strays:  # startup reconciliation is not complete while strays exist
             log.warning("resting venue orders not active in the ledger: %s", ", ".join(strays))
             raise ReconciliationMismatch(
                 "resting venue orders not active in the ledger: " + ", ".join(strays)
             )
+        self._venue_positions = holdings
+        self._positions_at = read_at
+        self._positions_seen = True
         return holdings
 
     def balance(self):

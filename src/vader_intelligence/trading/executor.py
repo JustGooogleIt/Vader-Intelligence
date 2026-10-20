@@ -16,7 +16,7 @@ first submission. An intent that already has a decision is never re-evaluated an
 order is never resubmitted.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .gateway import CancelResult, GatewayEvent, SubmitResult
 from .ledger import (
@@ -223,8 +223,10 @@ class Executor:
     def ingest(self, items=(), *, now, settlement=None, input_key=None, checkpoint=None):
         """Record gateway events and fills (and optionally a settlement) atomically.
 
-        Duplicates are idempotent; a contradiction raises `LedgerConflict`, records
-        nothing from the batch and flags the state unknown until reconciliation.
+        Duplicates are idempotent (a gateway event resent later is the same event: its
+        receipt time is not part of its identity); a contradiction raises
+        `LedgerConflict`. Any failure records nothing from the batch and flags the state
+        unknown until reconciliation.
         """
         try:
             with self.ledger.transaction("ingest"):
@@ -234,15 +236,27 @@ class Executor:
                     if isinstance(item, Fill):
                         self.ledger.append_fill(item)
                     elif isinstance(item, GatewayEvent):
-                        self.ledger.append_event(self._event(item, now))
+                        self._append_gateway_event(self._event(item, now))
                     else:
                         raise TypeError("ingest accepts Fill and GatewayEvent items")
                 if input_key is not None:
                     self.ledger.mark_processed(input_key, _resolve(checkpoint), now)
-        except LedgerConflict:
+        except (LedgerConflict, EnvironmentMismatch, ValueError, TypeError):
             self.unknown_reasons = tuple(sorted(set(self.unknown_reasons) | {"ingest_conflict"}))
             self.needs_reconcile = True
             raise
+
+    def _append_gateway_event(self, event):
+        """Append a gateway event; an identical earlier copy (receipt time aside) is a
+        no-op, a different one with the same id is a contradiction."""
+        prior = next(
+            (e for e in self.ledger.events(event.client_order_id) if e.event_id == event.event_id),
+            None,
+        )
+        if prior is None:
+            self.ledger.append_event(event)
+        elif replace(prior, received_at=event.received_at) != event:
+            raise LedgerConflict(f"event {event.event_id} resent with different content")
 
     def _event(self, item, now):
         return OrderEvent(

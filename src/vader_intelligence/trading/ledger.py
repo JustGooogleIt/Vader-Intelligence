@@ -438,6 +438,20 @@ class Ledger:
     def meta(self):
         return dict(self.db.execute("SELECT key, value FROM ledger_meta").fetchall())
 
+    def bind_meta(self, key, value):
+        """Record `key = value` once (e.g. the Kalshi environment a live ledger trades);
+        the same value again is a no-op, another value raises `LedgerConflict`."""
+        if key in ("environment", "schema_version", "created_at") or not isinstance(value, str):
+            raise LedgerError(f"ledger meta {key!r} cannot be bound")
+        with self.transaction("bind-meta"):
+            row = self.db.execute("SELECT value FROM ledger_meta WHERE key=?", (key,)).fetchone()
+            if row is not None:
+                if row[0] != value:
+                    raise LedgerConflict(f"ledger is bound to {key}={row[0]!r}, not {value!r}")
+                return False
+            self.db.execute("INSERT INTO ledger_meta VALUES (?, ?)", (key, value))
+        return True
+
     def _rows(self, table, factory, where="", params=(), order="rowid"):
         if not where and table in _ROW_CACHED and order in ("rowid", "seq"):
             return self._table_rows(table, factory)
@@ -552,6 +566,18 @@ class Ledger:
         event = KillSwitchEvent(**json.loads(row[0]))
         return KillSwitchState(event.engaged, event.reason, event.actor, event.at, False)
 
+    def _require_complete_limits(self, limits_hash):
+        """A live approval must cite recorded, complete operator limits."""
+        row = self.db.execute(
+            "SELECT data_json FROM risk_limit_versions WHERE limits_hash=? LIMIT 1", (limits_hash,)
+        ).fetchone()
+        if row is None:
+            raise LedgerConflict("live approval cites unrecorded limits")
+        try:
+            limits_from_dict(json.loads(row[0])["limits"]).require_complete()
+        except ValueError as exc:
+            raise LedgerConflict(f"live approval cites incomplete limits: {exc}") from None
+
     def current_limits(self):
         """(RiskLimits, limits hash) of the latest operator-written version, or (None, None)."""
         row = self.db.execute(
@@ -621,6 +647,8 @@ class Ledger:
         if isinstance(decision, Approval):
             if decision.limit_price != intent.limit_price:
                 raise LedgerConflict("approved limit price differs from the intent")
+            if self.environment == "live":
+                self._require_complete_limits(decision.limits_version)
             if intent.max_quantity is not None and decision.quantity > intent.max_quantity:
                 raise LedgerConflict("approved quantity exceeds the intent maximum")
             return self._append(
@@ -760,6 +788,10 @@ class Ledger:
         if not on_grid(fill.quantity, order.qty_step):
             # Reservations bound fees per step lot; an off-grid fill could exceed them.
             raise LedgerConflict("fill quantity is off the order's quantity step grid")
+        if fill.fee > (fill.quantity / order.qty_step) * order.fee_bound_per_step:
+            # Reservations assumed this bound; a higher fee means the fee model is wrong:
+            # refused (state becomes unknown, buys stop) rather than silently underfunded.
+            raise LedgerConflict("fill fee exceeds the order's fee bound")
         projection = self.projection()
         state = projection.orders[order.client_order_id]
         if state.filled_quantity + fill.quantity > order.quantity:

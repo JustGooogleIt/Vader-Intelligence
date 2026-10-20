@@ -14,6 +14,7 @@ def test_paper_ledger_init_show_verify_and_kill_switch(tmp_path):
     path = str(tmp_path / "paper.sqlite3")
     base = ["--ledger", path, "--environment", "paper"]
     cli("ledger", "init", *base, "--deposit", "1000")
+    cli("ledger", "init", *base, "--deposit", "1000")  # re-running init adds no cash
     shown = cli("ledger", "show", *base)
     assert shown["cash"] == "1000" and shown["kill_switch"]["engaged"] is False
     assert shown["unknown_state"] == [] and shown["limits_hash"] is None

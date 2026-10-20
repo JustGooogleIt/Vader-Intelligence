@@ -178,6 +178,11 @@ def encode_body(body):
     return json.dumps(body, sort_keys=True, separators=(",", ":"), default=refuse).encode()
 
 
+# Write responses that definitively mean "not executed" (facts: documented 400/401/403;
+# 422 for validation); every other non-2xx write answer leaves the outcome unknown.
+DEFINITIVE_WRITE_REJECTIONS = frozenset((400, 401, 403, 422))
+
+
 def request_parts(environment, signer, method, path, *, params=None, body=None):
     """Everything needed to send one allowlisted request: (endpoint, url, params,
     content, headers). Shared by the live client and the dry-run gateway."""
@@ -190,7 +195,8 @@ def request_parts(environment, signer, method, path, *, params=None, body=None):
         content = encode_body(body)
         headers["Content-Type"] = "application/json"
     if endpoint.auth and signer is not None:
-        headers.update(signer.headers(method, API_PREFIX + path))
+        creates = endpoint.write and method == "POST"  # only order creation opens exposure
+        headers.update(signer.headers(method, API_PREFIX + path, check_clock=creates))
     query = {k: str(v) for k, v in sorted((params or {}).items())}
     return endpoint, BASE_URLS[environment] + path, query, content, headers
 
@@ -349,9 +355,13 @@ class KalshiClient:
             raise EndpointNotAllowed("built request does not match the signed path")
         return endpoint, request
 
-    def _observe(self, response):
+    def _observe(self, response, endpoint):
         # Runs after a response arrived: it must never raise (a write's outcome would
-        # otherwise be misreported). A failed observation simply records nothing.
+        # otherwise be misreported). A failed observation simply records nothing. Only
+        # authenticated, uncached responses are observed: a public endpoint's Date may
+        # come from a cache (an `Age` header, or `cache-control: public`, facts L1).
+        if not endpoint.auth or "age" in response.headers:
+            return
         try:
             self.signer.observe_server_date(response.headers.get("date"), self.signer.clock_ms())
         except Exception:
@@ -372,7 +382,7 @@ class KalshiClient:
         except httpx.RequestError as exc:
             log.warning("%s: %s; outcome unknown, not retried", endpoint.name, type(exc).__name__)
             raise WriteOutcomeUnknown(f"{endpoint.name}: {type(exc).__name__}") from None
-        self._observe(response)
+        self._observe(response, endpoint)
         status = response.status_code
         if 200 <= status < 300:
             return parse_json(response)
@@ -380,7 +390,9 @@ class KalshiClient:
             raise DuplicateClientOrderId(f"{endpoint.name}: HTTP 409")
         if status == 404:
             raise NotFound(f"{endpoint.name}: HTTP 404")
-        if status < 400 or status == 429 or status >= 500:
+        if status not in DEFINITIVE_WRITE_REJECTIONS:
+            # Only documented rejections mean "not placed"; anything else (408, 425, 429,
+            # 5xx, an unexpected 4xx or 3xx) leaves the outcome unknown: reconcile.
             log.warning("%s: HTTP %d; outcome unknown, not retried", endpoint.name, status)
             raise WriteOutcomeUnknown(f"{endpoint.name}: HTTP {status}")
         raise RequestRejected(endpoint.name, status, error_code(response))
@@ -395,7 +407,7 @@ class KalshiClient:
             except httpx.RequestError as exc:
                 failure = type(exc).__name__
             else:
-                self._observe(response)
+                self._observe(response, endpoint)
                 status = response.status_code
                 if 200 <= status < 300:
                     return parse_json(response)

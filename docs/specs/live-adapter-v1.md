@@ -29,7 +29,7 @@ it depends on must be listed as an assumption in code and in the runbook.
 
 | Module | Responsibility |
 |---|---|
-| `auth.py` | `Signer` for RSA-PSS (SHA-256, salt = digest length) and Ed25519 keys via `cryptography`; signed string = `timestamp_ms + METHOD + path` where path starts at `/trade-api/v2` and excludes the query string; headers `KALSHI-ACCESS-KEY`, `KALSHI-ACCESS-TIMESTAMP`, `KALSHI-ACCESS-SIGNATURE` (base64). Clock: injectable; refuse to sign if local clock skew vs. the exchange `Date` header (when observed) exceeds a configured bound |
+| `auth.py` | `Signer` for RSA-PSS (SHA-256, salt = digest length) and Ed25519 keys via `cryptography`; signed string = `timestamp_ms + METHOD + path` where path starts at `/trade-api/v2` and excludes the query string; headers `KALSHI-ACCESS-KEY`, `KALSHI-ACCESS-TIMESTAMP`, `KALSHI-ACCESS-SIGNATURE` (base64). Clock: injectable; refuse to sign order creation if local clock skew vs. the exchange `Date` header of an authenticated, uncached response exceeds a configured bound (cancels and reads are always signed; revised after review) |
 | `secrets.py` | `SecretProvider` protocol; `FileKeyProvider(path)` refuses files readable by group/other (mode must be 0600) and never logs content; `KeychainKeyProvider(service, account)` via macOS `security find-generic-password -w` (optional); providers return key material only to `auth.Signer`; `repr`/errors never include key bytes or paths' contents |
 | `client.py` | HTTP client: base URL by environment (`production` = `https://external-api.kalshi.com/trade-api/v2`, `demo` = `https://external-api.demo.kalshi.co/trade-api/v2`), allowlist of the endpoints below only, timeouts, token-bucket rate limiter (read and write buckets, conservative defaults below the documented Basic tier), bounded exponential backoff for **reads only** on 429/5xx/transport errors, typed errors |
 | `mapping.py` | Our `Order` (side yes/no, action buy/sell, quantity, limit price) ↔ V2 create body (`side` bid=buy YES / ask=sell YES, YES `price` dollars string, `count` string, `time_in_force`, `self_trade_prevention_type`, `client_order_id`, `post_only`, `reduce_only`, `exchange_index`). Buy NO at q ↔ ask (sell YES) at 1 − q; sell NO at q ↔ bid at 1 − q. Prices on the market's `price_ranges` grid; quantities on 0.01 steps (`count_fp`). Exchange order/fill objects → our `OrderStatus` / `Fill` (fees from `fee_cost` / `*_fees_dollars`) |
@@ -69,3 +69,37 @@ reconciled, kill switch state, exchange status, clock skew), canary steps (demo 
 minimum-size post-only order far from the touch; observe; cancel; reconcile), success
 criteria, rollback (engage kill switch, cancel all, reconcile, disable config, archive
 ledger), and the explicit statement that activation is a separate user decision.
+
+## Revisions after the independent review of #25 (2026-10-19)
+
+- **Clock skew.**
+  - Only authenticated responses without an `Age` header update the observed offset.
+    Public endpoints may be served from a cache (`cache-control: public`, facts L1).
+  - A proven skew refuses order creation only. Cancels and reads are signed, so a
+    shutdown can always cancel.
+- **TLS.** The network transport uses httpx's bundled CA set with `trust_env=False`.
+  `SSL_CERT_FILE`, `SSL_CERT_DIR` and proxies from the environment are ignored. This
+  matters because the order body is not signed (facts A2).
+- **Write outcomes.** Only 400, 401, 403 and 422 mean "not placed" (404 and 409 are
+  handled separately). Any other non-2xx answer to a write leaves the outcome unknown
+  and goes to reconciliation.
+- **Caps and exits.**
+  - Notional caps apply to buys only. A sell is still bounded by the venue's
+    coverage check, so a position can always be exited.
+  - The coverage check subtracts sell fills recorded since the last positions read
+    (with a 60 s margin).
+- **Startup.** `positions()` completes startup reconciliation only after the
+  stray-order check passes.
+- **Bindings.**
+  - The gateway refuses buys once the ledger's current risk limits differ from those
+    acknowledged at activation.
+  - A live ledger is bound, at its first activation, to one Kalshi environment and key
+    id (`ledger_binding` gate).
+- **Ingest.**
+  - A venue event resent later is idempotent: receipt time is not part of its
+    identity.
+  - Any ingest failure flags the state unknown.
+  - A fill whose fee exceeds the order's fee bound is refused, so trading stops rather
+    than reservations being silently underfunded.
+  - A live approval must cite complete, recorded limits.
+

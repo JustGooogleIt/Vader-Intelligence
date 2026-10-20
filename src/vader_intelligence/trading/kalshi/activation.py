@@ -89,6 +89,7 @@ GATES = (
     "clock",
     "ledger_live",
     "ledger_consistent",
+    "ledger_binding",
     "risk_limits_complete",
     "risk_limits_hash",
     "kill_switch_disengaged",
@@ -328,6 +329,22 @@ def check_gates(config_path, *, acknowledge_hash, ledger, now):
             raise ValueError(f"ledger verification failed: {failures[0]}")
 
     gate("ledger_consistent", consistent)
+
+    def binding():
+        """A live ledger trades one Kalshi environment with one key (bound at its first
+        activation); reusing it elsewhere is refused."""
+        meta = ledger.meta()
+        for name, value in (
+            ("kalshi_environment", parsed.get("environment")),
+            ("kalshi_key_id", parsed.get("key_id")),
+        ):
+            if value is None:
+                continue  # the environment/key_id gate already failed
+            bound = meta.get(name)
+            if bound is not None and bound != value:
+                raise ValueError(f"the ledger is bound to {name}={bound!r}")
+
+    gate("ledger_binding", binding)
     limits_hash = None
 
     def limits_complete():
@@ -397,8 +414,14 @@ def activate_live(
     except (SecretError, SigningError) as exc:
         failed = GateResult("secret_loads", False, str(exc)[:300])
         raise ActivationRefused(results + (failed,)) from None
+    ledger.bind_meta("kalshi_environment", activation.environment)
+    ledger.bind_meta("kalshi_key_id", activation.key_id)
     if transport is None:
-        transport, key = httpx.HTTPTransport(retries=0), _NETWORK_TRANSPORT_KEY
+        # The trust store is httpx's bundled CA set, never SSL_CERT_FILE/SSL_CERT_DIR or
+        # proxies from the environment: the order body is not signed (facts A2).
+        context = httpx.create_ssl_context(trust_env=False)
+        transport = httpx.HTTPTransport(retries=0, trust_env=False, verify=context)
+        key = _NETWORK_TRANSPORT_KEY
     else:
         key = None
     client = KalshiClient(activation.environment, signer, transport=transport, network_key=key)
@@ -409,4 +432,5 @@ def activate_live(
         max_order_notional=activation.max_order_notional,
         max_daily_notional=activation.max_daily_notional,
         fills_epoch=utc(ledger.meta()["created_at"]),
+        risk_limits_hash=activation.risk_limits_hash,
     )
