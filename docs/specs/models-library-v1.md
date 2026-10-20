@@ -38,7 +38,10 @@ with in-memory arrays. This library never touches an archive, the network or a c
 `symbolic` artifacts are produced by the separate symbolic engine; `artifact.py` must
 accept a `symbolic` family whose params are the engine's model dict and whose scoring is
 delegated to a function registered at import (`register_family(name, raw_score_fn)`), so
-the integrator can plug it in without editing this module.
+the integrator can plug it in without editing this module. Construction scores zero rows
+with the family's function, so a registered family validates its params there (for
+`symbolic`: params exactly `{"model"}`, a parseable engine model whose feature names are
+the preprocessor outputs in order) and a malformed artifact is refused before it exists.
 
 ## Tests (`tests/models/`, synthetic data only, no network, total < 60 s)
 

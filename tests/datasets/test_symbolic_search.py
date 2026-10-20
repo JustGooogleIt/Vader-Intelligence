@@ -1,5 +1,6 @@
 """Symbolic search integration (roadmap C) on a SYNTHETIC registry dataset."""
 
+import hashlib
 import json
 
 import numpy as np
@@ -8,7 +9,11 @@ import pytest
 from datasets.test_training import SPLIT, synthetic_dataset
 from vader_intelligence.cli import execute, parser
 from vader_intelligence.features import definitions
-from vader_intelligence.forecast.forecasters import ForecasterRunner, predict_artifact
+from vader_intelligence.forecast.forecasters import (
+    ForecasterRunner,
+    predict_artifact,
+    verify_artifact,
+)
 from vader_intelligence.models.artifact import ModelArtifact, predict_proba
 from vader_intelligence.research import symbolic_search, training
 from vader_intelligence.research.registry import Registry
@@ -61,12 +66,22 @@ def test_a_symbolic_artifact_can_be_a_forward_forecaster(registry):
     dataset_id = registry.register_dataset(manifest, rows)
     result = symbolic_search.run(registry, dataset_id, split=SPLIT, config=SMALL)
     data = registry.model_artifact(result["model_id"])
-    runner = ForecasterRunner({result["model_id"]: data}, predict_artifact)
+    # The registry path verifies artifacts (parse + zero-row inference): a real symbolic
+    # artifact passes and keeps its digest; its params are validated at construction.
+    runner = ForecasterRunner({result["model_id"]: data}, predict_artifact, verify=verify_artifact)
+    assert runner.models[result["model_id"]]["error"] is None
     (descriptor,) = runner.descriptors()
     assert descriptor["family"] == "symbolic" and descriptor["feature_set"] == "fs-market-v1"
     names = [d.name for d in definitions.feature_set("fs-market-v1")]
     values = [rows[0]["features"][n] for n in names]
     artifact = ModelArtifact.from_dict(json.loads(data))
+    assert artifact.sha256 == result["model_id"] and artifact.to_json().encode() == data
+    tampered = json.loads(data)
+    tampered["params"]["model"]["feature_names"].reverse()
+    tampered = json.dumps(tampered, sort_keys=True).encode()
+    sha = hashlib.sha256(tampered).hexdigest()
+    refused = ForecasterRunner({sha: tampered}, predict_artifact, verify=verify_artifact)
+    assert "invalid symbolic artifact" in refused.models[sha]["error"]
     expected = predict_proba(
         artifact, np.array([[np.nan if v is None else v for v in values]], dtype=float)
     )[0]
