@@ -399,11 +399,56 @@ def test_witness_runs_come_only_from_witness_and_receipts_cannot_predate_them(tm
                     iso(T0 - timedelta(days=1)),
                 )
             assert store.db.execute("SELECT 1 FROM runs WHERE id='minted'").fetchone() is None
-            # The real witness does not take the subject as witnessed: the forged row holds
-            # its receipt key, which it reports as an integrity failure.
+            # The real witness never re-observes the subject: its first receipt is permanent,
+            # so the subject stays unproven and every later tick still runs (rewriting the
+            # receipt key would be an IdempotencyConflict on every tick). Integrity keeps
+            # reporting the forged row.
             result = witness(store)
-            assert result["status"] == "failed"
-            assert any(e.startswith("integrity:") for e in result["errors"])
+            assert result["status"] == "complete"
+            assert (
+                store.db.execute(
+                    "SELECT COUNT(*) FROM forecast_receipts WHERE fetch_id=?", (fetch_id,)
+                ).fetchone()[0]
+                == 1
+            )
+            assert evidence.fetch_availability(store.db, fetch_id).status == (
+                "availability_unproven"
+            )
+            with pytest.raises(ValueError, match="predates its witness run"):
+                journal.integrity(store.db)
+        finally:
+            store.close()
+
+
+def test_a_clock_stepping_back_after_the_run_start_never_writes_proof(tmp_path):
+    """Pre-review of #37: the run start is also the divergence base, so a clock that steps
+    back after it is untrusted at once, and the bound refuses a receipt that would predate
+    the run; the witness reports it and later honest runs witness the subjects."""
+    path = tmp_path / "stepped-clock.sqlite3"
+    a = Archive(path)
+    a.run("collector")
+    fetch_id, _ = a.fetch("collector", "status", T0)
+    a.db.close()
+    calls = {"n": 0}
+
+    def stepping():  # the run start is sampled 2 s later than every later reading
+        calls["n"] += 1
+        return T0 + timedelta(minutes=5, seconds=2 if calls["n"] == 1 else 0)
+
+    with writer_lock(path):
+        store = Store(path, min_free_bytes=1)
+        try:
+            stepped = witness(store, clock=stepping)
+            assert stepped["receipts"] == 0 and stepped["skipped_invalid"] >= 1
+            assert evidence.fetch_availability(store.db, fetch_id, mode="synthetic").status == (
+                "availability_unproven"
+            )
+            later = witness(store, clock=lambda: T0 + timedelta(minutes=10))
+            assert later["status"] == "complete" and later["receipts"] >= 1
+            assert evidence.fetch_availability(store.db, fetch_id, mode="synthetic").status == (
+                "witnessed"
+            )
+            journal.integrity(store.db)
         finally:
             store.close()
 

@@ -79,7 +79,7 @@ class DiscoveryEvidence:
 # contract 2 this is the reader's admissibility rule. Projection, witness deduplication,
 # the tick and the evaluator all use this text, so reader and integrity classification
 # cannot diverge.
-PROOF = (
+_WITNESS_RUN = (
     " json_extract(r.payload_json,'$.contract_version') IN (2,3)"
     " AND json_extract(r.payload_json,'$.observer_namespace')=?"
     " AND EXISTS (SELECT 1 FROM runs w WHERE w.id=r.run_id AND w.kind='forecast-witness'"
@@ -89,8 +89,11 @@ PROOF = (
     "=json_extract(r.payload_json,'$.session_id')"
     " AND json_extract(w.provenance_json,'$.tool_configuration.source_lineage')"
     " IN ('live','synthetic')"
-    " AND julianday(r.observed_at) >= julianday(w.started_at))"
 )
+# Receipts a recorded operational witness run wrote (the witness never re-observes them).
+WITNESS_WRITTEN = _WITNESS_RUN + ")"
+# Proof additionally requires the observation not to predate its witness run (review F3).
+PROOF = _WITNESS_RUN + " AND julianday(r.observed_at) >= julianday(w.started_at))"
 
 
 def receipt_is_proof(db, receipt_id, namespace=None):
