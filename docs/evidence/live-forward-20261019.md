@@ -19,7 +19,8 @@ produced by a read-only script that opens both archives with `mode=ro`.
 - **Rule-v2 shadow** (`/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-rule-v2`):
   - code `622caadd` (#18 head), eligibility rule v2, baselines only;
   - decision contract 3;
-  - cycles on a fixed 120 s grid from 22:30:10Z.
+  - cycles in fixed 120 s slots from 22:30:10Z; each started 1–4 s into its slot,
+    because the driver polls every 5 s.
 - **Model shadow** (`/Users/ashwin/Documents/Vader-Intelligence-shadow/20261019-models`):
   - code `ab43c48` (in #28, before the #31 and #33 repairs);
   - decision contract 4, with three registered forecasters, all trained by research
@@ -28,9 +29,10 @@ produced by a read-only script that opens both archives with `mode=ro`.
     `06891d03`;
   - **all three were rejected by the protected evaluator**, since none beats the
     market midpoint on validation;
-  - cycles on a fixed 120 s grid from 21:56:10Z.
+  - cycles in fixed 120 s slots from 21:56:10Z.
 - Both shadows: cadence 120, collector deadline 90, grace 5, tick budget 15. One
-  bounded `shadow-evaluate` runs after the game, at about 05:15Z on 2026-10-20.
+  bounded `shadow-evaluate` runs after the game, on 2026-10-20 at 05:00Z for rule v2
+  and 05:15Z for the models.
   Every cycle up to C exited 0, and collection was `complete` in each.
 
 ## Decisions at C (both created at 23:08:12Z, publication `allowed`)
@@ -50,8 +52,9 @@ and witnessed by 23:06:11:
 - no mid change over 15 or 45 minutes;
 - `last_trade_gap_c` 0.005.
 
-The symbolic model is a linear map of the pair midpoint, so it stays near the market.
-The logistic model is 4.6 points above it.
+The symbolic model is a logistic function of a linear map of the standardized pair
+midpoint (artifact parameters a = 0.2239, b = −0.1577), so it stays near the market.
+The logistic model is 4.6 points above the market mid of 0.415.
 
 ## The midpoint abstention (D-016)
 
@@ -59,19 +62,27 @@ The logistic model is 4.6 points above it.
 |---|---|---|
 | models shadow | 23:04:15.6 | 23:06:11.9 (≤ C) |
 | models shadow | **23:06:15.8** | **23:08:12.2 (after C)** |
+| rule-v2 shadow | 23:04:15.5 | 23:06:11.9 (≤ C) |
 | rule-v2 shadow | 23:06:15.7 | 23:08:12.2 (after C) |
 
-Each cycle runs the tick first, which witnesses earlier evidence, and then collects.
-The latest book retrieved by C was therefore witnessed only by the next tick, after C.
-Book selection never falls back to an older book, so the midpoint abstained in both
-shadows. This follows from the specified rules rather than from a fault, and it
-affects almost every phase of the cycle grid. `docs/roadmap/decisions.md` D-016 gives
-the analysis and the options for the user.
+Specification §4 selects the latest book received **and** witnessed by C. Here that is
+the 23:04:15 book, 224 s old at C. The implementation (selection-v1) anchors instead on
+the latest book *received* by C, which here is the 23:06:15 book. That book was
+witnessed only by the next tick, after C, so the midpoint abstained in both shadows.
+Each cycle runs the tick before it collects, so in normal operation this happens at
+almost every cutoff.
 
-**Point in time.** No forecaster used evidence witnessed after C. The models' 20
-selected quote fetches were all witnessed. The latest was retrieved at 23:04:15 and
-witnessed at 23:06:11. The 23:06 listing fetches were witnessed after C and were not
-used.
+This is a deviation from the specification, recorded in `docs/roadmap/decisions.md`
+D-016. It is repaired as an opt-in `selection_version = "selection-v2"` in #36, with
+the default unchanged. Read-only on these archives at C, selection-v1 reproduces the
+recorded abstention. Selection-v2 selects the 23:04:15 book (witnessed 23:06:11), with
+midpoint **0.4150** in both shadows. Tonight's stored decisions are unchanged: they
+were made, and remain, under selection-v1.
+
+**Point in time.** No forecaster used evidence witnessed after C. All 70 listing
+quotes the models used came from fetches witnessed by C; the decision records 20 of
+the fetch IDs. The latest was retrieved at 23:04:15 and witnessed at 23:06:11. The
+23:06 listing fetches were first witnessed at 23:08:12, after C, and were not used.
 
 ## D-015 (`last_trade_gap_c`)
 
@@ -82,7 +93,10 @@ single row cannot show whether the two definitions agree, so D-015 stays open.
 
 ## Live-adapter dry run on the real forward decision
 
-Command (code: the #35 head `7686513`; the dry-run path is unchanged since #33):
+Command (code: the #35 head `7686513`; the dry-run path is unchanged since #33). The
+dry run evaluates at C using the latest archived book received by C (23:06:15.8). That
+book was first witnessed after C, so the forecasters could not have used it. Its top of
+book (0.41/0.42) equals that of the 23:04 book, so the outcome would be the same.
 
 ```sh
 vader live dry-run --archive <model shadow>/shadow.sqlite3 --forecaster model:<id> \
@@ -92,14 +106,15 @@ vader live dry-run --archive <model shadow>/shadow.sqlite3 --forecaster model:<i
 
 | Forecaster | No caps, cash 1000 | Caps 1.00 / 2.00, cash 1000 | Caps, cash 20 |
 |---|---|---|---|
-| logistic (0.461) | approved: buy 8 YES at 0.42 (Kelly 0.1 × full fraction 3.8%, target 3.82); one signed POST, then the dry cancel | risk approved 8; gateway refused `local:order_notional_cap` (8 × 0.42 = 3.36 > 1.00); nothing built | risk refused `size_zero` (Kelly target 0.08, below one contract) |
+| logistic (0.461) | approved: buy 8 YES at 0.42 (Kelly 0.1 × full fraction 3.8%, target 3.82); one signed POST, then the dry cancel | risk approved 8; the dry-run gateway's copy of the live per-order cap refused it (`local:order_notional_cap`, 8 × 0.42 = 3.36 > 1.00) before it was signed or recorded | risk refused `size_zero`; derived: 0.1 × 3.8% × 20 ≈ 0.08 target, below one contract's cost of 0.44 (the output records no sizing) |
 | gradient boosting (0.438) | no intent: `edge_below_threshold` | same | same |
 | symbolic (0.413) | no intent: `edge_below_threshold` | same | same |
 
 What this shows:
 - The forward-shadow forecast becomes a well-formed, signed demo request. Signing used
   a throwaway key, and nothing was sent.
-- The gateway's notional cap refuses an oversized order before it is built.
+- The gateway's per-order notional cap refuses an oversized order before it is signed
+  or recorded.
 
 What it does not show: acceptance, fills or profit. The risk limits were
 `simulation_defaults(cash)`, not canary limits. The runbook now asks for canary limits

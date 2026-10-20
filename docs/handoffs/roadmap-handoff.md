@@ -33,7 +33,8 @@ Base: PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c
 | #32 | `fix/review-24-25` | `3827df2adea441b33bdef56d0a48c226d5e89aa7` | repairs from the #24/#25 pre-review: skew latch, TLS trust, ambiguous writes, exits, ingest idempotency, Kelly rounding | 1317 passed |
 | #33 | `fix/review-17-23-28` | `4e44ef5877b2a3311e64a1081639ed0950017a12` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping, forecast tick abstention, synthetic label, case-insensitive ops guard | 1321 passed |
 | #34 | `feat/live-settlements` | `d1ced5f291acc23509af108ee1af16907b71c808` | F live settlement recording: venue settlements recorded only after a clean fills reconciliation and an exact match with the ledger (every venue-reported fill, counts, payout, no fee); operator resolution through the ledger | 1344 passed |
-| #35 | `fix/activation-key-material` | `67b260a26cae6363d14aa9c1c682d77252771ff1` | repair of the #25 activation gate: `no_key_material` also refuses base64/hex runs that decode to PEM text or a DER private key; runbook note: canary risk limits within the notional caps (docs only) | 1352 passed (at `7686513`; `67b260a` changes docs only) |
+| #35 | `fix/activation-key-material` | `78eea4dc320dccf85dbffac6328e0136c107de8b` | repair of the #25 activation gate: `no_key_material` also refuses base64/hex runs that decode to PEM text or a DER private key, at any alignment and when merged with neighbouring text; runbook note: canary risk limits within the notional caps | 1355 passed |
+| #36 | `fix/book-selection-witnessed` | `45ea196462d145bc67e7e52c811ea3b1ba6906c1` | repair (D-016): opt-in `selection_version = "selection-v2"` selects the midpoint's book as spec §4 says (latest received **and** witnessed by C); `selection-v1` default and stored decisions unchanged | 1373 passed |
 
 "Suite" = `pytest -q` at that exact head with the two pre-existing `tmux_jev` observer
 tests deselected (the optional tool is not installed; they fail on `main` too), measured
@@ -49,7 +50,7 @@ Full matrix: `docs/roadmap/requirements-matrix.md`.
 | **Demonstrated on real data** | rule v2 on the real archive (60 rule pairs) and live (1 game, 2 eligible contracts, 2026-10-19); historical acquisition (2025 + 2026, with 2026 execution windows); datasets; training of logistic, gradient boosting and symbolic models; research pods and the protected evaluator on 2026 and on 2025→2026; the pod autopilot (heuristic planner) on the 2026 snapshot; candle vs collected book at C; paper backtest (simulated execution) on real 2026 validation candles through pods and the coordinator, which agree exactly, and on the two-season validation set |
 | **Demonstrated on synthetic data (asserted in the suite)** | full chain proposed → validated → shadow_tested → paper_approved with hand-checked numbers; one-time holdout in both ledgers; dry-run order request; recovery from worker and coordinator SIGKILL, backtest crashes, live create timeout |
 | **Implemented, simulated only** | paper simulator, risk engine, Kelly; Kalshi live adapter against a deterministic exchange double; dry-run gateway |
-| **Demonstrated live (forward, one game)** | rule-v2 and contract-4 decisions at C = 23:08Z 2026-10-19 for `KXMLBGAME-26OCT192008CLETB`, publication allowed, no input witnessed after C; the three pod models as registered forecasters (0.461, 0.438, 0.413 vs market mid 0.415); the live-adapter dry run on that real decision (one signed, unsent request; refused by the 1.00 cap). The midpoint abstained in both shadows (D-016). `docs/evidence/live-forward-20261019.md` |
+| **Demonstrated live (forward, one game)** | rule-v2 and contract-4 decisions at C = 23:08Z 2026-10-19 for `KXMLBGAME-26OCT192008CLETB`, publication allowed, no input witnessed after C; the three pod models as registered forecasters (0.461, 0.438, 0.413 vs market mid 0.415); the live-adapter dry run on that real decision (one signed, unsent request; refused by the 1.00 cap). The midpoint abstained in both shadows: selection-v1 departs from spec §4 (D-016), and selection-v2 (#36), read-only on the same archives, gives 0.4150. `docs/evidence/live-forward-20261019.md` |
 | **Pending (bounded jobs running)** | settlement and contract-2 evaluation of those decisions (≈05:00–05:20Z 2026-10-20) |
 | **Untested** | the live canary (`docs/live-canary-runbook.md`, never executed); exchange acceptance of any request; fee schedules against real fills |
 | **Blocked** | A5 NBA/NFL (D-005: no authorized official free schedule source) |
@@ -206,7 +207,8 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
 | #32 | 1317 passed, 2 deselected (14 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 | #33 | 1321 passed, 2 deselected (4 new tests); wheel built at this head passes its smoke test (schemas 1–6) |
 | #34 | 1344 passed, 2 deselected (23 new tests) at `d1ced5f`; ruff clean; the synthetic e2e and recovery demos complete (at `9cca473`; no packaging or schema change) |
-| #35 | 1352 passed, 2 deselected (8 new tests) at `7686513`; ruff clean; the old check misses all seven encoded forms the new one refuses |
+| #35 | 1355 passed, 2 deselected (11 new tests) at `78eea4d`; ruff clean. At `7686513`, 1352 passed, but the wrapped-body form then failed about one run in three. `e9f4b89` fixes merged and misaligned runs, and the activation tests pass 25 of 25 runs. The original check misses all seven encoded forms, and the `7686513` check misses the three merged forms |
+| #36 | 1373 passed, 2 deselected (18 new tests) at `45ea196`; ops 44 passed; ruff clean. A mutant that makes v2 behave like v1 fails five tests. An independent pre-review found no correctness defect: 0 mismatches against a §4 oracle over 900 cutoffs, and v1 identical to the old code. Its three surviving mutants are now killed. Read-only on the real 2026-10-19 archives, v1 reproduces the recorded abstention and v2 gives midpoint 0.4150 |
 
 ## 6. Data and model limitations
 
@@ -224,11 +226,13 @@ R=/Users/ashwin/Documents/Vader-Intelligence-research
   listings. The fs-market-v1 models in tonight's forward shadow see a forward input
   distribution they were not trained on. The one forward value (0.005) lies inside the
   2026 history distribution, which proves nothing about the rest.
-- **Midpoint at C (D-016).** Under the specified cycle order (tick, then collect), the
-  latest book retrieved by C is witnessed only after C, and book selection never falls
-  back to an older book. The midpoint baseline therefore abstains at almost every
-  phase, as it did in both shadows tonight. Forward evaluations then compare a model
-  with the constant only.
+- **Midpoint at C (D-016).** The implemented book selection (selection-v1, the
+  default) departs from specification §4. It anchors on the latest book *received* by
+  C, which under the tick-then-collect order is normally witnessed after C. So the
+  midpoint abstains at almost every cutoff, as it did in both shadows tonight, and
+  forward evaluations compare a model with the constant only. #36 adds the specified
+  rule as an opt-in `selection-v2`. Cohorts and archives made with selection-v1,
+  including tonight's, keep that behavior.
 - **Forecaster populations.** A forecaster is scored wherever it gave a probability; only
   its `paired_with_midpoint` block shares the midpoint's population.
 - Holdout-period data that was read:
@@ -264,9 +268,9 @@ post-only order, cancel, reconcile, shutdown (never executed).
 4. D-008 default criteria (CI below zero and both halves) — stricter or looser?
 5. D-015: drop or redefine `last_trade_gap_c` in an `fs-market-v2` before the next
    model work.
-6. D-016: how the midpoint baseline should get a book witnessed by C. Recommended:
-   anchor book selection on availability under a new selection version. The
-   alternatives are a witness pass after collection, or keeping both rules.
+6. D-016: #36 repairs the midpoint book selection as an opt-in `selection-v2`. Should
+   new research configurations default to it? The current default stays selection-v1,
+   so no existing cohort hash changes.
 7. Backtest slippage semantics: keep "slippage = no fill at a touch limit", or add a
    strategy limit offset (pay up to k ticks) so the slippage axis measures price?
 8. Live activation (demo canary) — only after review; requires the user's own key.
@@ -283,8 +287,8 @@ post-only order, cancel, reconcile, shutdown (never executed).
 1. Review and merge decisions for #17–#20 (the evidence foundation).
 2. Forward evidence: keep forward shadows with registered forecasters running through the
    rest of the postseason and next season; forward data is the only unbiased test.
-   Decide D-016 first, so forward decisions carry a market-midpoint score. Until then,
-   bounded drivers can add one ordinary cycle about 1 s before each C (D-016 option 3).
+   New shadows should set `selection_version = "selection-v2"` (#36, D-016), so forward
+   decisions carry a market-midpoint score.
 3. Features beyond the market: the market-only feature set cannot beat its own midpoint by
    construction; team/pitcher/lineup features with forward availability are the next
    research question (the `fs-full-v1` team features exist but are research-only).

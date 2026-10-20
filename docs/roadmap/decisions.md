@@ -324,11 +324,14 @@ Decision (#31).
 ## D-015 `last_trade_gap_c` is not the same feature in history and forward (open, 2026-10-19)
 
 Context. An independent pre-review of #21 found that `last_trade_gap_c` in `fs-market-v1`
-has two meanings:
+has two meanings. The feature is the latest trade price within 60 minutes of C minus
+`mid_c` (`features/definitions.py`), and `None` when there is no such trade. What
+differs is the time the 60-minute window is measured from:
 - **From candles (history):** a trade price exists only in minutes that had trades, so
-  the gap is the age of the last trade.
+  the window applies to the trade's own time.
 - **From live listings (forward):** `last_price_dollars` is the last trade ever, stamped
-  with the listing's retrieval time, so the gap measures the retrieval's age.
+  with the listing's retrieval time. The window then measures the retrieval's age, and
+  the feature is present even when the market has not traded for hours.
 
 The same quiet market therefore gives a value forward and `None` historically. Models
 trained on history see a different input distribution forward.
@@ -341,53 +344,62 @@ Decision. Nothing is changed in this run. Changing the feature would change
 
 This is open for the user, together with the next feature work.
 
-## D-016 The midpoint baseline at C abstains under the specified cycle order (open, 2026-10-19)
+## D-016 The midpoint book selection departs from specification §4 (repaired opt-in in #36, 2026-10-20)
 
 Context. In both live forward shadows on 2026-10-19 the midpoint baseline abstained
 with `book_availability_after_cutoff` at C = 23:08:00Z
-(`docs/evidence/live-forward-20261019.md`). The cause is the order the specification
-fixes, not a fault:
-- Each cycle runs the tick first. The tick witnesses evidence from earlier cycles, then
-  the collector runs. The F3.3 plan, §4.2 and §6, says: "The tick runs before
-  collection… No extra witnessing phase is added."
-- Book selection (`forecast/selection.py:select_inputs`) anchors on the latest book
-  retrieved by C. If that book was not witnessed by C, it abstains; it never falls back
-  to an older book.
-- The latest book retrieved by C is therefore witnessed by the next cycle's tick,
-  which runs after C. The only exception is a cycle that starts in the few seconds
-  between its predecessor's book retrieval and C (tonight about 4.5 s, so about 4% of
-  phases at a 120 s cadence).
+(`docs/evidence/live-forward-20261019.md`).
+- Specification §4 (`docs/specs/forecast-evaluation-v1.md`) selects "the latest
+  attempted completed book retrieval … received and witnessed by C". If that attempt is
+  unusable, it abstains and does not search further back.
+- Its worked example expects `book_stale` when the newest book witnessed before C is
+  350 s old: "a book retrieved 18:59:00 but first witnessed 19:00:01 cannot rescue it."
+- `forecast/selection.py:select_inputs` (since F3.4) instead anchors on the latest
+  attempt *received* by C. It abstains when that attempt was witnessed after C, and
+  never considers the latest attempt that *was* witnessed by C. Its own module
+  docstring and the test `test_select_inputs_picks_the_latest_witnessed_pre_cutoff_book`
+  state the specified rule; no test covered the difference.
+- The specification also fixes the cycle order: tick (which witnesses), then collect.
+  The F3.3 plan §6 says "No extra witnessing phase is added", and §4.2 says "No
+  mid-collection or post-book witnessing phase exists". So the latest book retrieved by
+  C is witnessed by the next tick, after C, unless C falls between a cycle's tick and
+  that same cycle's book retrieval. That gap was about 3.9 s tonight, about 3% of phases
+  at a 120 s cadence. It can also be avoided when the last cycle before C made no
+  completed book attempt, for example after an incomplete discovery pass.
+- The combined effect is that the implemented midpoint abstains at almost every cutoff
+  in normal operation. That leaves forward evaluations without the market comparison
+  they exist for. Discovery passes and the registered models' quotes already use the
+  latest evidence witnessed by C.
 
-The plan's timing table covers discovery passes, which may fall back to an older
-witnessed pass. It states that "book evidence follows the same arithmetic". It does not,
-because books have no fallback.
+Tonight's timing: the book was retrieved at 23:06:15.8 and witnessed at 23:08:12.2.
+The previous book was retrieved at 23:04:15.6 and witnessed at 23:06:11.9. It is state
+`ok`, untruncated, 224 s old at C, and matches the game and its eligibility proof, so
+under §4 it is the anchor. No forecaster used anything witnessed after C.
 
-Tonight's timing: the book was retrieved at 23:06:15.8 and witnessed at 23:08:12.2. The
-previous book was retrieved at 23:04:15 and witnessed at 23:06:11; under a fallback
-rule it would have passed the availability and freshness checks (age 224 s ≤ 300). The
-registered models were unaffected: their listing quotes come from the latest market
-fetch witnessed by C (retrieved 23:04:15, witnessed 23:06:11). No forecaster used
-anything witnessed after C.
+Decision. This is an implementation defect against the specification, so the repair is
+a foundational fix in its own PR (#36), versioned because real archives hold decisions
+made under the old rule (the D-001 principle):
+- **`selection_version = "selection-v2"`** implements §4 as written. Among completed
+  attempts received by C, the anchor is the latest whose first receipt is trusted and
+  observed by C. When none is, the reason is the latest attempt's availability reason,
+  exactly as before. Whatever it lands on is checked as is, with no further fallback.
+- **`selection-v1` stays the default and is unchanged**, so existing cohorts, their
+  configuration hashes and every stored decision recompute identically. `redecide`
+  uses the stored decision's own version.
+- Unknown versions are refused.
+- Read-only on tonight's archives at C: `selection-v1` reproduces the recorded
+  `book_availability_after_cutoff` in both shadows. `selection-v2` selects the
+  23:04:15 book (witnessed 23:06:11) with midpoint 0.4150.
 
-Effect. Forward evaluations usually have no market-midpoint score, so a registered
-model can be compared only with the constant baseline. Forward evidence is meant to
-make exactly that market comparison.
+The cycle order and the 300 s freshness are unchanged; the repair adds no witnessing
+phase. Operators set `selection_version = "selection-v2"` for a new cohort
+(`docs/forward-shadow.md`). The version is part of the protocol hash, so it starts a
+separate cohort.
 
-Decision. Nothing is changed in this run. Both rules are established contracts, and the
-F3.3 plan states the first explicitly. Options for the user:
-1. **Anchor book selection on availability** (recommended). Use the latest book
-   attempt that was both retrieved and witnessed by C. If that attempt is unusable,
-   abstain, so outcomes still cannot select a book. This matches the discovery pass
-   rule and the registered models' quote rule. It changes decisions, so it needs a new
-   selection version (for example `selection-v2`); stored decisions keep their own
-   version.
-2. **Add a witness pass after collection** in the shadow cycle. This reverses the
-   plan's "no extra witnessing phase" rule and adds a budget to the cycle (tick +
-   deadline + witness + three grace periods below the cadence).
-3. **Keep both rules.** Bounded drivers can still get a midpoint by placing one extra
-   ordinary cycle about 1 s before C: its tick witnesses the previous book before C,
-   and its own book is retrieved after C. This uses existing code only, but it depends
-   on the book taking more than 1 s to arrive, and a launchd cadence cannot do it.
+Alternatives considered:
+- Changing the default: this would change every existing default cohort's hash.
+- Fixing in place under the `selection-v1` label: one label would then name two rules
+  in real files.
+- A witness pass after collection: this reverses the plan's explicit rule.
 
-Reversibility. Options 1 and 2 are additive behind a new version or configuration.
-Option 3 changes nothing.
+Reversibility. selection-v2 is opt-in, and selection-v1 is untouched.

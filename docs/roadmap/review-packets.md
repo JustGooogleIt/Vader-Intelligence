@@ -24,8 +24,9 @@ merged, deployed or activated; no credentials exist in this system.
 | #31 | `fix/review-26-27` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | holdout pin, evidence binding | dry-run checks, quarantine |
 | #32 | `fix/review-24-25` | repairs from the #24/#25 pre-review: skew latch, TLS trust store, ambiguous write answers, uncapped exits, ingest idempotency, Kelly rounding | ingest identity, fee bound | live adapter safety |
 | #33 | `fix/review-17-23-28` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping (#19), forecast-tick abstention (#22), synthetic label (#20), ops guard | outcome join, abstention | ops guard |
-| #35 | `fix/activation-key-material` | repair of the #25 `no_key_material` gate (encoded key material); runbook note on canary risk limits | — | false positives on hashes and paths, missed encodings; whether the runbook's limit guidance matches `risk.py` (order cost includes the fee bound) |
 | #34 | `feat/live-settlements` | F live settlement recording (venue settlements recorded only on an exact match with the ledger) | payout and counts identity | allowlist, cursor, fail-closed reasons |
+| #35 | `fix/activation-key-material` | repair of the #25 `no_key_material` gate (encoded key material, merged and misaligned runs); runbook note on canary risk limits | — | false positives on hashes and paths (the DER scan over every alignment); missed encodings; cost on a large file (64 KiB limit); whether the runbook's limit guidance matches `risk.py` |
+| #36 | `fix/book-selection-witnessed` | repair: opt-in `selection-v2` selects the midpoint's book as spec §4 says (received and witnessed by C; D-016); `selection-v1` default unchanged | spec conformance, cohort and replay versioning | default hash, unknown versions refused |
 
 ## Codex Prime — evidence meaning, versioning, leakage, scoring, money correctness
 
@@ -110,6 +111,11 @@ Read first: `docs/roadmap/decisions.md` (D-001..), `docs/roadmap/evidence-index.
     this ledger never traded, or a second record for a settled market, change the
     ledger? Can the settlements cursor advance past a record that was not recorded? Can
     a fill after a recorded settlement change cash? (`tests/trading/kalshi/test_kalshi_settlements.py`)
+17. **Book selection (#36, D-016).** Does `selection-v2` match §4 exactly, including the
+    worked example? Can it ever choose a book received or witnessed after C, or fall
+    back past an unusable anchor? Is `selection-v1` unchanged for every caller,
+    including `redecide`, evaluation annotations and reconstruction? Does the default
+    protocol hash stay the same? (`tests/forecast/test_selection_v2.py`)
 
 Commands:
 
