@@ -713,6 +713,56 @@ class ShadowConfigurationTests(ShadowFixture):
             validate(inside)
         self.assertIn("forbidden production path", str(caught.exception))
 
+    def test_configure_requires_a_registry_holding_the_protocols_forecasters(self):
+        """F41: when the research protocol registers forecasters, configuring requires a
+        model registry from which every listed artifact opens read-only (otherwise every
+        tick fails before deciding, baselines included). Lifecycle loads stay lenient."""
+        import shutil
+
+        from vader_intelligence.research.registry import Registry
+
+        artifact = b'{"synthetic": "model artifact"}'
+        sha = hashlib.sha256(artifact).hexdigest()
+        self.research.write_text(f'[research]\ndataset = "shadow-test"\nforecasters = ["{sha}"]\n')
+        empty = self.root / "empty registry"
+        empty.mkdir()
+        other = self.root / "other registry"
+        Registry(other).close()  # a research registry without the protocol's artifact
+        full = self.root / "registry"
+        registry = Registry(full)
+        registry.put_artifact(artifact, ".json")
+        registry.close()
+
+        def args(name, model_registry):
+            return argparse.Namespace(
+                **dict(
+                    {k: v for k, v in self.config.items() if k != "shadow"},
+                    state=str(self.root / f"state {name}"),
+                    output=str(self.root / f"config {name}.json"),
+                    shadow_research_config=str(self.research),
+                    tick_budget=3,
+                    forbid=[str(self.production)],
+                    shadow_model_registry=model_registry and str(model_registry),
+                )
+            )
+
+        cases = {
+            "missing": (None, "model_registry is required"),
+            "empty": (empty, "not a research registry"),
+            "other": (other, f"cannot open forecaster {sha}"),
+        }
+        for name, (model_registry, reason) in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError) as caught:
+                    manage.configure(args(name, model_registry))
+                self.assertIn(reason, str(caught.exception))
+                self.assertFalse((self.root / f"config {name}.json").exists())
+                self.assertFalse((self.root / f"state {name}").exists())
+        result = manage.configure(args("good", full))
+        self.assertEqual(load(result["config"])["shadow"]["model_registry"], str(full))
+        shutil.rmtree(full)  # removed later: stop and uninstall must still load the config
+        self.assertEqual(load(result["config"])["shadow"]["model_registry"], str(full))
+
     def test_forbidden_paths_resist_case_changes_and_aliases(self):
         # The Mac's default volume ignores case: a differently cased production path is
         # the same directory and must be refused, as must an alias through a symlink.

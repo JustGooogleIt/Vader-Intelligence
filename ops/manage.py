@@ -14,7 +14,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ops import archive, launchd, runner  # noqa: E402
-from ops.common import absolute, label, load, validate, write_json  # noqa: E402
+from ops.common import (  # noqa: E402
+    absolute,
+    check_shadow_forecasters,
+    label,
+    load,
+    validate,
+    write_json,
+)
 
 
 def parser():
@@ -109,6 +116,8 @@ def configure(args):
             "--forbid and --shadow-model-registry apply only with --shadow-research-config"
         )
     validate(config)
+    if "shadow" in config:
+        check_shadow_forecasters(config["shadow"])
     for name in ("python", "collector_config"):
         if not Path(config[name]).is_file():
             raise ValueError(f"{name} must exist")
