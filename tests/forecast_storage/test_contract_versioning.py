@@ -24,7 +24,7 @@ from vader_intelligence.forecast.research import Protocol
 from vader_intelligence.forecast.witness import witness
 from vader_intelligence.storage import Store, writer_lock
 
-from .fixtures import snapshot
+from .fixtures import connect, snapshot
 
 LEGACY = Path(__file__).resolve().parents[1] / "fixtures/legacy_archives"
 sys.path.insert(0, str(LEGACY))
@@ -322,3 +322,36 @@ def test_draft_decisions_are_excluded_from_a_legacy_evaluation(tmp_path):
             assert result["report"]["scores"]["paired"]["n"] == 0
         finally:
             store.close()
+
+
+@pytest.mark.parametrize("era", sorted(ARCHIVES))
+def test_exact_retry_of_every_stored_row_returns_its_id_after_migration(era, tmp_path):
+    """An exact retry returns the stored row's id under either contract on either schema,
+    including a legacy_draft row the current link rules reject (review F17): a
+    byte-identical replay writes nothing and must not raise instead."""
+    path = materialize(era, tmp_path)
+    cli(path, "forecast", "migrate", "--record-contract", "3")
+    db = connect(path)
+    try:
+        before = snapshot(db)
+        replayed = 0
+        for table in schema.COLUMNS:
+            if table.startswith("evaluation_"):
+                continue  # single-record API only; evaluations append as one report
+            for row_id, payload_json in db.execute(
+                f"SELECT id, payload_json FROM {table} ORDER BY id"
+            ).fetchall():
+                assert journal.append(db, table, json.loads(payload_json)) == row_id, (
+                    table,
+                    row_id,
+                )
+                replayed += 1
+        assert snapshot(db) == before
+        if era == "draft":
+            receipt = json.loads(
+                db.execute("SELECT payload_json FROM forecast_receipts WHERE id=1").fetchone()[0]
+            )
+            assert journal.classify(db, "forecast_receipts", receipt) == "legacy_draft"
+        assert replayed > 0
+    finally:
+        db.close()

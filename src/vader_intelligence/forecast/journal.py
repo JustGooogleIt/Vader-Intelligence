@@ -436,32 +436,30 @@ def _insert(db, table, p):
     encoded = contracts.validate(table, p)
     key = contracts.key(table, p)
     content_digest = hashlib.sha256(encoded.encode()).hexdigest()
-    if table in contracts.CONTRACT_TABLES and contracts.version(table, p) == 2:
-        # Frozen contract (D-001): refused before any link rule is consulted, unless it
-        # is a byte-identical retry of a stored row, which returns that row below.
-        old = db.execute(f"SELECT digest FROM {table} WHERE idempotency_key=?", (key,)).fetchone()
-        if old is None or old[0] != content_digest:
-            require_contract_schema(db, table, p)
-    validate_links(db, table, p)
     # An exact retry of an existing envelope returns its original id under either
-    # contract and on either schema; only a new row is subject to the contract gate.
+    # contract and on either schema, before any link rule or contract gate: it writes
+    # nothing, and a stored legacy row keeps its own classification (D-001).
     if table == "evaluation_items":
         old = db.execute(
-            "SELECT digest FROM evaluation_items WHERE evaluation_id=? AND opportunity_key=?",
+            "SELECT NULL, digest FROM evaluation_items WHERE evaluation_id=? AND opportunity_key=?",
             (p["evaluation_id"], p["opportunity_key"]),
         ).fetchone()
-        if old:
-            if old[0] != content_digest:
-                raise IdempotencyConflict("evaluation item key reused with different content")
-            return None
     else:
         old = db.execute(
             f"SELECT id,digest FROM {table} WHERE idempotency_key=?", (key,)
         ).fetchone()
-        if old:
-            if old[1] != content_digest:
-                raise IdempotencyConflict("idempotency key reused with different content")
-            return old[0]
+    if old and old[1] == content_digest:
+        return old[0]
+    if table in contracts.CONTRACT_TABLES and contracts.version(table, p) == 2:
+        # Frozen contract (D-001): refused before any link rule is consulted.
+        require_contract_schema(db, table, p)
+    validate_links(db, table, p)
+    if old:
+        raise IdempotencyConflict(
+            "evaluation item key reused with different content"
+            if table == "evaluation_items"
+            else "idempotency key reused with different content"
+        )
     require_contract_schema(db, table, p)
     if table == "forecast_bindings":
         last = db.execute(
