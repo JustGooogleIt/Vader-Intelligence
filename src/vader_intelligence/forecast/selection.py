@@ -156,7 +156,11 @@ def select_inputs(
         # Availability, never content, decides the anchor: the scan skips only attempts
         # not yet witnessed by C, and whatever it lands on is checked below as is.
         for candidate in rows:
-            found = evidence.fetch_availability(db, candidate[0], namespace=namespace, mode=mode)
+            found = (
+                availability
+                if candidate is row
+                else evidence.fetch_availability(db, candidate[0], namespace=namespace, mode=mode)
+            )
             if found.status == "witnessed" and found.observed_at <= cutoff:
                 row, availability = candidate, found
                 break

@@ -216,3 +216,24 @@ def test_witness_after_cutoff_is_never_used(store, config):
         if chosen.book is not None:
             assert chosen.book.observed_at <= CUTOFF
             assert chosen.book.retrieved_at <= CUTOFF
+
+
+def test_v2_selects_a_book_witnessed_exactly_at_cutoff(store, config):
+    # Availability is inclusive at C.
+    to_schema4(store)
+    collect(store, config, origin=at(18, 1, 0))  # book at 18:01:04.5
+    witness_at(store, CUTOFF)
+    collect(store, config, origin=at(18, 4, 0))  # book at 18:04:04.5
+    witness_at(store, at(18, 5, 10))
+    chosen = select(store, SELECTION_V2)
+    assert chosen.eligible and chosen.book.observed_at == CUTOFF
+    assert select(store, SELECTION_V1).reasons == ("book_availability_after_cutoff",)
+
+
+def test_v2_reports_the_latest_attempts_reason_when_none_qualifies(store, config):
+    # The latest attempt was never witnessed; an older one was witnessed after C.
+    to_schema4(store)
+    collect(store, config, origin=at(18, 1, 0))
+    witness_at(store, at(18, 5, 10))
+    collect(store, config, origin=at(18, 3, 0))  # committed after that witness
+    assert select(store, SELECTION_V2).reasons == ("book_availability_unproven",)

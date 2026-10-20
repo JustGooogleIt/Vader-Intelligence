@@ -350,7 +350,7 @@ class CutoffFacts:
         return self.common.eligible
 
 
-def cutoff_facts(db, *, binding, namespace, evidence_mode, selection_version=SELECTION_V1):
+def cutoff_facts(db, *, binding, namespace, evidence_mode, selection_version):
     """Read-only computation of the common eligibility, renewal and midpoint input for a
     binding at its cutoff. Used by the decision writer and by evaluation annotations of
     unattempted opportunities; writes nothing. `selection_version` chooses the midpoint
@@ -632,9 +632,13 @@ def redecide(db, decision_id, namespace):
         return stored["cutoff_eligible"], stored["results"]
     binding = load_binding(db, binding_id)
     mode = stored["manifest"].get("evidence_mode") or stored["mode"]
-    # Every decision not labelled selection-v2 was computed by the selection-v1 rule (the
-    # label was not read before selection-v2 existed).
-    version = SELECTION_V2 if stored.get("selection_version") == SELECTION_V2 else SELECTION_V1
+    # Decisions labelled selection-v1 (or "v1" in older fixtures) were computed by the
+    # selection-v1 rule; the label was not read before selection-v2 existed. Any other
+    # label has no known rule, so it is refused rather than recomputed under v1.
+    label = stored.get("selection_version")
+    if label not in (SELECTION_V1, "v1", SELECTION_V2):
+        raise ValueError(f"decision has an unknown selection version {label!r}")
+    version = SELECTION_V2 if label == SELECTION_V2 else SELECTION_V1
     facts = cutoff_facts(
         db, binding=binding, namespace=namespace, evidence_mode=mode, selection_version=version
     )

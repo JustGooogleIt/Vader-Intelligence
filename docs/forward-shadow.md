@@ -77,8 +77,11 @@ that was retrieved and witnessed by C, as specification §4 says (decision D-016
 default `selection-v1` anchors on the latest book retrieved by C. Because each cycle runs
 the tick before it collects, that book is normally witnessed only after C, so the
 midpoint abstains with `book_availability_after_cutoff` at almost every cutoff. Use
-`selection-v2` for a new cohort. The version is part of the protocol hash, so an
-existing cohort keeps its own version; changing it starts a separate cohort.
+`selection-v2` for a new cohort, with its own dataset name and directory. The version is
+part of the protocol hash, so an existing cohort keeps its own version; changing it
+starts a separate cohort. Do not rewrite a running shadow's research TOML: the tick
+reads it every cycle, so the cohort would switch at the next tick. Keep the old TOML to
+evaluate the old cohort.
 
 The combined budget is explicit: with cadence 120, deadline 90 and grace 5 the tick budget
 is at most 19 s; `configure` refuses more. The launchd install preflight is unchanged
