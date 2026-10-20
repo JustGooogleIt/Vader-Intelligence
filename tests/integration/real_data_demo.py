@@ -39,6 +39,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from vader_intelligence.cli import execute, parser  # noqa: E402
 
 SPLIT = ["--development-through", "2026-07-31", "--validation-through", "2026-08-31"]
+REGISTRY_LOCKED = "another process holds the research registry lock"
+REGISTRY_LOCK_RETRIES = 5
 
 
 def set_split(development_through, validation_through):
@@ -58,27 +60,39 @@ class Recorder:
         return result
 
     def parallel(self, argvs, *, keep, jobs):
-        """Run CLI commands as separate processes (the simulator is CPU-bound); record
-        them in the given order with their wall time."""
+        """Run CLI commands as separate processes (the simulator is CPU-bound). Every
+        command is recorded, in the given order, with its wall time or its error; the
+        phase fails afterwards if any command failed. A paper run resumes from its
+        ledger, so rerunning the phase finishes only what is missing."""
 
         def one(argv):
             started = time.monotonic()
-            done = subprocess.run(
-                [sys.executable, "-m", "vader_intelligence.cli", *argv],
-                capture_output=True,
-                text=True,
-                env=os.environ | {"PYTHONPATH": str(ROOT / "src")},
-                check=False,
-            )
+            for attempt in range(REGISTRY_LOCK_RETRIES + 1):
+                done = subprocess.run(
+                    [sys.executable, "-m", "vader_intelligence.cli", *argv],
+                    capture_output=True,
+                    text=True,
+                    env=os.environ | {"PYTHONPATH": str(ROOT / "src")},
+                    check=False,
+                )
+                # The registry refuses (does not wait for) a concurrent open; retry that.
+                if done.returncode and REGISTRY_LOCKED in done.stderr:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                break
+            seconds = round(time.monotonic() - started, 1)
             if done.returncode:
-                raise RuntimeError(f"{argv[:2]} failed: {done.stderr[-2000:]}")
-            return json.loads(done.stdout), round(time.monotonic() - started, 1)
+                return {"error": done.stderr[-2000:], "wall_seconds": seconds}
+            return keep(json.loads(done.stdout)) | {"wall_seconds": seconds}
 
         with ThreadPoolExecutor(max_workers=jobs) as pool:
-            for argv, (result, seconds) in zip(argvs, pool.map(one, argvs), strict=True):
-                brief = keep(result) | {"wall_seconds": seconds}
-                self.log["steps"].append({"argv": ["vader", *argv], "result": brief})
+            briefs = list(pool.map(one, argvs))
+        for argv, brief in zip(argvs, briefs, strict=True):
+            self.log["steps"].append({"argv": ["vader", *argv], "result": brief})
         self.out.write_text(json.dumps(self.log, indent=2, sort_keys=True, default=str) + "\n")
+        failed = [argv for argv, brief in zip(argvs, briefs, strict=True) if "error" in brief]
+        if failed:
+            raise SystemExit(f"{len(failed)} of {len(argvs)} commands failed (recorded)")
 
 
 def pods_phase(args, run):
