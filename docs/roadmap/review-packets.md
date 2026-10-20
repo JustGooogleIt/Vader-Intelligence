@@ -19,6 +19,15 @@ merged, deployed or activated; no credentials exist in this system.
 | #26 | `feat/history-backtest` | D/H candle backtest, dry run (D-010, D-011) | execution realism, holdout ledger | no network, paper-only |
 | #27 | `feat/research-pods` | G orchestration, operations, protected evaluator (D-008) | protected state, criteria | process bounds, determinism |
 | #28 | `feat/integration-demos` | H demos, ops model registry, run docs | claims | reproduction |
+| #29 | `perf/ledger-row-cache` | ledger parsed-row reuse; read-only registry for non-holdout backtests (D-012) | append-only soundness | concurrency |
+| #30 | `feat/pod-autopilot` | G autonomy: development-only planners, bounded autopilot loop (D-013) | context leakage, selection | bounds, resume, provider refusal |
+| #31 | `fix/review-26-27` | repairs from the #26/#27 pre-review: pinned holdout (D-014), input provenance, candidate-bound evidence, dry-run fidelity | holdout pin, evidence binding | dry-run checks, quarantine |
+| #32 | `fix/review-24-25` | repairs from the #24/#25 pre-review: skew latch, TLS trust store, ambiguous write answers, uncapped exits, ingest idempotency, Kelly rounding | ingest identity, fee bound | live adapter safety |
+| #33 | `fix/review-17-23-28` | repairs from the #17–#23 and #28 pre-review: stale settlement mapping (#19), forecast-tick abstention (#22), synthetic label (#20), ops guard | outcome join, abstention | ops guard |
+| #34 | `feat/live-settlements` | F live settlement recording (venue settlements recorded only on an exact match with the ledger) | payout and counts identity | allowlist, cursor, fail-closed reasons |
+| #35 | `fix/activation-key-material` | repair of the #25 `no_key_material` gate (encoded key material, merged and misaligned runs); runbook note on canary risk limits | — | false positives on hashes and paths (the DER scan over every alignment); missed encodings; cost on a large file (64 KiB limit); whether the runbook's limit guidance matches `risk.py` |
+| #36 | `fix/book-selection-witnessed` | repair: opt-in `selection-v2` selects the midpoint's book as spec §4 says (received and witnessed by C; D-016); `selection-v1` default unchanged | spec conformance, cohort and replay versioning | default hash, unknown versions refused |
+| #37 | `fix/review-findings` | repairs for the reviewer's F2–F38 findings (one commit each) | F3/F5 contract narrowing (legacy archives unchanged), F10 lineage, F30/F32 live reconcile | F7 pytest path, F15/F16 ops |
 
 ## Codex Prime — evidence meaning, versioning, leakage, scoring, money correctness
 
@@ -72,6 +81,42 @@ Read first: `docs/roadmap/decisions.md` (D-001..), `docs/roadmap/evidence-index.
       (auto-engaged on `daily_loss_stop`, never auto-disengaged)?
     - `Ledger.projection()` is rebuilt after every write (quadratic paper runs). Is an
       incremental projection safe to add in its own PR?
+13. **Autopilot (#30).** Several checks:
+    - Can any validation-derived value reach `planner.context` (the allowlist,
+      `VISIBLE_FIELDS`)?
+    - Can a provider proposal reach `store.submit` without `planner.validate` and the
+      operation contract?
+    - Can the loop submit beyond its bounds?
+    - Is one accepted candidate per pod the right multiplicity control? The evaluator
+      records the snapshot's proposal count.
+    - A pre-review by an Opus agent found nothing critical. Its findings on #30 were
+      fixed in `d744766`: malformed provider values, a non-finite-JSON gap, the record
+      ordering, the budget across runs and fold comparability.
+14. **Pinned holdout and pre-review fixes (#31).** Several checks:
+    - Can any path read or score rows on or after a dataset's pin without a ledger entry
+      keyed by the pin? Paths to check: training, symbolic search, backtest, pods
+      snapshot, `load`, candidate diagnostics.
+    - Can a worker still introduce an input artifact?
+    - Is paper evidence always the candidate's own coordinator backtest?
+    - Is the dry run's report of what it checks now accurate?
+15. **Pre-review repairs (#32, #33).** Several checks:
+    - **#32:** can a skew observation still block a cancel? Can any non-2xx write answer
+      other than 400/401/403/422 be read as "not placed"?
+    - **#33:** can the outcome join still pair a Kalshi result with a mapping from another
+      run? Can a malformed artifact still stop a tick? Can a case or alias variant of a
+      production path pass the ops guard?
+16. **Live settlements (#34).** Can a venue settlement be recorded while the ledger's
+    holding, payout or orders on that market disagree with it, or while any fill the
+    venue reported (in `reconciled` events) is missing, including fills that net to zero
+    contracts? Can an operator correction or acknowledgement fail to clear a reason? Can a record for a market
+    this ledger never traded, or a second record for a settled market, change the
+    ledger? Can the settlements cursor advance past a record that was not recorded? Can
+    a fill after a recorded settlement change cash? (`tests/trading/kalshi/test_kalshi_settlements.py`)
+17. **Book selection (#36, D-016).** Does `selection-v2` match §4 exactly, including the
+    worked example? Can it ever choose a book received or witnessed after C, or fall
+    back past an unusable anchor? Is `selection-v1` unchanged for every caller,
+    including `redecide`, evaluation annotations and reconstruction? Does the default
+    protocol hash stay the same? (`tests/forecast/test_selection_v2.py`)
 
 Commands:
 
