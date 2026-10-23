@@ -459,3 +459,37 @@ def test_pause_excludes_time_from_the_wall_budget(ctl):
     ctl.step()
     run = drive(ctl, run_id)
     assert run["state"] == "completed" and run["outcome"] == "accept"
+
+
+EXIT_PATCH = BAD_PATCH + textwrap.dedent(
+    """\
+    diff --git a/tests/test_zzz_added.py b/tests/test_zzz_added.py
+    new file mode 100644
+    --- /dev/null
+    +++ b/tests/test_zzz_added.py
+    @@ -0,0 +1,7 @@
+    +import os
+    +
+    +os._exit(0)
+    +
+    +
+    +def test_never_runs():
+    +    assert True
+    """
+)
+
+
+def test_a_test_module_that_exits_the_runner_is_not_an_accept(ctl):
+    """Internal review R1: a module that ends pytest with status 0 at import leaves no
+    collected tests behind; the collected count is cross-checked against the base."""
+    run_id = start(ctl, brief(EXIT_PATCH))
+    run = drive(ctl, run_id)
+    d = run["detail"]
+    assert run["outcome"] == "reject", d.get("review")
+    kinds = {f["kind"] for f in d["review"]["findings"]}
+    assert "tests_not_collected" in kinds
+    assert d["tests_at_base"] == 1
+    good = start(ctl, brief(GOOD_PATCH))
+    run = drive(ctl, good)
+    assert run["outcome"] == "accept"
+    assert all(c["collected"] == 2 for c in run["detail"]["checks"] if c["name"] == "pytest")

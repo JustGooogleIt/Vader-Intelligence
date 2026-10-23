@@ -201,9 +201,12 @@ argv from the inspected CLI (`claude -p --permission-mode plan|default
 --allowedTools … --max-budget-usd 0 --output-format json`; `codex exec --sandbox
 workspace-write -a never --json -C <worktree>`), but `execute()` refuses unless an
 `authorization.json` in the root names `{"usage": "established", "incremental_cost_usd":
-0, "by": …, "at": …}` (not created by this assignment). Trusted checks: `ruff check`,
+0, "by": …, "at": …}` (not created by this assignment). Controller-run checks: `ruff check`,
 `ruff format --check`, focused pytest on the exact commit in the writer worktree, run by
-the controller, recorded with argv, exit codes and SHA. Reviewer: a deterministic policy
+the controller with the base commit's configuration, recorded with argv, exit codes,
+collected-test count and SHA. Their exit codes are evidence only against a
+non-adversarial writer: the checks execute the patched code without an OS sandbox, so a
+non-scripted writer needs a container before its checks mean anything (owner decision). Reviewer: a deterministic policy
 review (protected paths untouched, no deleted tests, no weakened promotion/scoring
 constants, checks green on the same SHA) that never reviews a patch its own worker id
 produced; emits a review packet artifact and an accept/reject recommendation. No merge.

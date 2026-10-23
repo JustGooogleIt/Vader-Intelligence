@@ -261,6 +261,22 @@ class FarmService:
         self.center.bind_task(run["run_id"], task_id, role, stage)
         return task_id
 
+    def _submit_stage(self, run, roles, stage, params, now=None):
+        """All of a stage's tasks, or none: a failed submission cancels the ones already
+        queued so no unowned task keeps a slot."""
+        submitted = []
+        try:
+            for role in roles:
+                submitted.append(self._submit(run, role, stage, params, now))
+        except Exception:
+            for task_id in submitted:
+                try:
+                    self.pods.request_cancel(task_id, now)
+                except Exception:  # best effort; the run fails with the original reason
+                    pass
+            raise
+        return submitted
+
     def _task_states(self, run):
         return {
             b["task_id"]: (self.pods.task(b["task_id"]) or {}).get("state", "unknown")
@@ -354,7 +370,7 @@ class FarmService:
                 "evidence_sha256": run["pins"]["evidence_sha256"],
                 "game_id": run["pins"]["game_id"],
             }
-            submitted = [self._submit(run, role, 1, params, now) for role in first]
+            submitted = self._submit_stage(run, first, 1, params, now)
             self.center.set_run(run["run_id"], stage=1, now=now)
             return submitted
         if run["stage"] == 1 and states and all(s in TERMINAL_TASK_STATES for s in states.values()):
@@ -378,7 +394,7 @@ class FarmService:
                 "summary_sha256": summary,
                 "baseline_sha256": baseline,
             }
-            submitted = [self._submit(run, role, 2, params, now) for role in second]
+            submitted = self._submit_stage(run, second, 2, params, now)
             self.center.set_run(run["run_id"], stage=2, now=now)
             return submitted
         return []

@@ -161,6 +161,12 @@ def test_command_intake_requires_origin_token_and_json(server, cfg):
         assert status == 400, bad_body
     status, _, _ = call(server, "POST", "/api/other", body, good)
     assert status == 404
+    # Every refusal closes the connection, so a refused body is never parsed as a request (R4).
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+    conn.request("POST", "/api/other", body=json.dumps(body).encode(), headers=good)
+    response = conn.getresponse()
+    assert response.status == 404 and response.getheader("Connection", "").lower() == "close"
+    conn.close()
 
 
 def test_overview_latency_is_measured(server):

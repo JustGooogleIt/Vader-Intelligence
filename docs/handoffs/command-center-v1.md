@@ -115,11 +115,14 @@ them. Pilot workers stop when their bounded runs end (no live attempts remain af
 
 ## Limitations and remaining decisions
 
-- Private worktrees and process groups are not an OS sandbox; a maintenance patch that
-  edits `conftest.py`/pytest configuration could run code as the controller user during
-  the trusted checks. Protected paths cover `pyproject.toml`, `uv.lock`, the evaluator,
-  the registry, scoring and `docs/evidence/`; the review packet lists every changed file.
-  Owner decision: whether maintenance checks must run in a container before any
+- **Check exit codes are evidence only against a non-adversarial writer.** The checks run
+  the patched code as the controller user without an OS sandbox: configuration steering
+  is closed (base-commit configuration, conftest/ini files protected), test removal is
+  caught (inventory, `def test_` count, collected-test count from a junit report), but a
+  test module that ends the interpreter at import, or that rewrites files under the run
+  directory, can still produce a green exit (internal review R1/R2). This is harmless for
+  the scripted writer (the operator wrote the patch) and is why real writers stay
+  disabled. Owner decision: maintenance checks must run in a container before any
   non-scripted writer is enabled.
 - `settlement_evidence` excerpt patch (`cc/5d84bb25/writer-1`) is a candidate for Codex to
   cherry-pick into PR #39 or the integration branch; it is not merged here.
@@ -155,8 +158,16 @@ as text; isolation of runs/artifacts/panes; coordinator lock prevents a second c
 restart reconciles before dispatch; workers never receive archive/registry/ledger/holdout/
 credential paths; `git apply --index` refuses `../`, absolute and symlinked paths; agent argv
 flags exist in the installed CLIs and execution stays disabled; labels honest.
-Remaining (accepted): private worktrees are not an OS sandbox (owner decision above); the
-pane route spawns the observer per GET with a 20 s timeout (bounded, store-verified ids).
+Second pass on `a757fc3` (same subagent): all listed fixes reproduce; `tests/command_center
+tests/pods` 125 passed. Residuals: **R1** (medium) the pytest exit code is still
+writer-controlled by a module that exits at import → wording corrected above, a
+collected-test count from a junit report is now cross-checked against the base
+(`tests_not_collected` rejects; still defeatable, not by one line); **R2** hollowed test
+bodies are not detected (inventory is file/count based; documented); **R3** a stage whose
+second submission fails now cancels the first (stage-atomic), while a `start` that fails
+after the run row exists leaves a run the operator cancels (receipt says rejected);
+**R4** every refusal now closes the connection. Accepted: no OS sandbox (owner decision);
+the pane route spawns the observer per GET with a 20 s timeout (bounded, store-verified ids).
 
 ## Verification
 

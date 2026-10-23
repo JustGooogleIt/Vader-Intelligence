@@ -443,6 +443,10 @@ class CodingService:
             if finding not in findings:
                 findings.append(finding)
         detail["files_changed"] = changed
+        detail["tests_at_base"] = next(
+            (f["count"] for f in findings if f.get("kind") == "tests_at_base"), None
+        )
+        findings = [f for f in findings if not f.get("informational")]
         detail["policy_findings"] = findings
         if findings:
             detail["outcome"] = "policy_violation"
@@ -514,7 +518,21 @@ class CodingService:
         n_before, n_after = count(base), count(commit)
         if n_after < n_before:
             findings.append({"kind": "fewer_tests", "before": n_before, "after": n_after})
+        findings.append({"kind": "tests_at_base", "count": n_before, "informational": True})
         return findings
+
+    @staticmethod
+    def _collected(argv):
+        """Number of test cases a pytest check reported in its junit file, or None."""
+        import xml.etree.ElementTree as ET
+
+        for item in argv:
+            if item.startswith("--junitxml="):
+                try:
+                    return len(list(ET.parse(item.split("=", 1)[1]).getroot().iter("testcase")))
+                except (OSError, ET.ParseError):
+                    return None
+        return None
 
     def _trusted_config(self, run):
         """`pyproject.toml` of the BASE commit, copied into the run directory: ruff and
@@ -557,6 +575,9 @@ class CodingService:
         run_dir = self._run_dir(run)
         argv = self.check_argv(run, worktree, check)
         log = run_dir / f"{phase_key}-{len(detail[phase_key])}-{check['name']}.log"
+        if check["name"] == "pytest":
+            # Collected tests are cross-checked against the base commit's `def test_` count.
+            argv.append(f"--junitxml={run_dir / f'{phase_key}-{len(detail[phase_key])}-junit.xml'}")
         handle = open(log, "wb")
         popen = subprocess.Popen(
             argv,
@@ -592,6 +613,7 @@ class CodingService:
             detail[phase_key].append(
                 {
                     "name": record["check"]["name"],
+                    "collected": self._collected(record["argv"]),
                     "argv": record["argv"],
                     "exit_code": code,
                     "started_at": record["started"],
@@ -643,6 +665,24 @@ class CodingService:
             )
         if any(code != 0 for _, code in reviewer_codes):
             findings.append({"kind": "checks_failed", "reviewer": reviewer_codes})
+        at_base = detail.get("tests_at_base")
+        for phase, checks in (
+            ("writer", detail["checks"]),
+            ("reviewer", detail["reviewer_checks"]),
+        ):
+            for check in checks:
+                if check["name"] == "pytest" and (
+                    check.get("collected") is None
+                    or (at_base is not None and check["collected"] < at_base)
+                ):
+                    findings.append(
+                        {
+                            "kind": "tests_not_collected",
+                            "phase": phase,
+                            "collected": check.get("collected"),
+                            "expected_at_least": at_base,
+                        }
+                    )
         verdict = "accept" if not findings else "reject"
         packet = {
             "kind": "cc_review_packet",
@@ -675,7 +715,12 @@ class CodingService:
             "verdict": verdict,
             "recommendation": verdict,
             "integration": "not merged: a human/Codex decides; this packet is advisory",
-            "note": "worker claims are unverified until the trusted checks and this review establish them; acceptance criteria are judged by the human reader against the diff",
+            "note": (
+                "worker claims are unverified until the controller's checks and this review "
+                "establish them; check exit codes are evidence only against a non-adversarial "
+                "writer (the checks run the patched code without an OS sandbox); acceptance "
+                "criteria are judged by the human reader against the diff"
+            ),
         }
         data = json.dumps(packet, indent=1, sort_keys=True).encode()
         (run_dir / "review-packet.json").write_bytes(data)

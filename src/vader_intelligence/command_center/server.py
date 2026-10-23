@@ -103,6 +103,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         for name, value in SECURITY_HEADERS.items():
             self.send_header(name, value)
+        if self.close_connection:
+            self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(data)
 
@@ -110,7 +112,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(status, {"ok": projection.get("state") != "unavailable", "data": projection})
 
     def _error(self, status, message):
-        if status in (HTTPStatus.FORBIDDEN, HTTPStatus.BAD_REQUEST):
+        if status >= 400:
             self.close_connection = True  # never parse a refused body as the next request
         self._send(status, {"ok": False, "error": message, "generated_at": now_iso()})
 
