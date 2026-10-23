@@ -20,7 +20,7 @@ roots under the session scratch directory (outside Git).
 | Merged in | `fix/claude-release-validation-20261022` at `ad94063c37b56e9ecf8f61b31175b770bcf5e6fc` (ordinary merges `debce5c`, `6df82df`, `d182ec5`; no conflicts; both histories retained) |
 | Main | `ebb58df9b89922db4828fda7d23891dd917a4b90` (unchanged; `git rev-parse origin/main` 2026-10-23) |
 | PR #39 | head `ad94063c37b56e9ecf8f61b31175b770bcf5e6fc`: `f24af41` evidence-scoped acknowledgements, `553fa99` fix after the internal review, docs `b08d27c`, `c8f92fa`, `ad94063`; two internal review passes recorded in `docs/handoffs/claude-release-validation.md`; Codex's exact-SHA review still required |
-| Candidate commits | `b23c961` spec/plan/executor/handoff; `30f97e7` J1/J2; `b93f082` J3; `d4eeacf` J4; `199b53b` command body bound; this handoff and any review-driven fixes follow (exact head in the final report) |
+| Candidate commits | `b23c961` spec/plan/executor/handoff; `30f97e7` J1/J2; `b93f082` J3; `d4eeacf` J4; `199b53b` command body bound; `fa54c2b` handoff; `a757fc3` fixes from the internal review; `91940e0` second-pass fixes; this verification record follows |
 | Dependency map | `feat/command-center-v1` = integration branch (`f5e92b7`) + PR #39 branch (`ad94063`) + candidate commits. It depends on PR #39 and, through the integration branch, on #38's repairs. One draft PR against `fix/integration-readiness-20261022`; no further stack |
 
 ## What was built (implemented / simulated / blocked)
@@ -169,6 +169,43 @@ after the run row exists leaves a run the operator cancels (receipt says rejecte
 **R4** every refusal now closes the connection. Accepted: no OS sandbox (owner decision);
 the pane route spawns the observer per GET with a 20 s timeout (bounded, store-verified ids).
 
-## Verification
+## Verification (this session, macOS 26.6 arm64, Python 3.11.6, uv 0.12.19; my executions)
 
-Recorded at the last checkpoint (see the final report for exact commands and counts).
+| Check | Result |
+|---|---|
+| `uv sync --locked` in the candidate worktree | complete (07:25Z); no lockfile change |
+| `tests/command_center` (real worker subprocesses, real tmux when installed) | 15 passed (J1/J2, 07:52Z) → 24 (J3, 08:04Z) → 30 (J4, 08:14Z) → 37 (review fixes, 08:37Z) → **38 passed, 22.18 s** (08:46:34–08:46:57Z) |
+| `tests/pods tests/command_center` at `b93f082` | 112 passed, 120.91 s |
+| Full suite `python -m pytest -q` at `199b53b` / `a757fc3` / **`91940e0`** | 1560 / 1567 / **1568 passed, 2 failed, 29 subtests** (335.96 s, 08:47:21–08:52:58Z); the 2 failures are the absent-`tmux_jev` baseline |
+| Observer suite, pinned private env (`167f943…`), from this checkout at `91940e0` | **85 passed, 9.41 s** (08:47:40Z) |
+| `ruff check src ops tools/worker_observer`, `ruff check tests/command_center tests/trading tests/pods`, `ruff format --check src tests ops tools/worker_observer` | clean (273 files formatted) |
+| `ruff check tests` | 4 pre-existing I001 errors (N-CC-1, integration branch's `history/` dir) |
+| `uv build --wheel`, fresh `uv venv`, `tests/integration/wheel_smoke.py` at `91940e0` | status `complete`, **54 checks**; `command_center` and `pods.game_ops` import from the installed wheel; static assets packaged (08:47:29–08:47:33Z) |
+| Dev server/controller on `91940e0` (disposable root) | running; `measure --n 50`: p50 2.1 ms, p95 2.7 ms, max 11.3 ms |
+| Live farm run `fbc5422f` (at `b93f082`) and maintenance runs `5d84bb25` (at `d4eeacf`), `617d4b1e` (at `a757fc3`, trusted configuration) | completed; see Evidence |
+| Internal subagent reviews | PR #39 repair: two passes (no material issue remains); candidate: two passes (H1/H2, M1–M6, L1–L9 fixed; residuals R1–R4 handled or documented) |
+
+Codex's own numbers at PR #39 `bde8bc3` (1,516 core, 94 focused, 85 observer, 54-check
+wheel) are Codex's; nothing above re-labels them.
+
+## Review packet for Codex (exact SHAs)
+
+- **PR #39** `fix/claude-release-validation-20261022` head `ad94063c37b56e9ecf8f61b31175b770bcf5e6fc`;
+  code commits `f24af41be9e02f6453c495b7ab2986347eba32ab` (evidence-scoped acknowledgements)
+  and `553fa99732e9d49caa7cf5be6541b2b1f2530435` (fix after the internal review). Reproduce:
+  `uv sync --locked`; `.venv/bin/python -m pytest -q tests/trading/kalshi/test_kalshi_settlements.py`
+  (44 with the excerpt patch, 43 without); the review probe from
+  `…/Vader-Intelligence-reviews/20261022-pr39/review_probes/test_pr39_ack_scope.py` needs
+  `evidence=settlement_evidence(h.gateway, h.ledger)[TICKER]` at its acknowledgement call.
+- **PR #40** `feat/command-center-v1` head `91940e066fed0c7b75c565cc756199530d73427e`
+  (base merge of `f5e92b7` + `ad94063`). Reproduce: `uv sync --locked`;
+  `.venv/bin/python -m pytest -q -p no:cacheprovider tests/command_center tests/pods`;
+  `ruff check src`; `ruff format --check src tests`; wheel smoke as in
+  `docs/handoffs/integration-readiness-20261022.md`. Dev run: the commands above with a
+  config naming a disposable archive and root.
+- **Candidate for cherry-pick** (not merged): `cc/617d4b1e/writer-1` =
+  `06a23f930903…` / `cc/5d84bb25/writer-1` = `94f1c88808a6…` (same patch, bases
+  `a757fc3` / `d4eeacf`): unreadable-record excerpts in `settlement_evidence`.
+- **Decisions for the owner**: container for maintenance checks before any non-scripted
+  writer; authorization record for real agents ($0 incremental) — none exists; N-CC-1
+  placement of `history/`; the earlier open decisions in `claude-release-validation.md`.
