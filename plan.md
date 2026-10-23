@@ -27,6 +27,33 @@ F50 settlement fallback, holdout-use policy and historical feature interpretatio
 remain explicit policy gates. Existing defaults and archived meanings stay intact.
 The scoped implementation and verification contract is in executor.md, Integration I2.
 
+## Dashboard and game-specific agent farms — roadmap addition (2026-10-22)
+
+The owner requested a GUI to see system activity, run agent farms for selected
+games and actively monitor their work. Status: **planned, not implemented**.
+The initial assumption is a local browser dashboard for one operator on this Mac.
+
+- [ ] J1: Read-only overview of collection, games, research runs and worker health.
+- [ ] J2: Per-game workspace with canonical identity, cutoff timeline, evidence,
+  registered workers, forecasts, settlement and evaluation.
+- [ ] J3: Bounded per-game farm controls through the existing task coordinator,
+  with isolated run context, explicit budgets and durable command receipts.
+- [ ] J4: Engineering-improvement queue showing proposed patches, checks,
+  independent review and promotion decisions from a separately implemented coding farm.
+
+The monitoring slice can follow stabilization of its read interfaces; J3 depends
+on a verified game-farm execution adapter, and J4 on the coding-farm pilot.
+No dashboard framework, hosted service, migration or worker deployment is selected
+by this roadmap addition. Detailed interface, data and security design precede
+implementation. Requirements and acceptance gates:
+[dashboard and game farms](docs/roadmap/dashboard-and-game-farms.md).
+
+### Replan log
+
+2026-10-22: owner added GUI visibility and per-game agent farms. Added J1–J4 as
+future phases; current stabilization, production configuration and completed
+historical phase evidence are unchanged.
+
 ## Requirements and design
 - Sports only: MLB `KXMLBGAME`, full single-game team winner contracts, pregame only.
 - One Python 3.11+ process, SQLite on the operator's Mac, public GET requests only.

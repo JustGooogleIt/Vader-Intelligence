@@ -55,7 +55,25 @@ D, E, F and G1 are independent of the evidence work and proceed in parallel.
 | G3 | Pod autopilot (autonomous planning of approved operations) | G2 | Development-only planning context; contract-validated proposals; bounded, resumable loop; evaluator as the only judge | demonstrated (#30, D-013): real 2026 snapshot, both best models rejected |
 | H | Integrated CLI, deterministic E2E, real-data demo, recovery demos, live dry-run | all | Commands reproducible from the handoff; claims precise | active (#28): E2E and recovery demos asserted in the suite; real-data pods, autopilot, candle-vs-book check and real-candle backtests (2026, two seasons) demonstrated; live forward decisions, the dry run on the real decision, and their settlement and evaluation recorded (`docs/evidence/live-forward-20261019.md`) |
 
-## Standing rules for this run
+## Dashboard and game farms — added 2026-10-22
+
+This is a future scope addition requested by the owner. The October 18 baseline
+above remains a historical snapshot; current integration status is recorded in
+[`integration-readiness-20261022.md`](../handoffs/integration-readiness-20261022.md).
+The current Claude stabilization assignment is unchanged.
+
+| ID | Item | Depends on | Completion criteria | State |
+|---|---|---|---|---|
+| J1 | GUI operations overview | Stable read interfaces after I2 review | Bounded views of collection, games, runs and worker health; timestamps, stale/disconnected states and honest empty/failure distinctions | todo |
+| J2 | Game workspace and farm monitoring | J1, canonical mapping | Choose one game and see its contracts, cutoff, evidence, tasks, registered tmux workers, forecasts and settlement; ambiguous games cannot start a farm | todo |
+| J3 | Controlled per-game agent farms | J2, verified execution adapter on G1/G2 | Start a budgeted run; pause dispatch/cancel owned tasks; idempotent commands, global/per-game limits, restart recovery and cross-game isolation demonstrated | todo |
+| J4 | Code-improvement review queue | J1, separate coding-farm pilot | Show task → branch/patch → checks → independent review → promotion; worker claims stay distinct from verified completion | todo |
+
+Plan: [`dashboard-and-game-farms.md`](dashboard-and-game-farms.md). First ship
+visibility, then controls. The GUI does not require proven model edge, and its
+existence does not authorize trading, provider spending or production changes.
+
+## Standing rules for the original roadmap run
 
 - No merges, deployments, production mutation, real orders, paid services or secrets.
   Production archive is read only with short read-only queries (disk has ~6 GiB free;
