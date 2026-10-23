@@ -11,7 +11,8 @@ sent to a venue; no holdout was consumed; no provider or paid call was made.
 
 | Item | Value |
 |---|---|
-| Integration branch head (fetched 2026-10-23 04:4xZ, unchanged since the handoff) | `fix/integration-readiness-20261022` = `1f62fcb9e9a01759c2a278baeb4eac3494f5366a` |
+| Integration branch head at start (fetched 2026-10-23 04:4xZ, as in the handoff) | `fix/integration-readiness-20261022` = `1f62fcb9e9a01759c2a278baeb4eac3494f5366a` (this branch's base) |
+| Integration branch advanced during this session | `72a86ae1bfe2526589310af3caa46a5f30a445c5` (2026-10-23 04:56Z, docs only: `plan.md`, `docs/roadmap/backlog.md`, `docs/roadmap/dashboard-and-game-farms.md`, `History/…`); no file overlaps this branch, no code change; nothing here depends on it |
 | Contains consolidated repair code | `3b0ed7c7de90daf95e801410eaeffeb5e9a6470f` (yes, ancestor) |
 | Contains author candidate (#37 head) | `757c73f986b4481beb2fbddbb596e58450fe2299` (yes, ancestor) |
 | This branch | `fix/claude-release-validation-20261022`, new worktree, private `.venv` (Python 3.11.6, uv 0.12.19, `uv sync --locked` at 04:47:25Z) |
