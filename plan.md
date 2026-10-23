@@ -48,6 +48,11 @@ by this roadmap addition. Detailed interface, data and security design precede
 implementation. Requirements and acceptance gates:
 [dashboard and game farms](docs/roadmap/dashboard-and-game-farms.md).
 
+Prepared continuation assignment:
+[settlement closure and Command Center v1](docs/handoffs/claude-command-center-build-20261022.md).
+It sequences the remaining PR #39 acknowledgement-scope repair before isolated
+J1–J4 development. This document prepares the prompt; it starts no service or agent.
+
 ### Replan log
 
 2026-10-22: owner added GUI visibility and per-game agent farms. Added J1–J4 as
