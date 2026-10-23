@@ -7,7 +7,6 @@ once by the server (`accepted`) and applied by the controller (`applied` / `reje
 the same `command_id` is idempotent (same content → no-op, different content → refused).
 """
 
-import fcntl
 import hashlib
 import json
 import sqlite3
@@ -115,13 +114,16 @@ def new_id():
 
 
 class CenterStore:
-    """Writer-locked when opened for writing; `readonly=True` never writes."""
+    """Writes are serialized by SQLite (`BEGIN IMMEDIATE`, busy timeout): the server
+    records commands and the controller applies them through the same file. Only one
+    controller runs per root, guaranteed by the pods coordinator's lock, not by this
+    store. `readonly=True` never writes."""
 
     def __init__(self, root, *, readonly=False):
         self.root = Path(root)
         self.path = self.root / STORE_NAME
         self.readonly = readonly
-        self._lock = None
+        self._closed = False
         if readonly:
             if not self.path.is_file():
                 raise FileNotFoundError(str(self.path))
@@ -135,32 +137,24 @@ class CenterStore:
             self.db.execute("PRAGMA query_only=ON")
             return
         self.root.mkdir(parents=True, exist_ok=True)
-        self._lock = open(self.root / "command-center.lock", "a", encoding="utf-8")
-        try:
-            fcntl.flock(self._lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            self._lock.close()
-            raise RuntimeError("another writer holds the command center store") from None
         self.db = sqlite3.connect(self.path, timeout=5, isolation_level=None)
         self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA busy_timeout=5000")
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.executescript(DDL)
         row = self.db.execute("SELECT value FROM cc_meta WHERE key='schema'").fetchone()
         if row is None:
-            self.db.execute("INSERT INTO cc_meta VALUES ('schema', ?)", (SCHEMA,))
+            self.db.execute("INSERT OR IGNORE INTO cc_meta VALUES ('schema', ?)", (SCHEMA,))
         elif row[0] != SCHEMA:
             raise RuntimeError(f"command center store schema {row[0]} is not {SCHEMA}")
 
     def close(self):
-        if getattr(self, "_closed", False):
+        if self._closed:
             return
         self._closed = True
         self.db.close()
-        if self._lock is not None:
-            fcntl.flock(self._lock.fileno(), fcntl.LOCK_UN)
-            self._lock.close()
 
     def __enter__(self):
         return self

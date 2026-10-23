@@ -12,7 +12,7 @@ section.panel { background: var(--panel); border: 1px solid var(--line); border-
 h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
 h3 { font-size: 14px; margin: 12px 0 6px; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; word-break: break-word; }
 th { color: var(--muted); font-weight: 600; }
 .state { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 11px; border: 1px solid var(--line); }
 .state.ok { color: var(--ok); } .state.empty { color: var(--muted); } .state.stale, .state.not_configured { color: var(--warn); } .state.unavailable, .state.disconnected { color: var(--bad); }

@@ -22,6 +22,7 @@ class CenterConfig:
     ops_config: Path | None = None  # ops/manage.py configuration JSON (read-only)
     registry: Path | None = None  # research registry (read-only; shown, never passed to workers)
     observer_python: Path | None = None  # interpreter with the pinned tmux-jev, for pane capture
+    repo: Path | None = None  # git checkout maintenance runs branch from (default: this package's)
     forbidden_paths: tuple = ()
     host: str = "127.0.0.1"
     port: int = DEFAULT_PORT
@@ -32,7 +33,7 @@ class CenterConfig:
 
     def __post_init__(self):
         object.__setattr__(self, "root", Path(self.root).resolve())
-        for name in ("archive", "ops_config", "registry", "observer_python"):
+        for name in ("archive", "ops_config", "registry", "observer_python", "repo"):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, Path(value).resolve())
@@ -76,6 +77,7 @@ class CenterConfig:
             ops_config=absolute(data.get("ops_config")),
             registry=absolute(data.get("registry")),
             observer_python=absolute(data.get("observer_python")),
+            repo=absolute(data.get("repo")),
             forbidden_paths=tuple(absolute(p) for p in data.get("forbidden_paths", ())),
             host=data.get("host", "127.0.0.1"),
             port=int(data.get("port", DEFAULT_PORT)),

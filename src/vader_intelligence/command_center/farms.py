@@ -206,6 +206,22 @@ class FarmService:
         self.center.set_run(run_id, state="running", now=now)
         return run_id
 
+    def pause(self, run, now=None):
+        self.center.set_run(
+            run["run_id"],
+            paused=True,
+            state="paused" if run["state"] == "running" else None,
+            now=now,
+        )
+
+    def resume(self, run, now=None):
+        self.center.set_run(
+            run["run_id"],
+            paused=False,
+            state="running" if run["state"] == "paused" else None,
+            now=now,
+        )
+
     def cancel(self, run, now=None):
         for binding in run["tasks"]:
             task = self.pods.task(binding["task_id"])

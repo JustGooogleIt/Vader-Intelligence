@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..pods.coordinator import Coordinator, CoordinatorConfig
 from ..pods.store import open_store
+from .coding import CodingService
 from .config import CenterConfig
 from .farms import FarmService
 from .store import CenterStore
@@ -37,7 +38,14 @@ class Controller:
         self.pods = open_store(self.root)
         self.center = CenterStore(self.root)
         self.coordinator = Coordinator(self.pods, coordinator_config or CoordinatorConfig())
-        self.farms = FarmService(cfg, self.center, self.pods, self.coordinator)
+        self.coding = CodingService(cfg, self.center)
+        self.farms = FarmService(
+            cfg,
+            self.center,
+            self.pods,
+            self.coordinator,
+            agent_processes=self.coding.live_processes,
+        )
         self.now = now
         self.tmux = None
         self.tmux_error = None
@@ -65,17 +73,48 @@ class Controller:
         now = self._now()
         report = self.coordinator.step(now)
         finalized = self.farms.reconcile(now)
-        commands = self.farms.apply_commands(now)
+        commands = self.apply_commands(now)
         submitted = self.farms.dispatch(now)
+        maintenance = self.coding.step(now)
         panes = self._register_panes(now)
         self.steps += 1
         return {
             "coordinator": {k: report[k] for k in ("finalized", "spawned", "signaled", "active")},
-            "runs": finalized,
+            "runs": finalized + maintenance,
             "commands": commands,
             "submitted": submitted,
             "panes": panes,
         }
+
+    def apply_commands(self, now=None):
+        """Durable commands → the owning service (game farms or maintenance), with receipts."""
+        applied = []
+        for command in self.center.pending_commands():
+            payload = json.loads(command["payload_json"])
+            try:
+                if command["kind"] == "start":
+                    service = self.coding if payload.get("kind") == "maintenance" else self.farms
+                    run_id = service.start(payload, now)
+                    self.center.settle_command(
+                        command["command_id"], "applied", None, now, {"run_id": run_id}
+                    )
+                    applied.append((command["command_id"], "applied", run_id))
+                    continue
+                run = self.center.run(command["run_id"] or "")
+                if run is None:
+                    raise ValueError("unknown run")
+                if run["state"] in ("canceled", "completed", "failed"):
+                    raise ValueError(f"run is {run['state']}")
+                service = self.coding if run["kind"] == "maintenance" else self.farms
+                getattr(service, command["kind"])(run, now)
+                self.center.settle_command(
+                    command["command_id"], "applied", None, now, {"run_id": run["run_id"]}
+                )
+                applied.append((command["command_id"], "applied", run["run_id"]))
+            except ValueError as exc:
+                self.center.settle_command(command["command_id"], "rejected", str(exc)[:300], now)
+                applied.append((command["command_id"], "rejected", str(exc)[:80]))
+        return applied
 
     def run(self, *, max_steps, deadline_seconds, stop_when_idle=True, poll_seconds=0.25):
         end = time.monotonic() + deadline_seconds
@@ -90,6 +129,7 @@ class Controller:
                 and not report["coordinator"]["active"]
                 and not report["submitted"]
                 and self.farms.idle()
+                and self.coding.idle()
                 and self.pods.waiting_retries() == 0
             ):
                 stopped = "idle"
@@ -103,6 +143,8 @@ class Controller:
         if getattr(self, "_closed", False):
             return {"killed": [], "unreaped": []}
         self._closed = True
+        for run_id in list(self.coding.processes):
+            self.coding._kill(run_id)
         result = self.coordinator.shutdown(self._now())
         if self.tmux is not None:
             self.tmux.kill()
