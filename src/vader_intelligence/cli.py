@@ -1098,11 +1098,19 @@ def _ledger(args):
             if args.deposit is not None:
                 if args.environment != "paper":
                     raise ValueError("deposits exist only in paper ledgers")
-                # One initial deposit per ledger: re-running init never adds cash again.
-                if not any(e.event_id == "init-deposit" for e in ledger.cash_events()):
-                    ledger.append_cash_event(
-                        CashEvent("init-deposit", "deposit", args.deposit, now, "init")
-                    )
+                desired = CashEvent("init-deposit", "deposit", args.deposit, now, "init")
+                initial = [
+                    e
+                    for e in ledger.cash_events()
+                    if e.kind == "deposit" and (e.event_id == "init-deposit" or e.note == "init")
+                ]
+                if initial:
+                    if len(initial) != 1 or initial[0].amount != desired.amount:
+                        raise ValueError(
+                            "initial deposit conflicts with the recorded initialization"
+                        )
+                else:
+                    ledger.append_cash_event(desired)
         if args.ledger_command == "kill-switch":
             ledger.set_kill_switch(bool(args.engage), args.reason, args.actor, now)
         if args.ledger_command == "limits":

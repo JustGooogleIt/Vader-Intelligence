@@ -143,11 +143,12 @@ def check_shadow_forecasters(shadow):
 
     When the protocol registers forecasters (D-004), the shadow needs a model registry
     from which every listed artifact opens read-only, exactly as the tick reads them.
-    Without one, every tick fails before deciding and the shadow records no forward
-    decisions at all, baselines included, while collection continues. Lifecycle loads
-    never run this check, so a configuration whose registry was later removed can still
-    be stopped and uninstalled.
+    Configure refuses a missing or unusable registry. If it disappears after setup,
+    the tick records model unavailability and still computes baselines. Lifecycle
+    loads never run this check, so that configuration can still be stopped and
+    uninstalled.
     """
+    from vader_intelligence.forecast.forecasters import runner_from_registry
     from vader_intelligence.forecast.research import Protocol
     from vader_intelligence.research.registry import Registry
 
@@ -175,6 +176,15 @@ def check_shadow_forecasters(shadow):
                 ) from exc
     finally:
         registry.close()
+
+    # A digest-valid JSON file is not necessarily a forward-capable forecaster.
+    # Exercise the exact constructor used by the tick before writing configuration.
+    runner = runner_from_registry(root, protocol)
+    for sha, model in runner.models.items():
+        if model["error"]:
+            raise ValueError(
+                f"shadow model_registry cannot load forecaster {sha}: {model['error']}"
+            )
 
 
 def _targets(path, banned):

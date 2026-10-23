@@ -113,12 +113,16 @@ ledger), and the explicit statement that activation is a separate user decision.
   - comment markers and array punctuation, which count as layout (a body pasted as
     commented-out lines passed every other gate);
   - the opening bytes of PKCS#1, PKCS#8 RSA, Ed25519 and PBES2 structures, so a
-    truncated or damaged body is refused;
+    fragment retaining those bytes is refused;
   - OpenSSH keys.
 
   RSA validation is skipped when loading, since only the shape matters and validation
-  of a crafted structure took up to a minute. A SHA-256 digest, a path or a public key
-  is not refused. (A later repair: the #24/#25 pre-review
+  of a crafted structure took up to a minute. The integration repair also refuses
+  header-less PEM-shaped bodies with two consecutive base64 lines of 60–76
+  characters. A complete parseable public-key body is exempt from that shape check.
+  A SHA-256 digest and a path are not refused; PEM public keys still trigger the
+  blanket `-----BEGIN` marker rule. Arbitrary short fragments, JWK/text dumps and
+  custom encodings are not guaranteed to be detected. (A later repair: the #24/#25 pre-review
   listed this as documented, not changed.)
 
 ## Revision: venue settlements (2026-10-19)

@@ -381,13 +381,14 @@ def test_bypassing_caller_cannot_retain_books_after_incomplete_discovery(
     )
 
 
+@pytest.mark.parametrize("failure", [sqlite3.OperationalError, RuntimeError])
 def test_summary_insert_failure_fails_the_run_without_books(
-    research, config, fixture_data, monkeypatch
+    research, config, fixture_data, monkeypatch, failure
 ):
     handler, calls, _ = handler_for(fixture_data)
 
     def broken_append(table, payload):
-        raise sqlite3.OperationalError("database or disk is full")
+        raise failure("database or disk is full")
 
     monkeypatch.setattr(research, "append_forecast", broken_append)
     result = Collector(research, reader_for(research, config, handler), config).run()

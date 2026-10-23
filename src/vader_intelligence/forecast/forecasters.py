@@ -15,6 +15,7 @@ how a model family is evaluated.
 import hashlib
 import json
 import numbers
+import sqlite3
 from datetime import datetime, timedelta
 
 from ..features import definitions, quotes
@@ -98,8 +99,10 @@ class ForecasterRunner:
             if hashlib.sha256(data).hexdigest() != sha:
                 raise ValueError(f"artifact {sha} failed verification")
             artifact = json.loads(data)
+            if not isinstance(artifact, dict) or not isinstance(artifact.get("training"), dict):
+                raise ValueError(f"artifact {sha[:12]} needs structured training metadata")
             feature_set = artifact.get("training", {}).get("feature_set")
-            if feature_set not in definitions.FEATURE_SETS:
+            if not isinstance(feature_set, str) or feature_set not in definitions.FEATURE_SETS:
                 raise ValueError(f"artifact {sha[:12]} names no known feature set")
             if not definitions.describe_set(feature_set)["forward_capable"]:
                 raise ValueError(
@@ -274,7 +277,14 @@ def runner_from_registry(registry_root, protocol):
         return None
     from ..research.registry import Registry
 
-    registry = Registry(registry_root, readonly=True)
+    try:
+        registry = Registry(registry_root, readonly=True)
+    except (OSError, sqlite3.Error):
+        # The configured registry can disappear after setup. Preserve the model's
+        # identity as unavailable so the same tick can still publish its baselines.
+        return ForecasterRunner(
+            {sha: None for sha in protocol.forecasters}, predict_artifact, verify=verify_artifact
+        )
     try:
         artifacts = {}
         for sha in protocol.forecasters:

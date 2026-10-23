@@ -719,9 +719,27 @@ class ShadowConfigurationTests(ShadowFixture):
         tick fails before deciding, baselines included). Lifecycle loads stay lenient."""
         import shutil
 
+        from vader_intelligence.features.definitions import feature_set
+        from vader_intelligence.models.artifact import ModelArtifact
+        from vader_intelligence.models.calibration import identity
+        from vader_intelligence.models.preprocess import FeatureSpec, Preprocessor
         from vader_intelligence.research.registry import Registry
 
-        artifact = b'{"synthetic": "model artifact"}'
+        specs = tuple(
+            FeatureSpec(d.name, missing="forbid", scale=False) for d in feature_set("fs-market-v1")
+        )
+        none = (None,) * len(specs)
+        artifact = (
+            ModelArtifact(
+                "logistic",
+                Preprocessor(specs, none, none, none, (False,) * len(specs)),
+                {"coef": ["0"] * len(specs), "intercept": "0", "parity_max_abs_error": "0"},
+                identity(),
+                {"feature_set": "fs-market-v1"},
+            )
+            .to_json()
+            .encode()
+        )
         sha = hashlib.sha256(artifact).hexdigest()
         self.research.write_text(f'[research]\ndataset = "shadow-test"\nforecasters = ["{sha}"]\n')
         empty = self.root / "empty registry"

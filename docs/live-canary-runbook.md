@@ -29,8 +29,12 @@ Specification: `docs/specs/live-adapter-v1.md`. API facts and their verification
    - in the macOS Keychain as a generic password (`security add-generic-password -s
      <service> -a <account> -w` and paste the PEM when prompted).
    The activation file holds only the key id (a UUID) and the provider reference.
-   The `no_key_material` gate refuses a key pasted in any common form, including
-   comments, TOML arrays and truncated bodies. It also refuses any text containing
+   The `no_key_material` gate detects PEM markers, parseable base64/hex key
+   structures, header-preserving fragments, and PEM-shaped wrapped fragments
+   (two consecutive base64 lines of 60–76 characters), including comments and
+   TOML arrays. This is a conservative paste guard, not proof that a file contains
+   no secrets: arbitrary short fragments, JWK/text dumps and custom encodings are
+   outside its guarantee. Never paste secret material into this file. It also refuses any text containing
    `-----BEGIN` or `PRIVATE KEY` (upper case), even in a comment or a Keychain service
    name. Reword such text; do not weaken the gate.
 5. The account is dedicated to this system (primary subaccount, no manual trading, no

@@ -70,6 +70,7 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 
 from ..money import dec, utc
@@ -203,8 +204,39 @@ def _hex_decodings(run):
         yield bytes.fromhex(part[: len(part) // 2 * 2].decode())
 
 
+def _wrapped_secret_body(data):
+    """Refuse PEM-shaped fragments even when their identifying first line is lost.
+
+    Two consecutive 60–76-character base64 lines are conservative evidence of a
+    pasted body. A complete, parseable public-key body is allowed. This heuristic
+    deliberately does not claim detection of arbitrary short or re-encoded secrets.
+    """
+    groups, current = [], []
+    for raw in data.splitlines():
+        line = raw.strip().lstrip(b"#> \t").strip(b" \t\"',[]")
+        if re.fullmatch(rb"[A-Za-z0-9+/_-]{4,76}={0,2}", line):
+            current.append(line)
+        elif current:
+            groups.append(current)
+            current = []
+    if current:
+        groups.append(current)
+    for group in groups:
+        if not any(len(a) >= 60 and len(b) >= 60 for a, b in zip(group, group[1:])):
+            continue
+        encoded = b"".join(group)
+        try:
+            public = base64.b64decode(
+                encoded + b"=" * (-len(encoded) % 4), altchars=b"-_", validate=True
+            )
+            serialization.load_der_public_key(public)
+        except (ValueError, TypeError, binascii.Error, UnsupportedAlgorithm):
+            return True
+    return False
+
+
 def contains_key_material(data):
-    """True when `data` holds a private key in any form an operator might paste: PEM text,
+    """True when `data` matches the supported pasted-key patterns: PEM text,
     or a base64 or hex run (also across line breaks, quotes, comment markers and arrays)
     that decodes to PEM text, an OpenSSH key, the opening bytes of a key structure (so a
     truncated body counts) or a DER private key. A run may absorb neighbouring characters
@@ -213,6 +245,8 @@ def contains_key_material(data):
     Any text containing `-----BEGIN` or `PRIVATE KEY` is refused too, comments
     included."""
     if any(marker in data for marker in _KEY_MATERIAL):
+        return True
+    if _wrapped_secret_body(data):
         return True
     stripped = _LAYOUT.sub(b"", data)
     for text in (data, stripped) if stripped != data else (data,):

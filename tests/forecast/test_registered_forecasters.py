@@ -176,6 +176,25 @@ def test_research_only_feature_sets_cannot_run_forward():
         ForecasterRunner({"0" * 64: data}, predict_mid)
 
 
+@pytest.mark.parametrize(
+    "document",
+    [
+        [1, 2],
+        "artifact",
+        None,
+        {"training": ["fs-market-v1"]},
+        {"training": "fs-market-v1", "feature_names": NAMES},
+        {"training": {"feature_set": ["fs-market-v1"]}, "feature_names": NAMES},
+    ],
+)
+def test_a_malformed_artifact_document_is_a_configuration_error(document):
+    """Port N-33b regression from Claude's local 0572248; preserve clean CLI errors."""
+    data = json.dumps(document).encode()
+    sha = hashlib.sha256(data).hexdigest()
+    with pytest.raises(ValueError, match=sha[:12]):
+        ForecasterRunner({sha: data}, predict_mid)
+
+
 def test_forecasters_need_schema_six_and_their_artifacts(store, config):
     from _f34 import to_schema4
 
@@ -312,6 +331,30 @@ def test_an_unloadable_or_missing_artifact_abstains_and_the_tick_still_decides(s
         result = payload["results"][entry["id"]]
         assert result["probability"] is None
         assert result["reasons"][0].startswith("model_unavailable:")
+
+
+@pytest.mark.parametrize("state", ["missing", "uninitialized"])
+def test_unavailable_registry_does_not_suppress_baselines(store, config, tmp_path, state):
+    from vader_intelligence.forecast.forecasters import runner_from_registry
+
+    to_schema6(store)
+    root = tmp_path / "unavailable-registry"
+    if state == "uninitialized":
+        root.mkdir()
+    proto = Protocol(dataset="registry-unavailable", forecasters=["f" * 64])
+    runner = runner_from_registry(root, proto)
+    collect(store, config, origin=at(18, 3))
+    tick_at_runner(store, proto, at(18, 3, 30), runner)
+    due = tick_at_runner(store, proto, at(18, 5, 30), runner)
+    assert due["decisions_eligible"] == 1 and not due["errors"]
+    payload = json.loads(
+        store.db.execute("SELECT payload_json FROM forecast_decisions").fetchone()[0]
+    )
+    assert payload["results"]["constant-v1"]["probability"] == "0.5"
+    result = payload["results"][payload["forecasters"][0]["id"]]
+    assert result["probability"] is None
+    assert result["reasons"][0].startswith("model_unavailable:")
+    assert not (root / "research.sqlite3").exists()
 
 
 def fixed_output_artifact(output):
