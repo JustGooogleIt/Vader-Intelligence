@@ -10,6 +10,23 @@ Mac validation and a draft PR only. No production deployment or forecasting.
 - [x] Verify combined offline, installed-wheel, native Mac and separate live paths.
 - [x] Document deployment/rollback boundaries and publish draft PR #4 against main.
 
+## Integration I2 — release readiness (2026-10-22)
+
+The user authorized taking over integration and preparing Claude's next assignment.
+Starting candidate: PR #37 `757c73f986b4481beb2fbddbb596e58450fe2299`;
+main: `ebb58df9b89922db4828fda7d23891dd917a4b90`. The 30 draft PRs are one
+dependency stack. No production update, live activation, archive migration or
+holdout consumption is part of this integration pass.
+
+- [x] Reproduce and repair mechanical findings F39, F47, F48, F49 and F51.
+- [x] Verify the native combined candidate, focused regressions and installed wheel.
+- [x] Publish a reviewable integration checkpoint with the unresolved semantic gates (draft #38).
+- [x] Provide Claude a bounded assignment that preserves integration ownership.
+
+F50 settlement fallback, holdout-use policy and historical feature interpretation
+remain explicit policy gates. Existing defaults and archived meanings stay intact.
+The scoped implementation and verification contract is in executor.md, Integration I2.
+
 ## Requirements and design
 - Sports only: MLB `KXMLBGAME`, full single-game team winner contracts, pregame only.
 - One Python 3.11+ process, SQLite on the operator's Mac, public GET requests only.
