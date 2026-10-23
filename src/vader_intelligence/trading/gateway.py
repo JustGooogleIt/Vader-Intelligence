@@ -155,11 +155,29 @@ class UnreadableSettlement:
     error: str
     records: tuple = ()
     fingerprints: tuple = ()
+    # Bounded excerpts of unparseable records, keyed by raw fingerprint, so an operator
+    # can tell two unreadable records of one token apart before acknowledging them.
+    excerpts: tuple = ()
 
     def __post_init__(self):
         if not self.fingerprints and self.records:
             derived = tuple(settlement_fingerprint(r) for r in self.records)
             object.__setattr__(self, "fingerprints", derived)
+
+
+RAW_EXCERPT_FIELDS = ("ticker", "market_result", "settled_time", "value", "revenue", "fee_cost")
+
+
+def raw_settlement_excerpt(data):
+    """The listed values of a few identifying fields of an unparseable record, each as
+    bounded text (never the whole payload)."""
+    if not isinstance(data, dict):
+        return {"type": type(data).__name__}
+    out = {}
+    for name in RAW_EXCERPT_FIELDS:
+        if name in data:
+            out[name] = str(data[name])[:64]
+    return out
 
 
 class ExchangeGateway(Protocol):

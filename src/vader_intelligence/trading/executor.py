@@ -115,7 +115,11 @@ def settlement_evidence(gateway, ledger):
     out = {}
     for item in venue:
         if isinstance(item, UnreadableSettlement):
-            summaries = {fp: {"error": item.error} for fp in item.fingerprints}
+            excerpts = dict(item.excerpts)
+            summaries = {
+                fp: {"error": item.error, "as_listed": excerpts.get(fp, {})}
+                for fp in item.fingerprints
+            }
             for record in item.records:
                 summaries[settlement_fingerprint(record)] = _settlement_summary(record)
             out[item.token] = summaries
