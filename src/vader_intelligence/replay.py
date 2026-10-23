@@ -1,6 +1,5 @@
 import hashlib
 import json
-from dataclasses import asdict
 from pathlib import Path
 
 from .normalize import normalizer
@@ -50,7 +49,7 @@ def replay(store):
         "errors": errors,
         "status": "partial" if errors else "complete",
     }
-    if store.db.execute("PRAGMA user_version").fetchone()[0] == 3:
+    if store.db.execute("PRAGMA user_version").fetchone()[0] >= 3:
         from .forecast.journal import integrity
 
         # Preserve existing research ledger exactly; raw replay cannot recreate
@@ -75,7 +74,7 @@ def import_fixture(store, path, config):
         raise ValueError("fixture cannot modify a live run")
     if row is None:
         store.start_run(
-            RunProvenanceV1(run_id, "fixture", source_hash(), asdict(config)),
+            RunProvenanceV1(run_id, "fixture", source_hash(), config.provenance()),
             manifest["started_at"],
         )
     for index, entry in enumerate(manifest["responses"]):

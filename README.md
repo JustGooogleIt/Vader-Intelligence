@@ -132,7 +132,9 @@ Fixture books never count as fresh live data in health reports.
 ## Scope and limitations
 
 Matching uses reviewed team aliases, exact rule date/time, official game identity
-and game number. It excludes unknown aliases, ambiguity, changed start times,
+and game number. Date-only postseason rule wording is rejected by default; the opt-in
+`eligibility_rules = ["rule-v1", "rule-v2"]` accepts it only when the event ticker's
+time corroborates the official start (decision D-002 in `docs/roadmap/decisions.md`). It excludes unknown aliases, ambiguity, changed start times,
 postponements and TBD starts. Books stop two minutes before official first pitch;
 Kalshi close/expiration times do not establish the start. This strict policy can
 exclude valid contracts until mappings are reviewed. Rule wording/schema changes

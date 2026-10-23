@@ -1,14 +1,21 @@
 import fcntl
 import hashlib
+import json
 import shutil
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from importlib.resources import files
 from pathlib import Path
 
 from .provenance import json_text
+
+TWO_PHASE_PROTOCOL = "two-phase-v1"
+
+
+class DiscoveryGateError(ValueError):
+    """A book request was refused because this invocation has no complete committed summary."""
 
 
 def utc_now():
@@ -17,6 +24,33 @@ def utc_now():
 
 def timestamp(value=None):
     return (value or utc_now()).isoformat()
+
+
+# Retrieval times are stored as ISO text carrying the writer's UTC offset (normally
+# +00:00). Text order equals instant order only at one offset, so a time-window query
+# over retrieved_at prefilters in SQL with a bound widened past any offset Python can
+# represent (below 24 h) and then compares parsed instants exactly.
+RETRIEVAL_TEXT_MARGIN = timedelta(hours=25)
+
+
+def retrieval_text_bound(moment, side):
+    """ISO text that, in SQL text order, bounds every stored retrieved_at whose instant is
+    at or before (`side="upper"`) or at or after (`side="lower"`) `moment`, whatever its
+    UTC offset. A prefilter only: callers keep rows by `retrieval_instant`."""
+    if side not in ("upper", "lower"):
+        raise ValueError("side must be upper or lower")
+    shift = RETRIEVAL_TEXT_MARGIN if side == "upper" else -RETRIEVAL_TEXT_MARGIN
+    return (moment.astimezone(timezone.utc) + shift).isoformat()
+
+
+def retrieval_instant(value):
+    """A stored retrieved_at as an aware datetime, or None when it is not ISO text with
+    a UTC offset (such a retrieval cannot be placed before or after any cutoff)."""
+    try:
+        moment = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    return moment if moment.utcoffset() is not None else None
 
 
 @contextmanager
@@ -45,14 +79,15 @@ class Store:
             )
             self.db.row_factory = sqlite3.Row
             self.db.execute("PRAGMA query_only=ON")
-            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3):
+            if self.db.execute("PRAGMA user_version").fetchone()[0] not in (1, 2, 3, 4, 5, 6):
                 self.db.close()
                 raise RuntimeError("unsupported database schema")
-            if self.db.execute("PRAGMA user_version").fetchone()[0] == 3:
-                from .forecast.schema import check_schema
+            if self.db.execute("PRAGMA user_version").fetchone()[0] >= 3:
+                from .forecast.schema import check_contracts, check_schema
 
                 try:
                     check_schema(self.db)
+                    check_contracts(self.db)
                 except BaseException:
                     self.db.close()
                     raise
@@ -78,18 +113,38 @@ class Store:
     def close(self):
         self.db.close()
 
+    def schema_version(self):
+        return self.db.execute("PRAGMA user_version").fetchone()[0]
+
+    def append_forecast(self, table, payload):
+        """Persist one supplied research envelope through the forecast journal.
+
+        Applies the collector's free-space guard, then the journal's own contract,
+        link and reference validation inside one BEGIN IMMEDIATE transaction. Returns
+        the row id and its content digest. No network call may happen inside.
+        """
+        from .forecast.journal import append
+
+        self.check_space()
+        row_id = append(self.db, table, payload)
+        digest = self.db.execute(f"SELECT digest FROM {table} WHERE id=?", (row_id,)).fetchone()[0]
+        return row_id, digest
+
     def check_space(self):
         if shutil.disk_usage(self.path.parent).free < self.min_free_bytes:
             raise RuntimeError("insufficient disk space; collection stopped without deleting data")
 
     def _validated_schema_version(self):
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3):
+        if version not in (0, 1, 2, 3, 4, 5, 6):
             raise RuntimeError(f"unsupported database schema version {version}")
-        if version == 3:
-            from .forecast.schema import check_schema
+        if version >= 3:
+            from .forecast.schema import check_contracts, check_schema
 
+            # Layout and stored record contracts are both validated on this connection
+            # before WAL changes the archive header; an invalid archive is untouched.
             check_schema(self.db)
+            check_contracts(self.db)
         return version
 
     def migrate(self):
@@ -118,6 +173,10 @@ class Store:
             raise
 
     def start_run(self, provenance, started_at=None):
+        if provenance.kind == "forecast-witness":
+            # Receipts are operational proof only under this run kind (D-001), so the
+            # generic run API never creates it; forecast.witness writes its own run.
+            raise ValueError("forecast-witness runs are created only by the forecast witness")
         with self.transaction():
             self.db.execute(
                 "INSERT INTO runs(id,kind,started_at,status,provenance_json) VALUES (?,?,?,?,?)",
@@ -148,9 +207,44 @@ class Store:
                 "UPDATE runs SET status='running',finished_at=NULL WHERE id=?", (run_id,)
             )
 
+    def _require_complete_discovery(self, run_id, key):
+        """Persistence-boundary gate for books under the two-phase protocol.
+
+        A run whose provenance declares two-phase collection may create a book
+        request only when the latest committed discovery summary belongs to this
+        invocation (the session prefix of the request key) and is complete. Legacy,
+        fixture and research runs declare no protocol and are unaffected. The check
+        runs inside the request transaction, so no network request is ever made for
+        a book that the archive would not be allowed to retain.
+        """
+        row = self.db.execute("SELECT provenance_json FROM runs WHERE id=?", (run_id,)).fetchone()
+        if row is None:
+            raise DiscoveryGateError("book request for unknown run")
+        protocol = json.loads(row[0]).get("tool_configuration", {}).get("collection_protocol")
+        if protocol is None:
+            return
+        if protocol != TWO_PHASE_PROTOCOL:
+            raise DiscoveryGateError(f"unknown collection protocol {protocol!r}")
+        session = key.split(":", 1)[0]
+        latest = self.db.execute(
+            "SELECT session_id, json_extract(payload_json,'$.complete') FROM discovery_passes "
+            "WHERE run_id=? ORDER BY id DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if latest is None:
+            raise DiscoveryGateError("book request refused: no committed discovery summary")
+        if latest[0] != session:
+            raise DiscoveryGateError(
+                "book request refused: latest discovery summary belongs to another invocation"
+            )
+        if latest[1] != 1:
+            raise DiscoveryGateError("book request refused: discovery summary is incomplete")
+
     def request(self, run_id, stage, key, url, params):
         identifier = str(uuid.uuid4())
         with self.transaction():
+            if stage == "book":
+                self._require_complete_discovery(run_id, key)
             self.db.execute(
                 "INSERT INTO requests(id,run_id,stage,request_key,url,params_json) "
                 "VALUES (?,?,?,?,?,?) ON CONFLICT(run_id,stage,request_key) DO NOTHING",
@@ -255,7 +349,7 @@ class Store:
             failures.append("SQLite quick_check failed")
         if self.db.execute("PRAGMA foreign_key_check").fetchone():
             failures.append("foreign key check failed")
-        if self.db.execute("PRAGMA user_version").fetchone()[0] == 3:
+        if self.db.execute("PRAGMA user_version").fetchone()[0] >= 3:
             from .forecast.journal import integrity
 
             try:
@@ -300,7 +394,29 @@ class Store:
         ).fetchone()
         age = (utc_now() - datetime.fromisoformat(book[0])).total_seconds() if book else None
         free = shutil.disk_usage(self.path.parent).free
+        discovery = None
+        if self.schema_version() >= 3:
+            # Immutable discovery fact for operators: complete-and-empty is reported
+            # as complete with zero counts; incomplete carries its reasons.
+            latest = self.db.execute(
+                "SELECT id, run_id, session_id, payload_json FROM discovery_passes "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if latest:
+                payload = json.loads(latest["payload_json"])
+                discovery = {
+                    "id": latest["id"],
+                    "run_id": latest["run_id"],
+                    "session_id": latest["session_id"],
+                    "complete": payload["complete"],
+                    "reasons": payload["reasons"],
+                    "counts": payload["counts"],
+                    "completed_at": payload["completed_at"],
+                    "phase_reached": payload["manifest"].get("phase_reached"),
+                    "mode": payload["mode"],
+                }
         return {
+            "latest_discovery": discovery,
             "latest_run": dict(row) if row else None,
             "last_book_at": book[0] if book else None,
             "book_age_seconds": age,

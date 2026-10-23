@@ -19,6 +19,54 @@ FIELDS = {
 }
 FIELDS = {k: COMMON | set(v.split()) for k, v in FIELDS.items()}
 MODES = {"synthetic", "forward_shadow", "historical_reconstruction"}
+# Record contracts (F3.3 plan §9.6, decision D-001). Contract 1 is the payload shape
+# without a contract_version field: the rules at main ebb58df, frozen. Contracts 2 and 3
+# exist for receipts and decisions only and are declared by the integers 2 and 3; they
+# share one payload shape. Contract 2 is frozen as written by the draft code between
+# PR #10 and PR #16 (two writer rule sets, see journal.validate_links `rules`); contract
+# 3 carries the amended rules (operational-witness provenance, persisted lineage) at the
+# storage level and is the only contract open for new receipts/decisions (schema 5).
+# Every other value, including an explicit 1 or a 2/3 on another table, is rejected.
+CONTRACT_TABLES = frozenset({"forecast_receipts", "forecast_decisions"})
+CONTRACT_2_TABLES = CONTRACT_TABLES  # historical name, kept for callers
+VERSIONED_CONTRACTS = (2, 3)
+CURRENT_CONTRACT = 3
+# Explicit contract versions per table (D-001, D-004). Decision contract 4 adds registered
+# forecasters; evaluation contract 2 (runs and items) scores them. Every value not listed
+# for a table, including an explicit 1, is rejected.
+VERSIONS = {
+    "forecast_receipts": (2, 3),
+    "forecast_decisions": (2, 3, 4),
+    "evaluation_runs": (2,),
+    "evaluation_items": (2,),
+}
+BASELINES = ("constant-v1", "midpoint-v1")
+FORECASTER_FIELDS = {"id", "artifact_sha256", "family", "feature_set"}
+
+
+def forecaster_ids(forecasters):
+    return [f["id"] for f in forecasters]
+
+
+def check_forecasters(value):
+    """Registered forecasters: at most 10, each `model:<sha256[:16]>`, sorted, distinct."""
+    if not isinstance(value, list) or len(value) > 10:
+        raise ValueError("forecasters must be a list of at most 10")
+    for entry in value:
+        if not isinstance(entry, dict) or set(entry) != FORECASTER_FIELDS:
+            raise ValueError("forecaster entry fields")
+        sha(entry["artifact_sha256"])
+        if entry["id"] != "model:" + entry["artifact_sha256"][:16]:
+            raise ValueError("forecaster id must be model:<sha256[:16]>")
+        identifier(entry["family"])
+        identifier(entry["feature_set"])
+    ids = forecaster_ids(value)
+    if ids != sorted(set(ids)):
+        raise ValueError("forecasters must be sorted and distinct")
+    return ids
+
+
+PIN_FIELDS = {"id", "digest", "collector_config_hash"}
 
 
 def identifier(value):
@@ -54,9 +102,32 @@ def reasons(value):
         identifier(reason)
 
 
+def version(table, p):
+    """Return the record contract a payload declares, or reject an unknown one."""
+    if not isinstance(p, dict) or "contract_version" not in p:
+        return 1
+    value = p["contract_version"]
+    if type(value) is int and value in VERSIONS.get(table, ()):
+        return value
+    raise ValueError(f"unknown record contract version {value!r} for {table}")
+
+
+def has_forecasters(table, contract):
+    return (table, contract) in (("forecast_decisions", 4), ("evaluation_runs", 2))
+
+
 def validate(table, p):
-    if table not in FIELDS or not isinstance(p, dict) or set(p) != FIELDS[table]:
+    if table not in FIELDS or not isinstance(p, dict):
         raise ValueError("incomplete or unknown storage fields")
+    contract = version(table, p)
+    expected = FIELDS[table] | ({"contract_version"} if "contract_version" in p else set())
+    if has_forecasters(table, contract):
+        expected = expected | {"forecasters"}
+    if set(p) != expected:
+        raise ValueError("incomplete or unknown storage fields")
+    names = list(BASELINES)
+    if has_forecasters(table, contract):
+        names += check_forecasters(p["forecasters"])
     if type(p["schema_version"]) is not int or p["schema_version"] != 1 or p["mode"] not in MODES:
         raise ValueError("unsupported record schema/mode")
     encoded = json_text(p)
@@ -165,6 +236,8 @@ def validate(table, p):
             raise ValueError("invalid monotonic offset")
         if date(p["observed_at"]) > date(p["created_at"]):
             raise ValueError("observation after receipt insertion")
+        if contract >= 2 and p["mode"] == "historical_reconstruction":
+            raise ValueError("a receipt cannot be a reconstruction (M4)")
     elif table == "forecast_decisions":
         if type(p["cutoff_eligible"]) is not bool or bool(p["reasons"]) == p["cutoff_eligible"]:
             raise ValueError("inconsistent cutoff reasons")
@@ -172,13 +245,12 @@ def validate(table, p):
             identifier(p["unresolved_key"])
         elif p["unresolved_key"] is not None:
             raise ValueError("resolved decision cannot have unresolved key")
-        expected = {"constant-v1", "midpoint-v1"}
         if (
             p["baseline_versions"] != ["constant-v1", "midpoint-v1"]
             or not isinstance(p["results"], dict)
-            or set(p["results"]) != expected
+            or set(p["results"]) != set(names)
         ):
-            raise ValueError("fixed baseline pair required")
+            raise ValueError("fixed baseline pair (plus declared forecasters) required")
         for name, value in p["results"].items():
             if (
                 not isinstance(value, dict)
@@ -218,6 +290,18 @@ def validate(table, p):
             raise ValueError("eligible decision missing identity/evidence")
         if p["supersedes_id"] is not None and p["mode"] == "forward_shadow":
             raise ValueError("correction cannot be a forward replacement")
+        if contract >= 2:
+            pin = p["manifest"].get("discovery")
+            if p["discovery_id"] is None:
+                if pin is not None:
+                    raise ValueError("discovery pin without a cited pass")
+            else:
+                if not isinstance(pin, dict) or set(pin) != PIN_FIELDS:
+                    raise ValueError("contract-2 decision requires an exact discovery pin")
+                if pin["id"] != p["discovery_id"]:
+                    raise ValueError("discovery pin cites another pass")
+                sha(pin["digest"])
+                sha(pin["collector_config_hash"])
     elif table == "forecast_publications":
         sha(p["decision_digest"])
         if p["mode"] == "historical_reconstruction" or p["verdict"] not in (
@@ -268,13 +352,16 @@ def validate(table, p):
             raise ValueError("binary label must be distinct from payout")
         if p["payout"] is not None:
             probability(p["payout"])
+        extra = set(p["scores"]) - set(BASELINES) if isinstance(p["scores"], dict) else set()
         if (
             not isinstance(p["scores"], dict)
-            or set(p["scores"]) != {"constant-v1", "midpoint-v1"}
+            or not set(BASELINES) <= set(p["scores"])
+            or (contract == 1 and extra)
+            or any(not re.fullmatch(r"model:[0-9a-f]{16}", k) for k in extra)
             or not isinstance(p["clipped"], dict)
             or set(p["clipped"]) != set(p["scores"])
         ):
-            raise ValueError("fixed score pair required")
+            raise ValueError("fixed score pair (plus forecaster scores) required")
         for name, score in p["scores"].items():
             if type(p["clipped"][name]) is not bool:
                 raise ValueError("explicit clipping flag required")
@@ -328,6 +415,12 @@ def key(table, p):
                 "mode",
             )
         ]
+        contract = version(table, p)
+        if contract >= 2:
+            # A receipt of another contract for the same subject is a different key: an
+            # API-supplied or legacy row can neither block nor stand in for a witness
+            # observation under the current contract.
+            values.append(contract)
     elif table == "forecast_decisions":
         values = [
             p[k]

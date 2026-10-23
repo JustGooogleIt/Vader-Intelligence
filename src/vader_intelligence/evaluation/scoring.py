@@ -77,3 +77,52 @@ def log_loss(p, y):
     q, y = clipped_probability(p), binary_label(y)
     with arithmetic():
         return -(q if y else 1 - q).ln()
+
+
+def score_pair(p, y):
+    """Both v1 scores for one probability as exact decimal strings, plus whether the
+    log-loss input was clipped. `p` itself is never modified."""
+    original = probability(p)
+    clipped = clipped_probability(original) != original
+    return {
+        "brier": format(brier(original, y), "f"),
+        "log_loss": format(log_loss(original, y), "f"),
+    }, clipped
+
+
+def mean(values):
+    """Decimal mean of exact score strings; None for an empty sample (never 0 or NaN)."""
+    values = list(values)
+    if not values:
+        return None
+    try:
+        with arithmetic():
+            total = sum((Decimal(v) for v in values), Decimal(0))
+            return format(total / len(values), "f")
+    except (InvalidOperation, TypeError) as exc:
+        raise ValueError("scores must be exact finite decimal strings") from exc
+
+
+def paired_summary(items):
+    """Paired constant/midpoint summary over items that carry both score pairs.
+
+    Each item is a mapping with "constant-v1" and "midpoint-v1" score dicts (or None).
+    Only items with both scores are paired; N=0 yields null means. Deltas are
+    midpoint − constant per game (negative favours midpoint), averaged with weight
+    1/game. Returns exact decimal strings.
+    """
+    paired = [
+        item
+        for item in items
+        if item.get("constant-v1") is not None and item.get("midpoint-v1") is not None
+    ]
+    summary = {"n": len(paired)}
+    for metric in ("brier", "log_loss"):
+        constant = [item["constant-v1"][metric] for item in paired]
+        midpoint = [item["midpoint-v1"][metric] for item in paired]
+        with arithmetic():
+            deltas = [format(Decimal(m) - Decimal(c), "f") for c, m in zip(constant, midpoint)]
+        summary[f"mean_{metric}_constant"] = mean(constant)
+        summary[f"mean_{metric}_midpoint"] = mean(midpoint)
+        summary[f"mean_{metric}_delta"] = mean(deltas)
+    return summary

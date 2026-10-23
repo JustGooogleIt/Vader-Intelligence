@@ -33,6 +33,14 @@ class DeadlineExceeded(CollectionError):
     pass
 
 
+class PaginationError(CollectionError):
+    """A bounded market scan that cannot be declared complete; reason is a fixed label."""
+
+    def __init__(self, reason, message):
+        self.reason = reason
+        super().__init__(message)
+
+
 @contextmanager
 def deadline_guard(seconds):
     # The CLI runs on Unix's main thread. Unlike read timeouts, this also bounds a
@@ -55,10 +63,42 @@ def deadline_guard(seconds):
         signal.signal(signal.SIGALRM, previous)
 
 
-def validate_source(url, params):
+# Public historical market-data routes (roadmap A4), allowed only for a reader created
+# with profile="history"; the collector profile's allowlist is unchanged.
+HISTORY_ROUTES = (
+    (r"/historical/cutoff", set()),
+    (r"/historical/markets", {"series_ticker", "limit", "cursor"}),
+    (r"/markets", {"series_ticker", "status", "limit", "cursor"}),
+    (
+        r"/historical/markets/KXMLBGAME-[A-Z0-9_-]+/candlesticks",
+        {"start_ts", "end_ts", "period_interval"},
+    ),
+    (
+        r"/series/KXMLBGAME/markets/KXMLBGAME-[A-Z0-9_-]+/candlesticks",
+        {"start_ts", "end_ts", "period_interval"},
+    ),
+)
+PROFILES = ("collector", "history")
+
+
+def validate_source(url, params, profile="collector"):
     part = urlsplit(url)
+    if profile not in PROFILES:
+        raise ValueError("unknown source profile")
     if part.scheme != "https" or part.query or part.fragment or part.username or part.port:
         raise ValueError("only canonical HTTPS source URLs are allowed")
+    if part.hostname == "external-api.kalshi.com" and profile == "history":
+        path = part.path.removeprefix("/trade-api/v2")
+        if not part.path.startswith("/trade-api/v2/"):
+            raise ValueError("Kalshi endpoint is not allowed")
+        for pattern, allowed in HISTORY_ROUTES:
+            if re.fullmatch(pattern, path):
+                if set(params) - allowed:
+                    raise ValueError("unsupported Kalshi query parameter")
+                if path == "/markets" and params.get("status") != "settled":
+                    raise ValueError("history reads settled markets only")
+                return "kalshi"
+        raise ValueError("Kalshi endpoint is not allowed")
     if part.hostname == "external-api.kalshi.com":
         path = part.path.removeprefix("/trade-api/v2")
         if not part.path.startswith("/trade-api/v2/") or not re.fullmatch(
@@ -104,7 +144,11 @@ class Reader:
         monotonic=time.monotonic,
         sleep=time.sleep,
         jitter=random.uniform,
+        profile="collector",
     ):
+        if profile not in PROFILES:
+            raise ValueError("unknown source profile")
+        self.profile = profile
         self.store, self.config = store, config
         self.client = client or httpx.Client(
             follow_redirects=False,
@@ -115,6 +159,15 @@ class Reader:
             },
         )
         self.now, self.monotonic, self.sleep, self.jitter = now, monotonic, sleep, jitter
+        # Lineage only: a reader with any injected client or clock produces synthetic
+        # evidence. It never asserts publication, availability or clock trust.
+        self.live = (
+            client is None
+            and now is utc_now
+            and monotonic is time.monotonic
+            and sleep is time.sleep
+            and jitter is random.uniform
+        )
         self.next_request = 0.0
 
     def close(self):
@@ -124,7 +177,7 @@ class Reader:
         self, run_id, stage, key, url, params=None, *, apply=None, budget=None, before_attempt=None
     ):
         params = params or {}
-        source = validate_source(url, params)
+        source = validate_source(url, params, self.profile)
         request = self.store.request(run_id, stage, key, url, params)
         if request["done"]:
             row = self.store.saved(request["id"])

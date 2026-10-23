@@ -104,6 +104,18 @@ def body(db, fetch_id):
     return row["body"]
 
 
+def run_rules(db, run_id):
+    """Evidence rules the settlement run recorded (decision D-002): a mapping is derived
+    under the run's own configuration, never the caller's. (A replay of a run whose
+    targets are already mapped re-derives nothing: `map_target` keeps the recorded
+    mapping.)"""
+    from ..config import Config
+
+    row = db.execute("SELECT provenance_json FROM runs WHERE id=?", (run_id,)).fetchone()
+    configuration = json.loads(row[0]).get("configuration", {}) if row else {}
+    return Config.rules_of(configuration.get("collector"))
+
+
 def map_target(db, target_id):
     target = db.execute("SELECT * FROM settlement_targets WHERE id=?", (target_id,)).fetchone()
     if target["mapping_version_id"] is not None:
@@ -121,7 +133,12 @@ def map_target(db, target_id):
     prior = json.loads(previous["data_json"]) if previous else None
     terms_digest = hashlib.sha256(body(db, target["terms_fetch_id"])).hexdigest()
     data = resolve(
-        market, event, schedule, reviewed_terms=terms_digest in REVIEWED_TERMS, prior=prior
+        market,
+        event,
+        schedule,
+        reviewed_terms=terms_digest in REVIEWED_TERMS,
+        prior=prior,
+        rules=run_rules(db, target["run_id"]),
     )
     # The target retains the complete evidence tuple even when the semantic mapping
     # is unchanged. Prior mapping ID is included only when required to prove identity.
@@ -195,7 +212,7 @@ def normalizer(stage, key):
             map_target(db, key)
         elif stage == "settlement-event":
             try:
-                rule_identity(market)
+                rule_identity(market, run_rules(db, target["run_id"]))
             except ValueError:
                 map_target(db, key)
         return {"target_id": key, "fetch_id": fetch_id}

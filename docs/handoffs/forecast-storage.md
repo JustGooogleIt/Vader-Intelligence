@@ -249,8 +249,9 @@ initialization, collection, health, inspection or replay. The only new CLI is
 `forecast migrate`; no tick/generation/evaluation/inspection CLI was added. It
 preflights read-only under the existing writer lock, refusing absent/empty/schema-0
 paths before Store can initialize them. Schema 1→2→3 requires **two explicit steps**.
-Schema-3 collection still has the original behavior; it does not produce independent
-discovery summaries or receipts until the separately scoped future increment.
+Schema-3 collection has since gained the two-phase protocol and independent discovery
+summaries (F3.3a, 2026-10-12, [discovery boundary handoff](discovery-boundary.md));
+receipts remain a separately scoped increment.
 
 Replay continues existing collector/settlement normalization and preserves research
 rows; schema-3 results explicitly include

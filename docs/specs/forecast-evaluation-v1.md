@@ -22,6 +22,17 @@ Only the user-authorized F3.1 pure predicates/arithmetic/qualified-candidate sel
 are implemented here; the rest of this milestone remains proposed. Exact callable
 contracts and deferred evidence guarantees: [F3.1 handoff](../handoffs/forecast-policies.md).
 
+Amendment (2026-10-05, PR #8): one rule added by operator decision, collector
+configuration cohorting, in §5 and §6. No other rule in this document changed.
+Detail and rationale: [F3.3 implementation plan](f33-implementation-plan.md) §9.2.
+
+Implementation status (2026-10-12, branch `feat/f33a-discovery-boundary`): the §3
+collector phase boundary is implemented for schema-3 archives as collection protocol
+`two-phase-v1`; schemas 1 and 2 keep the interleaved loop. No rule changed. What was
+built, and the routine choices made, are recorded in the
+[F3.3 implementation checklist](f33-implementation-checklist.md) and the
+[discovery boundary handoff](../handoffs/discovery-boundary.md).
+
 ## 1. Scope and measured starting point
 
 Produce reproducible T−60 forecasts for MLB `KXMLBGAME` full-game $1 team-winner
@@ -45,7 +56,7 @@ Grounding at the pinned commit (paths relative to repository root):
 | `migrations/001_initial.sql`: `fetches`, `blobs`, `entities`, `observations`, `eligibility`, `runs` | Raw IDs/bytes, retrieval times, sequence and parser versions exist. `retrieved_at` is HTTP completion, **not database commit time**. Sequence is allocated at request start. Normalized row IDs may be created later by replay. |
 | `normalize.py:book_data`, `normalizer` | Decimal prices; YES ask complements the best NO bid; complete levels and side states retained. Books reference `eligibility_id`. Missing/empty and crossed books are distinct. |
 | `scope.py:eligible`, `collector.py:record_eligibility` | Pregame identity evidence references schedule and event/market fetches. `mapping_version=1` is an algorithm label, not an immutable mapping revision. `scope.eligible` rejects reschedules and requires rule start equal to schedule start. |
-| `collector.py:Collector.run`, `pass_summary` | Discovery/eligibility and book requests currently interleave; completion is summarized at invocation end. F3 requires an immutable discovery-phase summary committed before any book request, independent of book success (§3). This is a future interface change, not existing behavior or a PR #4 edit. |
+| `collector.py:Collector.run`, `pass_summary` | Discovery/eligibility and book requests interleave on schemas 1 and 2; completion is summarized at invocation end. On schema 3 the §3 immutable discovery-phase summary is committed before any book request, independent of book success (implemented 2026-10-12, `Collector._run_two_phase`; the legacy loop is unchanged in `Collector._run_legacy`). |
 | `mapping/__init__.py:rule_identity`, `resolve` | Reviewed aliases; game-number handling; explicit prior identity/reschedule links. `resolve` accepts non-pregame MLB states for settlement: it is **not** a forecast eligibility predicate. |
 | `settlement/journal.py:record`, `map_target`, `latest` | Append-only semantic versions, observation links and complete target evidence tuples. `latest`/`before_seq` is not a decision-time query: anchor sequence alone does not prove every supporting input was available then. |
 | `settlement/models.py:kalshi_result`, `mlb_result` | Independent outcomes. Finalized binary labels require matching exact payout and valid timestamp, with no flags. `is_provisional` does not mean disputed settlement in the verified interpretation. |
@@ -239,7 +250,7 @@ only during later publication affects publication status, not the frozen cutoff 
 
 ## 3. Candidate universe and deterministic contract identity
 
-### Future collector phase boundary (required, not implemented)
+### Collector phase boundary (required; implemented on schema 3, F3.3a)
 
 Refactor a bounded collection pass into discovery/identity/eligibility followed by
 books. This is necessary because the reference collector interleaves them, and a
@@ -368,6 +379,16 @@ A pending attempt is reported but is not a completed snapshot. No query may use
 absolute nearest-time distance or a post-C response. A stale latest snapshot is
 not replaced with a different contract's fresh one.
 
+Implementation note (decision D-016, 2026-10-20): the protocol's `selection_version`
+names the implemented rule.
+- `selection-v2` implements this paragraph as written.
+- `selection-v1`, the default kept so that existing cohorts are unchanged, anchors on
+  the latest attempt *received* by C. It abstains when that attempt was not witnessed by
+  C, usually with `book_availability_after_cutoff` (otherwise
+  `book_availability_unproven` or `book_clock_untrusted`), even when an earlier attempt
+  was. Under the tick-before-collection order that is the usual case. It also gives `book_availability_after_cutoff`, not `book_stale`,
+  in the reviewer's 350-second example below.
+
 Requirements: successful untruncated response with verified blob hash; supported
 parser; matching ticker/game/eligibility evidence; pregame at C; no schedule-start
 revision between the book's eligibility proof and C; age in `[0,300]`; both YES and
@@ -416,6 +437,11 @@ version ID, revision, raw fetch, provider timestamps and retrieval time. New pen
 attempts and refresh failures are reported; no promise of up-to-the-minute official
 truth is made when refresh has not run. Repeated identical observations are new
 retrieval evidence but not new samples.
+
+Implementation note (independent review F10): a forward-shadow or reconstruction
+evaluation considers only attempts of settlement runs whose durable source lineage is
+live; a synthetic run's attempts are skipped, never "the latest attempt" that labels or
+invalidates the outcome. A synthetic evaluation may use either lineage.
 
 For binary scoring require the selected contract's Kalshi interpretation to have
 `status='finalized'`, `payout_kind='binary'`, no flags, `binary_outcome` yes or no,
@@ -474,6 +500,16 @@ outcome evidence. Reject mixed-mode/view manifests, rather than silently pooling
 dropping incompatible rows. A reconstruction for a failed forward opportunity is a
 separate, labeled record/evaluation; the failed forward record remains failed. Synthetic
 evaluations name the simulated view and always show `source_mode=synthetic`.
+
+**Collector configuration cohorting.** The collector configuration hash (the
+collection process's own limits and timeouts) and the research protocol configuration
+hash are distinct values and are never substituted for one another. Each initial
+evaluation cohort uses exactly one collector configuration hash: every decision in it
+takes its discovery evidence from passes written under that hash. A change of
+collector configuration does not reject or rewrite any record; it creates a separate
+cohort that is reported separately. Never pool results across collector configuration
+hashes, in either view. The §2 rule against configuration drift within a cohort
+continues to govern the research protocol configuration.
 
 Within **each** view, paired metrics use the same games for constant and midpoint:
 both meet that view's forecast requirements and have a scorable binary outcome.
@@ -574,6 +610,7 @@ snapshot ID, schedule revision or selected ticker**, which would permit retries 
 create another forecast. A historical reconstruction campaign has an explicit fixed
 dataset namespace and source ceiling, set before selection. Config changes require
 a new protocol cohort, visibly separate; default reports never combine them.
+A collector configuration change likewise creates a separately reported cohort (§5).
 
 Discovery summaries, decisions, publication records, receipts, bindings and evaluations
 are append-only (reject
@@ -751,7 +788,7 @@ below are **planned**, not claims of execution in this documentation task.
 |---|---|---|
 | F3.1 Pure policies | New `forecast/policy.py`, `baselines.py`, `publication.py`, `evaluation/scoring.py`; `tests/forecast/test_policy.py`, `test_baselines.py`, `tests/evaluation/test_scoring.py` | Independent cutoff/publication/settlement decisions, timeline and timing sweeps, exact midpoint/score golden cases; no IO/import side effects |
 | F3.2 Expansion | `migrations/003_forecast_evaluation.sql`, new `forecast/schema.py`, `forecast/journal.py`; minimal `storage.py`, `settlement/schema.py`, `ops/archive.py` compatibility | Explicit idempotent migration and transactional rollback on injected DDL failure; old table fingerprints unchanged; 1/2/3 backups and future guards; append-only/uniqueness/JSON reference checks |
-| F3.3a Discovery boundary | Future schema-3 path in `collector.py`, storage summary insertion; `tests/test_collector.py`, `tests/test_integration.py` | Bounded discovery/identity/eligibility summary commits before any book; book outcome variants preserve it; resume uses new pass; incomplete discovery fails closed |
+| F3.3a Discovery boundary | Schema-3 path in `collector.py`, `forecast/discovery.py`, `Store.request` book gate; `tests/test_discovery_boundary.py` (legacy suites unmodified) | **Implemented 2026-10-12.** Bounded discovery/identity/eligibility summary commits before any book; book outcome variants preserve it; resume uses new pass; incomplete discovery fails closed and the Store refuses books without a complete summary |
 | F3.3b Evidence/selection | New `forecast/selection.py`, `forecast/service.py`; `tests/forecast/test_selection.py`, `test_journal.py` | Complete candidates, pre-C receipts for summary and inputs, no future mapping, repeat/crash behavior, no added witnessing phase |
 | F3.4 Forecast CLI | New `forecast/cli.py`, dedicated research TOML parser; minimal `cli.py` registration and health filtering; `tests/forecast/test_cli.py` | Bounded tick/reconstruct/inspect, clock/source-mode gates, package entry points, no implicit migration or HTTP |
 | F3.5 Outcome/evaluation | New `evaluation/outcomes.py`, `service.py`, `journal.py`, `cli.py`; `tests/evaluation/test_outcomes.py`, `test_service.py` | Two separate views, invariant cutoff population, orthogonal coverage counts, correct latest outcomes, paired denominators, immutable corrections, manifest replay |
