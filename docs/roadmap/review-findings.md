@@ -92,7 +92,8 @@ independently re-run on this branch (`docs/handoffs/claude-release-validation.md
 | F49 | P2 | a removed registry aborted the tick | #38, validated; corrupt/wrong-schema files also abstain, nothing is created |
 | F50 | P2 | a refresh without a schedule turns a scored game `identity_unresolved` | **owner**: reconstructed; recovered `37c7bac` reviewed, mechanically sound, not applied; adopt only as `evaluation-v3` (proposed D-017) |
 | F51 | P3 | headerless wrapped key bodies passed the paste guard | #38, validated; release validation narrowed a false positive (consecutive hex digests, absolute paths) |
-| N-34a | P2 | an acknowledged settlement token hid a later venue revision | **fixed on `fix/claude-release-validation-20261022`**: acknowledgements cover only markets the ledger has not settled |
+| N-34a | P2 | an acknowledged settlement token hid a later venue revision | **fixed on `fix/claude-release-validation-20261022`** (`500c993`): acknowledgements cover only markets the ledger has not settled |
+| N-34a / PR #39 P2 | P2 | a ticker-wide acknowledgement still covered a newly observed contradictory record while an old record agreed with the ledger (Codex review of `bde8bc3`: 4 failed / 1 passed probes) | **fixed on `fix/claude-release-validation-20261022`** (`f24af41`): acknowledgements name the content fingerprints of the records resolved and cover exactly those; legacy evidence-less acknowledgements cover nothing |
 | N-37a/b/c/d | — | F30 lag residual; 1 ms run-start resolution; direct `ForecasterRunner` admits non-library artifacts (abstains); non-canonical split dates fail closed | notes, unchanged |
 
 Owner decisions still open: #8 plan r3, Q-M1-1, D-002, D-003, D-004, D-005, D-015,

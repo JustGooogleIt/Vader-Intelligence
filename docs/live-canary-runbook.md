@@ -233,18 +233,22 @@ before production.
     agrees and the cursor moves on;
   - `settlement_fee`: as above, and record the fee the venue charged as a live cash
     `adjustment` (negative amount) so ledger cash equals `balance_dollars`;
-  - `settlement_foreign`, `settlement_unreadable`: after checking the record (or, for
-    `conflicting_records`, the records), acknowledge it with
-    `acknowledge_settlement(ledger, token, actor=..., note=..., at=...)`
-    (`trading/executor.py`; `token` is the name in the reason). For this ledger's own
-    market, also append its settlement as above: an acknowledgement only skips the
-    record, and positions and balance keep flagging until the ledger is settled.
-    Once the ledger has settled that market, the acknowledgement no longer covers a
-    later venue revision: the venue's record (any one of several conflicting records)
-    must still agree with the ledger's current settlement on result and value, or
-    `settlement_conflict` is reported until a correction supersedes it (N-34a). An
-    unmappable record (`void`, malformed) carries nothing to compare and stays
-    acknowledged;
+  - `settlement_foreign`, `settlement_unreadable`: list what the venue shows for the
+    token with `settlement_evidence(gateway, ledger)[token]` (`trading/executor.py`;
+    `token` is the name in the reason; `{fingerprint: summary}`, one entry per distinct
+    record, unparseable ones as `{"error": code}`), check each record, then acknowledge
+    exactly those records: `acknowledge_settlement(ledger, token, actor=..., note=...,
+    evidence=<that mapping or its fingerprints>, at=...)`. The acknowledgement covers
+    only the records whose fingerprints it names. A record the venue lists later, or
+    lists with changed content under the same settled time, is reconciled as if nothing
+    had been acknowledged and is reported until resolved on its own evidence; for a
+    market the ledger has settled, a readable record that disagrees on result or value
+    is `settlement_conflict` until a correction supersedes that settlement (N-34a, PR #39
+    review P2). An acknowledgement written before evidence scoping (key
+    `settlement_ack:<token>` with no `evidence`) covers nothing and logs a warning:
+    re-acknowledge with evidence (its own key; the old row stays). For this ledger's
+    own market, also append its settlement as above: an acknowledgement only skips the
+    records, and positions and balance keep flagging until the ledger is settled;
   - `settlement_fills_missing`, `settlement_orders_active`: usually REST lag; reconcile
     again before doing anything;
   - `settlements_deferred`: the fills reconciliation reported a reason. REST lag clears

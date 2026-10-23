@@ -17,7 +17,7 @@ sent to a venue; no holdout was consumed; no provider or paid call was made.
 | Contains author candidate (#37 head) | `757c73f986b4481beb2fbddbb596e58450fe2299` (yes, ancestor) |
 | This branch | `fix/claude-release-validation-20261022`, new worktree, private `.venv` (Python 3.11.6, uv 0.12.19, `uv sync --locked` at 04:47:25Z) |
 | Recovery refs inspected, not merged | `recovery/grok-h-20261022` (`0572248…`), `recovery/f50-20261022` (`37c7bac…`), `recovery/history-tier-20261022` (`be6f71f…`) |
-| Commits on this branch | N-34a `500c993c4caa4f96a40b773cab804cd228326fa3`; F51 narrowing + probes `9495817f68dc0d5dd69baff83adee09f1c2747d5`; this document and the findings tracker in the following commit |
+| Commits on this branch | N-34a `500c993c4caa4f96a40b773cab804cd228326fa3`; F51 narrowing + probes `9495817f68dc0d5dd69baff83adee09f1c2747d5`; this document and the findings tracker in the following commit; **2026-10-23 follow-up:** acknowledgement evidence scope (PR #39 review P2) `f24af41be9e02f6453c495b7ab2986347eba32ab`, docs in the next commit |
 | Draft PR base | `fix/integration-readiness-20261022` |
 
 Skills: Cool Coder engineering skills 1.2.0 at `e46e79805be0ee5877fa9bc993492064bbb40aa5`
@@ -102,11 +102,62 @@ acknowledged market the ledger has not settled (stays skipped; positions and bal
 flagging). Result **29 passed** (05:00:19Z). Balance mismatch still blocked in the
 original reproduction; this change does not claim an unsafe order was demonstrated.
 
-Residual limitations (documented in the runbook): an unmappable record (`void`,
-malformed) carries no result to compare and stays acknowledged; a market the ledger has
-not settled stays covered by its acknowledgement until the operator settles it through
-the ledger; while one of several conflicting records still agrees, a further
-contradictory record is only visible through positions and balance.
+Residual limitations as of `500c993` (superseded below): an unmappable record stayed
+acknowledged; a market the ledger had not settled stayed covered by its acknowledgement;
+while one of several conflicting records still agreed, a further contradictory record was
+only visible through positions and balance.
+
+### 2026-10-23 follow-up: acknowledgement evidence scope (PR #39 review P2)
+
+Codex's review of `bde8bc3` (local report `…/Vader-Intelligence-reviews/20261022-pr39/
+review_probes/review.md`, read; its probe file reproduced here from a scratch copy
+pointed at this worktree) showed the `any(record agrees)` rule accepting a whole group of
+contradictory records: with the old YES record retained and a genuinely later NO/$0 or
+scalar/$0.50 record added, reconciliation reported only `balance_mismatch` (balance
+updated) or nothing (old balance), before and after a restart. **Reproduced at
+`bde8bc3`: 4 failed / 1 passed (06:28:36Z), identical to Codex's result.**
+
+Change (`f24af41`, `trading/executor.py`, `trading/gateway.py`, `trading/kalshi/gateway.py`):
+
+- `settlement_fingerprint(record)` (scheme `vs1`) digests every field of a parsed venue
+  record; `raw_settlement_fingerprint(item)` (`raw1`) digests an unparseable record as
+  listed. `UnreadableSettlement.fingerprints` is additive (derived from `records` when a
+  gateway gives none). The Kalshi gateway keeps every distinct record per token, in
+  listing-independent order; parsed records beside an unparseable one for the same ticker
+  are carried along instead of being read as the settlement.
+- `settlement_evidence(gateway, ledger)` lists the records the executor reads next as
+  `{token: {fingerprint: summary}}`; `acknowledge_settlement(..., evidence=...)` requires
+  the fingerprints it resolves and records them under the key
+  `settlement_ack:<token>:<digest(evidence)[:16]>` (data: actor, note, token, evidence).
+  A token can carry several acknowledgements; an exact retry is a no-op; the same evidence
+  under a different note is a `LedgerConflict`.
+- Reconciliation skips exactly the covered records. Any other record under the token is
+  reconciled as if nothing had been acknowledged: a readable one through `_settle` (so a
+  disagreeing record of a ledger-settled market is `settlement_conflict` until an
+  immutable `supersedes_id` correction), an unparseable one as `settlement_unreadable`;
+  several uncovered readable records are still conflicting unless the ledger has settled
+  the market and all agree.
+- Legacy acknowledgements (`settlement_ack:<token>`, with or without data) name no
+  evidence and cover nothing; the record is reported with its natural reason and a
+  warning is logged. They never gain scope retroactively. No schema change;
+  `processed_inputs` rows are additive. No real ledger holds a legacy acknowledgement
+  (live trading never ran).
+- Provider timestamps are not identity: a changed record under an unchanged
+  `settled_time` has a new fingerprint.
+
+Tests (`tests/trading/kalshi/test_kalshi_settlements.py`, **38 passed**, 06:35:45Z): the
+suppression-blessing case is replaced by `test_a_new_contradiction_is_not_covered_by_an_older_acknowledgement`
+(NO/$0 and scalar/$0.50 × balance updated / old balance; repeat reads, cursor kept,
+restart, correction, clean after restart); exact repeated pair stays clean; duplicate and
+reordered listings; changed content under the same source time; a revised foreign record
+is reported again until acknowledged on its own evidence; a revised record of an
+unsettled own market; legacy/data-less acknowledgement covers nothing (warning asserted),
+scoped one clears, exact retry no-op, different note refused, restart; an unparseable
+record beside a readable one; a gateway that names no evidence; the evidence summary
+shape. Adapted copy of Codex's probe (evidence supplied at the acknowledgement call,
+otherwise unchanged): **5 passed** (was 4 failed / 1 passed). Residual: `settlement_evidence`
+re-reads the venue (the same read reconciliation makes); an operator who acknowledges a
+record they did not inspect is outside the mechanism.
 
 ## Task B — F50 analysis (no change to record meaning)
 
@@ -280,6 +331,23 @@ decision. Rollback: `stop`, restore the previous checkout and TOML, `install`.
 
 These are my executions; Codex's 1,494-pass run, Grok's Linux reviews and the earlier
 Windows/Mac evidence are separate and were not re-run here.
+
+### Verification of the 2026-10-23 follow-up (`f24af41`, same machine and environment)
+
+| Check | Result |
+|---|---|
+| Codex probe (scratch copy) at `bde8bc3` | 4 failed / 1 passed, 1.37 s (06:28:36Z) |
+| Settlement suite at `f24af41` | 38 passed, 4.60 s (06:35:45Z) |
+| Adapted Codex probe at `f24af41` | 5 passed, 0.67 s |
+| `tests/test_release_validation.py tests/test_integration_readiness.py tests/trading` | 290 passed, 35.69 s (06:36:26Z) |
+| `ruff check` / `ruff format --check` (src tests) | clean |
+| Full suite `python -m pytest -q` at `f24af41` | **1525 passed, 2 failed, 29 subtests, 290.61 s** (06:37:11–06:42:02Z); the 2 failures are the absent-`tmux_jev` baseline |
+| Observer suite, existing pinned private env `…/Vader-Intelligence-observer-mac/.venv/bin/python` (direct-URL metadata verified: `167f94359728a6356fb8a76e62f5cfdc16a6d881`), `-m pytest --noconftest -q tests/worker_observer` from this checkout | **85 passed, 8.56 s** (06:37:20–06:37:29Z); no installation |
+| Skills provenance (`docs/checkpoint-skill-provenance.json` vs `~/.codex/skills`) | 50 files match the pin |
+
+Codex's earlier numbers at `bde8bc3` (1,516 core, 94 focused, 85 observer, 54-check wheel)
+are Codex's; the rows above are new executions on the new code. Installed-wheel smoke on
+`f24af41` is reported in the final message of the assignment that produced this commit.
 
 ## Reverse path
 
