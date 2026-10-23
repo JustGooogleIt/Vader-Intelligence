@@ -6,11 +6,13 @@ reports results and events, and the executor records them. Exceptions raised by
 and resolved only by `lookup` during reconciliation; a submit is never retried.
 """
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
-from .money import frozen_mapping, nonnegative, opt_utc, price, utc
+from .money import digest, frozen_mapping, nonnegative, opt_utc, price, utc
 from .orders import GATEWAY_KINDS, VENUE_STATUSES
 from .portfolio import RESULTS
 
@@ -114,17 +116,50 @@ class VenueSettlement:
         object.__setattr__(self, "settled_at", utc(self.settled_at, "settled_at"))
 
 
+# Fingerprint schemes: `vs1` digests every field of a parsed `VenueSettlement`; `raw1`
+# digests a venue record as listed (for records that do not parse). A new canonical
+# form gets a new scheme, so earlier acknowledgements never match by accident.
+SETTLEMENT_FINGERPRINT_SCHEME = "vs1"
+RAW_SETTLEMENT_FINGERPRINT_SCHEME = "raw1"
+
+
+def settlement_fingerprint(record):
+    """Content fingerprint of a parsed venue settlement record: a digest of every field
+    (ticker, result, value, counts, revenue, fee, settled time, source reference), so a
+    record whose content changes under the same source timestamp is a different record.
+    Operators acknowledge records by these fingerprints (`executor.acknowledge_settlement`)."""
+    if not isinstance(record, VenueSettlement):
+        raise TypeError("a settlement fingerprint needs a VenueSettlement")
+    return f"{SETTLEMENT_FINGERPRINT_SCHEME}:{digest(record)}"
+
+
+def raw_settlement_fingerprint(data):
+    """Content fingerprint of a venue settlement record as listed (any JSON structure),
+    for a record that cannot be parsed."""
+    text = json.dumps(data, sort_keys=True, separators=(",", ":"), default=str)
+    return f"{RAW_SETTLEMENT_FINGERPRINT_SCHEME}:{hashlib.sha256(text.encode()).hexdigest()}"
+
+
 @dataclass(frozen=True)
 class UnreadableSettlement:
     """A venue settlement record that could not be mapped. `token` names it (its ticker
     when that is readable) for reasons and operator acknowledgements. `records` holds
-    the distinct parsed settlements when the venue lists several conflicting records for
-    one ticker (`conflicting_records`), so an acknowledged market that the ledger has
-    settled can still be checked against them; it is empty for an unmappable record."""
+    the distinct parsed settlements the venue lists for that ticker when it lists several
+    (`conflicting_records`), or alongside an unparseable one; it is empty for a lone
+    unmappable record. `fingerprints` names every distinct venue record behind the token
+    (parsed ones by `settlement_fingerprint`, unparseable ones by
+    `raw_settlement_fingerprint`): that is what an operator acknowledges. A gateway that
+    gives none gets them derived from `records`; with neither, nothing can be resolved."""
 
     token: str
     error: str
     records: tuple = ()
+    fingerprints: tuple = ()
+
+    def __post_init__(self):
+        if not self.fingerprints and self.records:
+            derived = tuple(settlement_fingerprint(r) for r in self.records)
+            object.__setattr__(self, "fingerprints", derived)
 
 
 class ExchangeGateway(Protocol):

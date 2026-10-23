@@ -82,7 +82,13 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from ...storage import utc_now
-from ..gateway import CancelResult, SubmitResult, UnreadableSettlement
+from ..gateway import (
+    CancelResult,
+    SubmitResult,
+    UnreadableSettlement,
+    raw_settlement_fingerprint,
+    settlement_fingerprint,
+)
 from ..ledger import EnvironmentMismatch
 from ..money import ZERO, in_exact, positive, utc
 from ..portfolio import Holding
@@ -649,31 +655,44 @@ class KalshiGateway:
         items = self._pages(
             "/portfolio/settlements", {"min_ts": min_ts, "limit": PAGE_LIMIT}, "settlements"
         )
-        settlements, unreadable, conflicting = {}, {}, {}
+        parsed, errors, raw = {}, {}, {}
         for item in items:
             try:
                 settlement = settlement_from_exchange(item)
             except MappingError as exc:
                 token = settlement_token(item)
-                unreadable.setdefault(token, UnreadableSettlement(token, exc.code))
+                errors.setdefault(token, exc.code)
+                fingerprint = raw_settlement_fingerprint(item)
+                if fingerprint not in raw.setdefault(token, []):
+                    raw[token].append(fingerprint)
                 continue
-            previous = settlements.get(settlement.ticker)
-            if previous is not None and previous != settlement:
-                # Every distinct record is kept, so an acknowledged market that the
-                # ledger has settled can still be checked against the venue's records.
-                seen = conflicting.setdefault(settlement.ticker, [previous])
-                if settlement not in seen:
-                    seen.append(settlement)
-                unreadable[settlement.ticker] = UnreadableSettlement(
-                    settlement.ticker, "conflicting_records", tuple(seen)
+            seen = parsed.setdefault(settlement.ticker, [])
+            if settlement not in seen:  # an exact duplicate listing is the same record
+                seen.append(settlement)
+        settlements, unreadable = [], []
+        for token in sorted(set(parsed) | set(errors)):
+            # Every distinct record is kept, in listing-independent order, so an
+            # operator's acknowledgement can name each of them by fingerprint.
+            records = tuple(
+                sorted(
+                    parsed.get(token, ()), key=lambda s: (s.settled_at, settlement_fingerprint(s))
                 )
-            settlements[settlement.ticker] = settlement
-        for token in unreadable:
-            settlements.pop(token, None)
-        ordered = sorted(settlements.values(), key=lambda s: (s.settled_at, s.ticker))
+            )
+            if token in errors:
+                # Unparseable record(s) under this token; parsed records of the same
+                # ticker travel with them rather than being read as the settlement.
+                fingerprints = (*raw[token], *(settlement_fingerprint(r) for r in records))
+                unreadable.append(
+                    UnreadableSettlement(token, errors[token], records, tuple(sorted(fingerprints)))
+                )
+            elif len(records) > 1:
+                unreadable.append(UnreadableSettlement(token, "conflicting_records", records))
+            else:
+                settlements.append(records[0])
+        ordered = sorted(settlements, key=lambda s: (s.settled_at, s.ticker))
         newest = max((epoch_seconds(s.settled_at) for s in ordered), default=start)
         watermark = max(start, min(newest, epoch_seconds(self._now())))
-        return [*ordered, *sorted(unreadable.values(), key=lambda u: u.token)], f"ts:{watermark}"
+        return [*ordered, *sorted(unreadable, key=lambda u: u.token)], f"ts:{watermark}"
 
     def positions(self):
         items = self._pages("/portfolio/positions", {"limit": PAGE_LIMIT}, "market_positions")
