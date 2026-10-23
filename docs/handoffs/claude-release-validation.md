@@ -191,7 +191,21 @@ typo settlement and unsupported correction conflict; new agreeing-but-different 
 reported until acknowledged; evidence validation; label determinism. Reviewer's probes
 re-run on `553fa99`: 10 of 12 pass; the two remaining "failures" are the probe that
 asserted the outer mapping is *accepted* (now refused, i.e. fixed) and P2b (the
-intentional non-change above). A second internal pass on `553fa99` was requested.
+intentional non-change above).
+
+Second internal pass on `553fa99` (same subagent, fresh instruction; 07:35Z): tests/trading
+272 passed, ruff clean; eleven new adversarial probes (partial acknowledgements with
+restart, typo settlement, venue dropping the agreeing record, unsupported correction,
+void+readable own market, malformed evidence rows, all-unparseable acknowledged group,
+acknowledged foreign ticker later settled by the operator, executor-recorded settlement
+followed by a second agreeing record with a fee) all hold the safe property; P2b accepted
+as the intentional non-change (the balance check distinguishes payouts; two acknowledged
+listed records with the same payout but different labels are economically harmless).
+**Verdict: no material issue remains.** Two low notes kept as limitations: two distinct
+unparseable records under one token are summarised only as `{"error": code}` (the
+operator tells them apart in the venue UI before acknowledging); the spec sentence it
+flagged was rewritten in `c8f92fa`. This is an internal check; Codex's exact-SHA review
+of the new head is still required.
 
 ## Task B — F50 analysis (no change to record meaning)
 
@@ -383,7 +397,7 @@ Windows/Mac evidence are separate and were not re-run here.
 | Adapted Codex probe / reviewer P3 baseline probe at `553fa99` | 5 passed / 1 passed |
 | `tests/test_release_validation.py tests/test_integration_readiness.py tests/trading` at `553fa99` | 295 passed, 37.64 s (07:14:48–07:15:26Z) |
 | `ruff check` / `ruff format --check` (src tests ops tools/worker_observer) at `553fa99` | clean, 252 files |
-| Full suite at `553fa99` | **1530 passed, 2 failed, 29 subtests, 299.81 s** (07:27:41–07:32:41Z); same two absent-`tmux_jev` baseline failures |
+| Full suite at `553fa99` | **1530 passed, 2 failed, 29 subtests**, pytest 299.81 s (wall 07:16:21–07:32:41Z under concurrent review runs); same two absent-`tmux_jev` baseline failures |
 
 Codex's earlier numbers at `bde8bc3` (1,516 core, 94 focused, 85 observer, 54-check wheel)
 are Codex's; the rows above are new executions on the new code. Installed-wheel smoke on
