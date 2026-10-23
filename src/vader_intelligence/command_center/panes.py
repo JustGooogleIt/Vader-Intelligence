@@ -89,9 +89,10 @@ def pane_reader(cfg: CenterConfig, run_id, worker_id, lines, now=None, *, runner
             "identity": identity,
             "text": None,
         }
-    capture = report.get("capture") or {}
-    text = capture.get("text") if isinstance(capture, dict) else None
-    if isinstance(text, str):
+    text = report.get("terminal")
+    if not isinstance(text, str):
+        text = None
+    else:
         text = "\n".join(text.splitlines()[-lines:])
     return {
         "state": "ok",

@@ -243,7 +243,7 @@
     for (const v of ["overview", "game", "farm", "engineering"]) $("view-" + v).classList.toggle("hidden", v !== state.view);
     document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("primary", b.dataset.view === state.view));
   }
-  async function refresh() {
+  let refresh = async function () {
     showView();
     try {
       if (!state.session) state.session = (await api("/api/session"));
@@ -262,6 +262,22 @@
     clearTimeout(state.timer);
     state.timer = setTimeout(refresh, (state.session ? state.session.refresh_seconds : 5) * 1000);
   }
+  // Deep links: #overview, #game/<game_id>, #farm/<run_id>, #engineering (data never comes from the hash).
+  function readHash() {
+    const m = /^#(overview|game|farm|engineering)(?:\/([A-Za-z0-9-]{1,64}))?$/.exec(location.hash || "");
+    if (!m) return;
+    state.view = m[1];
+    if (m[1] === "game" && m[2] && /^[0-9]{1,12}$/.test(m[2])) state.game = Number(m[2]);
+    if (m[1] === "farm" && m[2]) state.run = m[2];
+  }
+  function writeHash() {
+    const target = state.view === "game" && state.game != null ? `#game/${state.game}` : state.view === "farm" && state.run ? `#farm/${state.run}` : `#${state.view}`;
+    if (location.hash !== target) history.replaceState(null, "", target);
+  }
+  const originalRefresh = refresh;
+  refresh = async function () { writeHash(); return originalRefresh(); };
   document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => { state.view = b.dataset.view; refresh(); }));
+  window.addEventListener("hashchange", () => { readHash(); refresh(); });
+  readHash();
   refresh();
 })();

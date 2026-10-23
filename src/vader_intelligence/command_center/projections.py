@@ -8,7 +8,6 @@ busy archive yields `unavailable`, never a hang. Unknown usage or cost is report
 `None` ("unknown"), never as zero.
 """
 
-import json
 import time
 from datetime import datetime, timezone
 
@@ -723,10 +722,7 @@ def farm(cfg: CenterConfig, run_id, now=None):
 
 
 def _artifact_refs(result):
-    try:
-        manifest = json.loads(result["result_json"])
-    except (KeyError, TypeError, ValueError):
-        return []
+    manifest = result.get("result") if isinstance(result, dict) else None
     refs = manifest.get("artifacts") if isinstance(manifest, dict) else None
     out = []
     for ref in refs or []:

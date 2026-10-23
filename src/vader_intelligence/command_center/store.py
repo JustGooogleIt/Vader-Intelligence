@@ -154,6 +154,9 @@ class CenterStore:
             raise RuntimeError(f"command center store schema {row[0]} is not {SCHEMA}")
 
     def close(self):
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
         self.db.close()
         if self._lock is not None:
             fcntl.flock(self._lock.fileno(), fcntl.LOCK_UN)
