@@ -117,10 +117,14 @@ class VenueSettlement:
 @dataclass(frozen=True)
 class UnreadableSettlement:
     """A venue settlement record that could not be mapped. `token` names it (its ticker
-    when that is readable) for reasons and operator acknowledgements."""
+    when that is readable) for reasons and operator acknowledgements. `records` holds
+    the distinct parsed settlements when the venue lists several conflicting records for
+    one ticker (`conflicting_records`), so an acknowledged market that the ledger has
+    settled can still be checked against them; it is empty for an unmappable record."""
 
     token: str
     error: str
+    records: tuple = ()
 
 
 class ExchangeGateway(Protocol):

@@ -504,6 +504,14 @@ class Executor:
         the ledger, later changes to the venue record other than its result or value
         surface only through the positions and balance checks.
 
+        An acknowledgement covers the venue's records of a market only while the ledger
+        has not settled it (a foreign or unmappable record, or a market awaiting the
+        operator's own settlement). Once the market is settled in the ledger, the venue's
+        record for it is checked again on every read (review N-34a): a readable record,
+        or any one of several conflicting records, must agree with the ledger's current
+        settlement on result and value, else `settlement_conflict` is reported until an
+        immutable operator correction supersedes that settlement.
+
         A fill arriving after its market's settlement was recorded contradicts the venue's
         own final fill count for its order or the counts it settled, and stays refused by
         the ledger.
@@ -527,13 +535,32 @@ class Executor:
             unreadable = isinstance(item, UnreadableSettlement)
             token = item.token if unreadable else item.ticker
             if settlement_ack_key(token) in acknowledged:
-                continue
-            reason = "settlement_unreadable" if unreadable else self._settle(item)
+                reason = self._acknowledged(item, unreadable)
+            else:
+                reason = "settlement_unreadable" if unreadable else self._settle(item)
             if reason is not None:
                 reasons.append(f"{reason}:{token}")
         if not reasons and next_cursor != cursor:
             self.ledger.set_checkpoint(SETTLEMENTS_CURSOR, {"cursor": next_cursor}, now)
         return reasons
+
+    def _acknowledged(self, item, unreadable):
+        """Reason for an acknowledged venue record, or None to skip it. The acknowledgement
+        stands for the records of a market the ledger has not settled. For a market the
+        ledger has settled, the venue's current record(s) must still agree with that
+        settlement: a revision after the acknowledgement is an explicit conflict. An
+        unmappable record carries nothing to compare and stays acknowledged."""
+        ticker = item.token if unreadable else item.ticker
+        recorded = self.ledger.projection().portfolio.settlements.get(ticker)
+        if recorded is None:
+            return None
+        records = item.records if unreadable else (item,)
+        if not records:
+            return None
+        current = (recorded.result, recorded.settlement_value)
+        if any((r.result, r.settlement_value) == current for r in records):
+            return None
+        return "settlement_conflict"
 
     def _venue_filled(self, client_order_id):
         """The largest fill count the venue reported for an order in `reconciled` events

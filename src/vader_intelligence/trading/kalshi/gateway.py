@@ -649,7 +649,7 @@ class KalshiGateway:
         items = self._pages(
             "/portfolio/settlements", {"min_ts": min_ts, "limit": PAGE_LIMIT}, "settlements"
         )
-        settlements, unreadable = {}, {}
+        settlements, unreadable, conflicting = {}, {}, {}
         for item in items:
             try:
                 settlement = settlement_from_exchange(item)
@@ -659,8 +659,13 @@ class KalshiGateway:
                 continue
             previous = settlements.get(settlement.ticker)
             if previous is not None and previous != settlement:
+                # Every distinct record is kept, so an acknowledged market that the
+                # ledger has settled can still be checked against the venue's records.
+                seen = conflicting.setdefault(settlement.ticker, [previous])
+                if settlement not in seen:
+                    seen.append(settlement)
                 unreadable[settlement.ticker] = UnreadableSettlement(
-                    settlement.ticker, "conflicting_records"
+                    settlement.ticker, "conflicting_records", tuple(seen)
                 )
             settlements[settlement.ticker] = settlement
         for token in unreadable:

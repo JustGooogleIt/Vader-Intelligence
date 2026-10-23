@@ -237,7 +237,13 @@ before production.
     `acknowledge_settlement(ledger, token, actor=..., note=..., at=...)`
     (`trading/executor.py`; `token` is the name in the reason). For this ledger's own
     market, also append its settlement as above: an acknowledgement only skips the
-    record, and positions and balance keep flagging until the ledger is settled;
+    record, and positions and balance keep flagging until the ledger is settled.
+    Once the ledger has settled that market, the acknowledgement no longer covers a
+    later venue revision: the venue's record (any one of several conflicting records)
+    must still agree with the ledger's current settlement on result and value, or
+    `settlement_conflict` is reported until a correction supersedes it (N-34a). An
+    unmappable record (`void`, malformed) carries nothing to compare and stays
+    acknowledged;
   - `settlement_fills_missing`, `settlement_orders_active`: usually REST lag; reconcile
     again before doing anything;
   - `settlements_deferred`: the fills reconciliation reported a reason. REST lag clears

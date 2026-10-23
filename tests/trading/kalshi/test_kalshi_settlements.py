@@ -269,6 +269,61 @@ def test_a_resettled_market_conflicts_until_the_operator_corrects_it(tmp_path):
     settled_cleanly(h, 3900)
 
 
+@pytest.mark.parametrize("listed", ["both records", "one record"])
+def test_an_acknowledged_ticker_still_conflicts_when_the_venue_changes_its_result(tmp_path, listed):
+    """Review N-34a: acknowledging this ledger's own ticker (two different records for it,
+    resolved by the operator) must not hide a later change of the venue's result."""
+    h, held = holding_one_fill(tmp_path)
+    assert h.executor.reconcile(now=h.at(20)).clean
+    first = h.double.settle(TICKER, "yes")
+    later = iso(h.clock.now() + timedelta(seconds=1))
+    duplicate = first | {"market_result": "no", "settled_time": later}  # contradictory
+    h.double.settlement_log.append(duplicate)
+    report = h.executor.reconcile(now=h.at(3700))
+    assert "settlement_unreadable:" + TICKER in report.unresolved
+    # The runbook's resolution: acknowledge the ticker and settle the ledger.
+    acknowledge_settlement(h.ledger, TICKER, actor="operator", note="two records", at=h.at(3750))
+    h.ledger.append_settlement(
+        Settlement("operator:" + TICKER, TICKER, "yes", "1", "operator:investigated", at(3600))
+    )
+    settled_cleanly(h, 3800)  # one of the venue's records agrees: the ambiguity is resolved
+    # The venue later settles the market NO.
+    first["market_result"] = "no"
+    if listed == "one record":
+        h.double.settlement_log.remove(duplicate)
+    h.double.cash -= held
+    report = h.executor.reconcile(now=h.at(3900))
+    assert "settlement_conflict:" + TICKER in report.unresolved, report.unresolved
+    assert h.executor.needs_reconcile
+    h.ledger.append_settlement(
+        Settlement(
+            "operator:" + TICKER + ":2",
+            TICKER,
+            "no",
+            "0",
+            "operator:venue resettled",
+            at(3900),
+            supersedes_id="operator:" + TICKER,
+        )
+    )
+    settled_cleanly(h, 4000)
+
+
+def test_an_acknowledged_foreign_or_unreadable_record_stays_skipped(tmp_path):
+    """Records of markets the ledger never settled stay skipped once acknowledged."""
+    h, held = holding_one_fill(tmp_path)
+    assert h.executor.reconcile(now=h.at(20)).clean
+    foreign = h.double.settle(ELSEWHERE, "yes")
+    h.double.settle(VOID, "void")
+    h.double.settle(TICKER, "yes")
+    assert not h.executor.reconcile(now=h.at(3700)).clean
+    for token in (ELSEWHERE, VOID):
+        acknowledge_settlement(h.ledger, token, actor="operator", note="not ours", at=h.at(3750))
+    settled_cleanly(h, 3800)
+    foreign["market_result"] = "no"
+    settled_cleanly(h, 3900)
+
+
 def test_another_spelling_of_the_settlement_time_is_the_same_record(tmp_path):
     h, held = holding_one_fill(tmp_path)
     assert h.executor.reconcile(now=h.at(20)).clean
@@ -396,3 +451,92 @@ def test_settlement_mapping():
     ):
         with pytest.raises(MappingError):
             settlement_from_exchange(bad)
+
+
+def acknowledged_then_resettled(tmp_path):
+    """N-34a scenario: two contradictory venue records, resolved by the operator (ack +
+    operator settlement YES); the venue then settles both records NO."""
+    h, held = holding_one_fill(tmp_path)
+    assert h.executor.reconcile(now=h.at(20)).clean
+    first = h.double.settle(TICKER, "yes")
+    later = iso(h.clock.now() + timedelta(seconds=1))
+    h.double.settlement_log.append(first | {"market_result": "no", "settled_time": later})
+    assert "settlement_unreadable:" + TICKER in h.executor.reconcile(now=h.at(3700)).unresolved
+    acknowledge_settlement(h.ledger, TICKER, actor="operator", note="two records", at=h.at(3750))
+    h.ledger.append_settlement(
+        Settlement("operator:" + TICKER, TICKER, "yes", "1", "operator:investigated", at(3600))
+    )
+    settled_cleanly(h, 3800)
+    cursor = h.ledger.processed(SETTLEMENTS_CURSOR)
+    first["market_result"] = "no"
+    h.double.cash -= held
+    return h, cursor
+
+
+def test_an_acknowledged_conflict_persists_across_repeats_and_restarts_until_corrected(
+    tmp_path,
+):
+    h, cursor = acknowledged_then_resettled(tmp_path)
+    for t in (3900, 3950):  # repeat reads report the same conflict and keep the cursor
+        report = h.executor.reconcile(now=h.at(t))
+        assert "settlement_conflict:" + TICKER in report.unresolved
+        assert h.executor.needs_reconcile
+        assert h.ledger.processed(SETTLEMENTS_CURSOR) == cursor
+    h.restart()  # a new executor with fresh gateway memory finds the same conflict
+    assert "settlement_conflict:" + TICKER in h.executor.reconcile(now=h.at(4000)).unresolved
+    assert len(h.ledger.settlements()) == 1
+    h.ledger.append_settlement(
+        Settlement(
+            "operator:" + TICKER + ":2",
+            TICKER,
+            "no",
+            "0",
+            "operator:venue resettled",
+            at(4000),
+            supersedes_id="operator:" + TICKER,
+        )
+    )
+    settled_cleanly(h, 4100)  # the watermark is unchanged: no newer settled_time appeared
+    h.restart()
+    settled_cleanly(h, 4200)
+    assert len(h.ledger.settlements()) == 2
+
+
+def test_a_revision_that_keeps_an_agreeing_record_is_not_a_conflict(tmp_path):
+    """Residual limitation (documented): while any one of the venue's conflicting records
+    still agrees with the ledger's settlement, a further contradictory record is covered
+    by the acknowledgement; only the positions and balance checks see its effect."""
+    h, held = holding_one_fill(tmp_path)
+    assert h.executor.reconcile(now=h.at(20)).clean
+    first = h.double.settle(TICKER, "yes")
+    later = iso(h.clock.now() + timedelta(seconds=1))
+    h.double.settlement_log.append(first | {"market_result": "no", "settled_time": later})
+    assert not h.executor.reconcile(now=h.at(3700)).clean
+    acknowledge_settlement(h.ledger, TICKER, actor="operator", note="two records", at=h.at(3750))
+    h.ledger.append_settlement(
+        Settlement("operator:" + TICKER, TICKER, "yes", "1", "operator:investigated", at(3600))
+    )
+    settled_cleanly(h, 3800)
+    third = iso(h.clock.now() + timedelta(seconds=2))
+    h.double.settlement_log.append(first | {"market_result": "no", "settled_time": third})
+    settled_cleanly(h, 3900)
+
+
+def test_an_acknowledged_market_awaiting_the_operators_settlement_stays_skipped(tmp_path):
+    """An acknowledgement of this ledger's own market that the ledger has not settled
+    keeps covering the venue's record, revised or not; the open holding stays visible
+    through the position and balance checks until the operator settles the ledger."""
+    h, held = holding_one_fill(tmp_path)
+    assert h.executor.reconcile(now=h.at(20)).clean
+    record = h.double.settle(TICKER, "yes", fee="0.01")
+    assert "settlement_fee:" + TICKER in h.executor.reconcile(now=h.at(3700)).unresolved
+    acknowledge_settlement(h.ledger, TICKER, actor="operator", note="investigating", at=h.at(3750))
+    report = h.executor.reconcile(now=h.at(3800))
+    assert not any(r.startswith("settlement_") for r in report.unresolved)
+    assert "position_mismatch:" + TICKER in report.unresolved
+    record["market_result"] = "no"
+    h.double.cash -= held
+    report = h.executor.reconcile(now=h.at(3900))
+    assert not any(r.startswith("settlement_") for r in report.unresolved)
+    assert {"balance_mismatch", "position_mismatch:" + TICKER} <= set(report.unresolved)
+    assert h.ledger.settlements() == []
