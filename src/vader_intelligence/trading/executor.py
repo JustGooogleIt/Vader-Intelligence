@@ -18,6 +18,7 @@ never resubmitted.
 """
 
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import timedelta
@@ -47,6 +48,9 @@ SETTLEMENTS_CURSOR = CHECKPOINT_PREFIX + "reconcile:settlements_cursor"
 # Insert-once processed keys: an operator's acknowledgement that venue settlement records
 # (named by `settlement_ack_key`) are resolved outside the executor and may be skipped.
 SETTLEMENT_ACK_PREFIX = "settlement_ack:"
+# A settlement fingerprint: scheme (`gateway.settlement_fingerprint` / `raw_settlement_fingerprint`)
+# and a sha256 hex digest.
+FINGERPRINT = re.compile(r"(vs1|raw1):[0-9a-f]{64}\Z")
 log = logging.getLogger(__name__)
 _VENUE_TERMINAL = ("canceled", "expired", "rejected", "not_found")
 # A submission whose outcome was never known is `not_found` only on a negative venue read
@@ -73,10 +77,13 @@ def _evidence(evidence):
         evidence = evidence.keys()
     if isinstance(evidence, (str, bytes)) or evidence is None:
         raise ValueError("settlement evidence is a collection of fingerprints")
-    items = tuple(sorted(set(evidence)))
-    if not items or not all(isinstance(v, str) and v.strip() for v in items):
-        raise ValueError("an acknowledgement needs the fingerprints of the records it resolves")
-    return items
+    items = tuple(evidence)
+    if not items or not all(isinstance(v, str) and FINGERPRINT.fullmatch(v) for v in items):
+        raise ValueError(
+            "an acknowledgement needs the fingerprints (vs1:<sha256> / raw1:<sha256>) of the "
+            "records it resolves"
+        )
+    return tuple(sorted(set(items)))
 
 
 def acknowledge_settlement(ledger, token, *, actor, note, evidence, at):
@@ -632,41 +639,54 @@ class Executor:
             token = data.get("token") if isinstance(data, dict) else None
             evidence = data.get("evidence") if isinstance(data, dict) else None
             if isinstance(token, str) and isinstance(evidence, list) and evidence:
-                scoped.setdefault(token, set()).update(v for v in evidence if isinstance(v, str))
+                scoped.setdefault(token, set()).update(
+                    v for v in evidence if isinstance(v, str) and FINGERPRINT.fullmatch(v)
+                )
             else:
                 legacy.add(key[len(SETTLEMENT_ACK_PREFIX) :])
         return scoped, legacy
 
     def _acknowledged(self, item, unreadable, covered):
         """Reason for a venue record of a token with acknowledged evidence `covered`, or
-        None to skip it. A readable record is skipped only when its own fingerprint is
-        covered; otherwise it is reconciled as usual. An unreadable group is skipped
-        when every record behind it is covered; otherwise its uncovered records decide:
-        an unparseable one is `settlement_unreadable` (the operator must look again); a
-        single readable one is reconciled as usual; several readable ones are still
-        conflicting (`settlement_unreadable`) unless the ledger has settled the market
-        and all of them agree with that settlement on result and value, else
-        `settlement_conflict`. An old acknowledged record never covers a newly observed
-        contradictory one."""
+        None to skip it. "Covered" means the operator resolved that record outside the
+        executor: it is never recorded and never hidden from the ledger's settlement.
+
+        A lone readable record whose fingerprint is not covered is reconciled as usual
+        (`_settle`). A covered one is skipped, unless the ledger has settled the market
+        and the record disagrees on result or value: then the ledger's settlement is
+        supported by nothing the venue lists (`settlement_conflict`).
+
+        A group (`UnreadableSettlement`) never records anything. It is skipped only when
+        every record behind it is covered and, if the ledger has settled the market, at
+        least one of its parsed records agrees with that settlement. An uncovered parsed
+        record that disagrees with the ledger's settlement is `settlement_conflict`; any
+        other uncovered record, parsed or not, is `settlement_unreadable` until the
+        operator acknowledges it on its own evidence. An old acknowledged record never
+        covers, and never records, a newly observed one."""
+        ticker = item.token if unreadable else item.ticker
+        recorded = self.ledger.projection().portfolio.settlements.get(ticker)
+        current = None if recorded is None else (recorded.result, recorded.settlement_value)
+
+        def agrees(record):
+            return (record.result, record.settlement_value) == current
+
         if not unreadable:
-            return None if settlement_fingerprint(item) in covered else self._settle(item)
+            if settlement_fingerprint(item) not in covered:
+                return self._settle(item)
+            return "settlement_conflict" if current is not None and not agrees(item) else None
         if not item.fingerprints:
             return "settlement_unreadable"
-        remaining = [r for r in item.records if settlement_fingerprint(r) not in covered]
-        parsed = {settlement_fingerprint(r) for r in item.records}
-        if any(fp not in covered and fp not in parsed for fp in item.fingerprints):
+        parsed = {settlement_fingerprint(r): r for r in item.records}
+        remaining = [r for fp, r in parsed.items() if fp not in covered]
+        unparsed = [fp for fp in item.fingerprints if fp not in covered and fp not in parsed]
+        if current is not None:
+            if any(not agrees(r) for r in remaining):
+                return "settlement_conflict"
+            if parsed and not any(agrees(r) for r in parsed.values()):
+                return "settlement_conflict"
+        if remaining or unparsed:
             return "settlement_unreadable"
-        if not remaining:
-            return None
-        if len(remaining) == 1:
-            return self._settle(remaining[0])
-        recorded = self.ledger.projection().portfolio.settlements.get(item.token)
-        if recorded is None:
-            return "settlement_unreadable"
-        current = (recorded.result, recorded.settlement_value)
-        if all((r.result, r.settlement_value) == current for r in remaining):
-            return None
-        return "settlement_conflict"
+        return None
 
     def _venue_filled(self, client_order_id):
         """The largest fill count the venue reported for an order in `reconciled` events

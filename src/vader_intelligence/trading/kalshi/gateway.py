@@ -661,7 +661,7 @@ class KalshiGateway:
                 settlement = settlement_from_exchange(item)
             except MappingError as exc:
                 token = settlement_token(item)
-                errors.setdefault(token, exc.code)
+                errors[token] = min(exc.code, errors.get(token, exc.code))  # listing-order free
                 fingerprint = raw_settlement_fingerprint(item)
                 if fingerprint not in raw.setdefault(token, []):
                     raw[token].append(fingerprint)

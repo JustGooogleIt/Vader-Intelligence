@@ -348,6 +348,13 @@ def test_an_acknowledged_ticker_still_conflicts_when_the_venue_changes_its_resul
             supersedes_id="operator:" + TICKER,
         )
     )
+    if listed == "both records":
+        # The venue still lists two records; the changed one was never acknowledged, so
+        # the correction alone leaves it reported until the operator resolves it too.
+        assert h.executor.reconcile(now=h.at(3950)).unresolved == (
+            "settlement_unreadable:" + TICKER,
+        )
+        acknowledge(h, TICKER, "venue resettled", 3960)
     settled_cleanly(h, 4000)
 
 
@@ -545,6 +552,9 @@ def test_an_acknowledged_conflict_persists_across_repeats_and_restarts_until_cor
             supersedes_id="operator:" + TICKER,
         )
     )
+    # Both listed records now agree with the ledger, but the changed one is uncovered.
+    assert h.executor.reconcile(now=h.at(4050)).unresolved == ("settlement_unreadable:" + TICKER,)
+    acknowledge(h, TICKER, "venue resettled", 4060)
     settled_cleanly(h, 4100)  # the watermark is unchanged: no newer settled_time appeared
     h.restart()
     settled_cleanly(h, 4200)
@@ -618,10 +628,147 @@ def test_a_new_contradiction_is_not_covered_by_an_older_acknowledgement(
     )
     if not cash_changed:
         h.double.cash -= held * (100 - payout_cents) / 100  # the venue catches up
+    # The correction is supported by the new record, which is still unacknowledged.
+    assert h.executor.reconcile(now=h.at(4050)).unresolved == ("settlement_unreadable:" + TICKER,)
+    acknowledge(h, TICKER, "venue resettled", 4060)
     settled_cleanly(h, 4100)
     h.restart()
     settled_cleanly(h, 4200)
     assert len(h.ledger.settlements()) == 2
+
+
+@pytest.mark.parametrize("acknowledged", ["yes", "no"])
+def test_a_partial_acknowledgement_never_records_the_other_record(tmp_path, acknowledged):
+    """Internal review of f24af41, finding 1: acknowledging one record of a conflicting
+    pair says nothing about the other; the executor must not record it."""
+    h, held = holding_one_fill(tmp_path)
+    assert h.executor.reconcile(now=h.at(20)).clean
+    first = h.double.settle(TICKER, "yes")
+    h.double.settlement_log.append(
+        first
+        | {
+            "market_result": "no",
+            "revenue": 0,
+            "settled_time": iso(h.clock.now() + timedelta(seconds=1)),
+        }
+    )
+    assert "settlement_unreadable:" + TICKER in h.executor.reconcile(now=h.at(3700)).unresolved
+    one = {fp: v for fp, v in evidence(h, TICKER).items() if v["result"] == acknowledged}
+    assert len(one) == 1
+    acknowledge_settlement(
+        h.ledger, TICKER, actor="operator", note="one of two", evidence=one, at=h.at(3750)
+    )
+    for t in (3800, 3850):
+        report = h.executor.reconcile(now=h.at(t))
+        assert "settlement_unreadable:" + TICKER in report.unresolved, report.unresolved
+        assert h.ledger.settlements() == []
+    h.restart()
+    assert "settlement_unreadable:" + TICKER in h.executor.reconcile(now=h.at(3900)).unresolved
+    assert h.ledger.settlements() == []
+    # Resolution: acknowledge the other record too and settle the ledger.
+    acknowledge(h, TICKER, "both reviewed", 3950)
+    h.ledger.append_settlement(
+        Settlement("operator:" + TICKER, TICKER, "yes", "1", "operator:investigated", at(3600))
+    )
+    settled_cleanly(h, 4000)
+    assert [s.source_ref for s in h.ledger.settlements()] == ["operator:investigated"]
+
+
+def test_an_acknowledged_record_still_supports_or_contradicts_the_ledgers_settlement(tmp_path):
+    """Internal review finding 2: a covered record is not recorded, but the ledger's
+    settlement must still be supported by a venue record. A mistyped operator settlement
+    (NO while the only, acknowledged, record says YES) is a conflict; a correction that
+    nothing the venue lists supports is a conflict too."""
+    h, held = holding_one_fill(tmp_path)
+    assert h.executor.reconcile(now=h.at(20)).clean
+    h.double.settle(TICKER, "yes", fee="0.01")
+    assert "settlement_fee:" + TICKER in h.executor.reconcile(now=h.at(3700)).unresolved
+    acknowledge(h, TICKER, "fee under review", 3750)
+    h.ledger.append_settlement(
+        Settlement("operator:" + TICKER, TICKER, "no", "0", "operator:typo", at(3600))
+    )
+    report = h.executor.reconcile(now=h.at(3800))
+    assert "settlement_conflict:" + TICKER in report.unresolved, report.unresolved
+    h.restart()
+    assert "settlement_conflict:" + TICKER in h.executor.reconcile(now=h.at(3850)).unresolved
+    h.ledger.append_settlement(
+        Settlement(
+            "operator:" + TICKER + ":2",
+            TICKER,
+            "yes",
+            "1",
+            "operator:corrected",
+            at(3850),
+            supersedes_id="operator:" + TICKER,
+        )
+    )
+    h.ledger.append_cash_event(
+        CashEvent("operator:settlement-fee", "adjustment", D("-0.01"), at(3850), "venue fee")
+    )
+    settled_cleanly(h, 3900)
+    # The resolved pair: a correction to a result neither listed record carries conflicts.
+    h2, first, held2 = resolved_pair(tmp_path / "pair")
+    h2.ledger.append_settlement(
+        Settlement(
+            "operator:" + TICKER + ":2",
+            TICKER,
+            "fair",
+            "0.5",
+            "operator:unsupported",
+            at(3850),
+            supersedes_id="operator:" + TICKER,
+        )
+    )
+    assert "settlement_conflict:" + TICKER in h2.executor.reconcile(now=h2.at(3900)).unresolved
+
+
+def test_new_agreeing_records_in_a_group_are_reported_until_acknowledged(tmp_path):
+    """Internal review finding 3: records the operator never acknowledged are reported
+    even when they agree with the ledger on result and value (they differ in payout/fee)."""
+    h, first, held = resolved_pair(tmp_path)
+    later = h.clock.now() + timedelta(seconds=2)
+    h.double.settlement_log.append(first | {"revenue": 0, "settled_time": iso(later)})
+    h.double.settlement_log.append(
+        first | {"fee_cost": "0.0500", "settled_time": iso(later + timedelta(seconds=1))}
+    )
+    for t in (3900, 3950):
+        assert h.executor.reconcile(now=h.at(t)).unresolved == ("settlement_unreadable:" + TICKER,)
+    h.restart()
+    assert h.executor.reconcile(now=h.at(4000)).unresolved == ("settlement_unreadable:" + TICKER,)
+    assert len(evidence(h, TICKER)) == 4
+    acknowledge(h, TICKER, "re-listings reviewed", 4050)
+    settled_cleanly(h, 4100)
+
+
+def test_evidence_must_be_fingerprints_and_the_group_label_is_listing_order_free(tmp_path):
+    """Internal review findings 5-7: the outer `settlement_evidence` mapping (ticker keys),
+    mixed types and blanks are refused before any audit row is written; a group's error
+    label does not depend on listing order."""
+    h, held = holding_one_fill(tmp_path)
+    assert h.executor.reconcile(now=h.at(20)).clean
+    h.double.settle(VOID, "void")
+    assert not h.executor.reconcile(now=h.at(3700)).clean
+    outer = settlement_evidence(h.gateway, h.ledger)
+    for bad in (outer, ["vs1:" + "a" * 64, 1], [""], ["vs1:" + "a" * 63], ["raw1:" + "A" * 64]):
+        with pytest.raises(ValueError):
+            acknowledge_settlement(
+                h.ledger, VOID, actor="operator", note="x", evidence=bad, at=h.at(3750)
+            )
+    assert not any(k.startswith("settlement_ack:") for k in h.ledger.processed_inputs())
+    record = h.double.settle(TICKER, "yes")
+    bad_value = record | {"value": 50}  # yes with a contradicting value: invalid_field
+    bad_result = record | {"market_result": "void"}  # unknown_result
+    for order in ([bad_value, bad_result], [bad_result, bad_value]):
+        h.double.settlement_log[-1:] = []
+        h.double.settlement_log.extend(order)
+        unreadable = [
+            item
+            for item in h.gateway.settlements_since(None)[0]
+            if isinstance(item, UnreadableSettlement) and item.token == TICKER
+        ]
+        assert [u.error for u in unreadable] == ["inconsistent_settlement"]
+        assert len(unreadable[0].fingerprints) == 2
+        h.double.settlement_log[-2:] = [record]
 
 
 def test_the_exact_repeated_resolved_pair_stays_clean(tmp_path):
@@ -676,9 +823,17 @@ def test_an_unparseable_record_beside_a_readable_one_is_not_read_as_the_settleme
     acknowledge_settlement(
         h.ledger, TICKER, actor="operator", note="void", evidence=void_only, at=h.at(3750)
     )
-    # The readable record is now reconciled on its own: it agrees with the holding.
-    settled_cleanly(h, 3800)
-    assert len(h.ledger.settlements()) == 1
+    # A group never records: the readable record stays reported until the operator
+    # resolves it too, and the settlement comes from the operator, never the sibling.
+    report = h.executor.reconcile(now=h.at(3800))
+    assert "settlement_unreadable:" + TICKER in report.unresolved, report.unresolved
+    assert h.ledger.settlements() == []
+    acknowledge(h, TICKER, "both reviewed", 3850)
+    h.ledger.append_settlement(
+        Settlement("operator:" + TICKER, TICKER, "yes", "1", "operator:investigated", at(3600))
+    )
+    settled_cleanly(h, 3900)
+    assert [s.source_ref for s in h.ledger.settlements()] == ["operator:investigated"]
 
 
 def test_a_gateway_that_names_no_evidence_cannot_be_acknowledged_away(tmp_path):
