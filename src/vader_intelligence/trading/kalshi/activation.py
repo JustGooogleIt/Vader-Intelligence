@@ -208,8 +208,12 @@ def _wrapped_secret_body(data):
     """Refuse PEM-shaped fragments even when their identifying first line is lost.
 
     Two consecutive 60–76-character base64 lines are conservative evidence of a
-    pasted body. A complete, parseable public-key body is allowed. This heuristic
-    deliberately does not claim detection of arbitrary short or re-encoded secrets.
+    pasted body. A complete, parseable public-key body is allowed, and so are two
+    shapes that are not PEM bodies although they use the base64 alphabet: a run
+    made only of hex digits (digests; hex-encoded key material is the separate hex
+    detector's job) and a run of absolute paths (every line starts with `/`). This
+    heuristic deliberately does not claim detection of arbitrary short or re-encoded
+    secrets.
     """
     groups, current = [], []
     for raw in data.splitlines():
@@ -225,6 +229,8 @@ def _wrapped_secret_body(data):
         if not any(len(a) >= 60 and len(b) >= 60 for a, b in zip(group, group[1:])):
             continue
         encoded = b"".join(group)
+        if re.fullmatch(rb"[0-9a-fA-F]+", encoded) or all(line.startswith(b"/") for line in group):
+            continue
         try:
             public = base64.b64decode(
                 encoded + b"=" * (-len(encoded) % 4), altchars=b"-_", validate=True

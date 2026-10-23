@@ -119,7 +119,10 @@ ledger), and the explicit statement that activation is a separate user decision.
   RSA validation is skipped when loading, since only the shape matters and validation
   of a crafted structure took up to a minute. The integration repair also refuses
   header-less PEM-shaped bodies with two consecutive base64 lines of 60–76
-  characters. A complete parseable public-key body is exempt from that shape check.
+  characters. A complete parseable public-key body is exempt from that shape check,
+  as are a run made only of hex digits (consecutive digests; hex-encoded key
+  material belongs to the hex detector) and a run of absolute paths (release
+  validation 2026-10-23: both were refused as key material before).
   A SHA-256 digest and a path are not refused; PEM public keys still trigger the
   blanket `-----BEGIN` marker rule. Arbitrary short fragments, JWK/text dumps and
   custom encodings are not guaranteed to be detected. (A later repair: the #24/#25 pre-review

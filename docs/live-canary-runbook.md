@@ -32,7 +32,8 @@ Specification: `docs/specs/live-adapter-v1.md`. API facts and their verification
    The `no_key_material` gate detects PEM markers, parseable base64/hex key
    structures, header-preserving fragments, and PEM-shaped wrapped fragments
    (two consecutive base64 lines of 60–76 characters), including comments and
-   TOML arrays. This is a conservative paste guard, not proof that a file contains
+   TOML arrays; consecutive hex digests and absolute paths are not treated as a
+   wrapped body. This is a conservative paste guard, not proof that a file contains
    no secrets: arbitrary short fragments, JWK/text dumps and custom encodings are
    outside its guarantee. Never paste secret material into this file. It also refuses any text containing
    `-----BEGIN` or `PRIVATE KEY` (upper case), even in a comment or a Keychain service
