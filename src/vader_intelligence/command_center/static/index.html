@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vader Command Center</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Vader Command Center <span class="meta">v1 · development</span></h1>
+  <nav>
+    <button data-view="overview" class="primary">Overview</button>
+    <button data-view="game">Game workspace</button>
+    <button data-view="farm">Farm view</button>
+    <button data-view="engineering">Engineering</button>
+  </nav>
+  <div id="clock">UI refresh: <span id="ui-time">—</span> · source: <span id="source-time">—</span> · <span id="conn" class="stale">connecting</span></div>
+</header>
+<main>
+  <section class="panel" id="left">
+    <h2>Games <span id="games-state" class="state empty">loading</span></h2>
+    <div id="games-list" class="note">Loading…</div>
+    <h3>Unmapped contracts</h3>
+    <div id="unmapped" class="note">—</div>
+  </section>
+  <section class="panel" id="center">
+    <div id="view-overview">
+      <h2>Overview <span id="overview-state" class="state empty">loading</span></h2>
+      <div id="overview"></div>
+    </div>
+    <div id="view-game" class="hidden">
+      <h2>Game workspace <span id="game-state" class="state empty">none selected</span></h2>
+      <div id="game"></div>
+    </div>
+    <div id="view-farm" class="hidden">
+      <h2>Farm view <span id="farm-state" class="state empty">loading</span></h2>
+      <div id="farm"></div>
+    </div>
+    <div id="view-engineering" class="hidden">
+      <h2>Engineering <span id="eng-state" class="state empty">loading</span></h2>
+      <div id="engineering"></div>
+    </div>
+  </section>
+  <section class="panel" id="right">
+    <h2>Activity &amp; workers</h2>
+    <div id="activity" class="note">Select a run.</div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

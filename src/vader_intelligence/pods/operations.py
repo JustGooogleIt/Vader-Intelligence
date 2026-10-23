@@ -462,4 +462,7 @@ class PaperBacktestParams:
             _decimal_text(depth, "assumed depth", 0.01, 100000.0)
 
 
-from . import research_ops  # noqa: E402,F401  (registers the research operations)
+from . import (  # noqa: E402,F401  (registers the research and game operations)
+    game_ops,
+    research_ops,
+)

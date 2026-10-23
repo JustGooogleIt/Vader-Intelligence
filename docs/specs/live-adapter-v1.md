@@ -119,7 +119,10 @@ ledger), and the explicit statement that activation is a separate user decision.
   RSA validation is skipped when loading, since only the shape matters and validation
   of a crafted structure took up to a minute. The integration repair also refuses
   header-less PEM-shaped bodies with two consecutive base64 lines of 60–76
-  characters. A complete parseable public-key body is exempt from that shape check.
+  characters. A complete parseable public-key body is exempt from that shape check,
+  as are a run made only of hex digits (consecutive digests; hex-encoded key
+  material belongs to the hex detector) and a run of absolute paths (release
+  validation 2026-10-23: both were refused as key material before).
   A SHA-256 digest and a path are not refused; PEM public keys still trigger the
   blanket `-----BEGIN` marker rule. Arbitrary short fragments, JWK/text dumps and
   custom encodings are not guaranteed to be detected. (A later repair: the #24/#25 pre-review
@@ -165,10 +168,27 @@ and balance mismatches indefinitely (safe, since buys stop, but never resolved).
   one) with the venue's result and value, after which the record agrees (a settlement
   fee is recorded as a cash adjustment); or, for a record that does not belong in this
   ledger or cannot be read, acknowledge it with `acknowledge_settlement(ledger, token,
-  actor=..., note=..., at=...)` (an insert-once, auditable record; any recorded key
-  counts; `token` is the name in the reason). For this ledger's own market an
-  unreadable record needs both. Either lets the cursor move on. A `fill_conflict` (which
-  defers settlements for every market) has no automated remedy.
+  actor=..., note=..., evidence=..., at=...)` (an insert-once, auditable record;
+  `token` is the name in the reason; `evidence` is the content fingerprints of the
+  records resolved, listed by `settlement_evidence(gateway, ledger)[token]`). The
+  acknowledgement's key names its evidence, so a token can carry several and an exact
+  retry is a no-op. It covers exactly those records (`settlement_fingerprint`, scheme
+  `vs1`, digests every field of a parsed record; `raw_settlement_fingerprint`, `raw1`,
+  an unparseable one as listed). A covered record is never recorded and never hides the
+  ledger's settlement. Any other record under the token — listed later, or with changed
+  content under the same settled time — is not covered: a lone readable one is
+  reconciled as if nothing had been acknowledged; inside a group (several records for
+  one ticker) it is `settlement_conflict` when it disagrees with the ledger's
+  settlement, else `settlement_unreadable`, until acknowledged on its own evidence. A
+  group never records a settlement (an acknowledgement of one record of a pair says
+  nothing about the other). A settled market's settlement must be supported on result
+  and value by at least one record the venue currently lists, else `settlement_conflict`
+  until a correction supersedes it (N-34a, PR #39 review P2, internal review of the
+  repair). Evidence fingerprints are validated (`vs1:`/`raw1:` + sha256) before any
+  audit row is written. A legacy acknowledgement that names no evidence covers nothing
+  and logs a warning. For this ledger's own market an unreadable record needs both. Either lets
+  the cursor move on. A `fill_conflict` (which defers settlements for every market) has
+  no automated remedy.
 - **Late fills.** A fill that arrives after its market's settlement was recorded stays
   refused by the ledger (`fill on a settled market` → `fill_conflict`). Under the rule
   above, every order on the market was terminal or filled with all venue-reported fills
@@ -185,7 +205,9 @@ and balance mismatches indefinitely (safe, since buys stop, but never resolved).
   second read-only pass found no sequence that records a settlement with venue fills
   missing, and four minor gaps (a data-less acknowledgement ignored, two records for one
   ticker still blocking every market, and runbook remedies for fees, own unreadable
-  records and `fill_conflict`), fixed as described above.
+  records and `fill_conflict`), fixed as described above. The data-less acknowledgement
+  was later superseded: since the PR #39 review, an acknowledgement must name the
+  records it resolves, and one without evidence covers nothing.
 
 ## Revision: venue absence (2026-10-19, independent review findings F30, F32)
 
