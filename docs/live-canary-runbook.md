@@ -32,7 +32,8 @@ Specification: `docs/specs/live-adapter-v1.md`. API facts and their verification
    The `no_key_material` gate detects PEM markers, parseable base64/hex key
    structures, header-preserving fragments, and PEM-shaped wrapped fragments
    (two consecutive base64 lines of 60–76 characters), including comments and
-   TOML arrays. This is a conservative paste guard, not proof that a file contains
+   TOML arrays; consecutive hex digests and absolute paths are not treated as a
+   wrapped body. This is a conservative paste guard, not proof that a file contains
    no secrets: arbitrary short fragments, JWK/text dumps and custom encodings are
    outside its guarantee. Never paste secret material into this file. It also refuses any text containing
    `-----BEGIN` or `PRIVATE KEY` (upper case), even in a comment or a Keychain service
@@ -232,12 +233,33 @@ before production.
     agrees and the cursor moves on;
   - `settlement_fee`: as above, and record the fee the venue charged as a live cash
     `adjustment` (negative amount) so ledger cash equals `balance_dollars`;
-  - `settlement_foreign`, `settlement_unreadable`: after checking the record (or, for
-    `conflicting_records`, the records), acknowledge it with
-    `acknowledge_settlement(ledger, token, actor=..., note=..., at=...)`
-    (`trading/executor.py`; `token` is the name in the reason). For this ledger's own
-    market, also append its settlement as above: an acknowledgement only skips the
-    record, and positions and balance keep flagging until the ledger is settled;
+  - `settlement_foreign`, `settlement_unreadable`: list what the venue shows for the
+    token with `settlement_evidence(gateway, ledger)[token]` (`trading/executor.py`;
+    `token` is the name in the reason; `{fingerprint: summary}`, one entry per distinct
+    record, unparseable ones as `{"error": code}`), check each record, then acknowledge
+    exactly those records: `acknowledge_settlement(ledger, token, actor=..., note=...,
+    evidence=<that mapping or its fingerprints>, at=...)`. The acknowledgement covers
+    only the records whose fingerprints it names, and "covers" means resolved outside
+    the executor: a covered record is never recorded, and never hides the ledger's
+    settlement. A record the venue lists later, or lists with changed content under the
+    same settled time, is not covered: a lone readable one is reconciled as if nothing
+    had been acknowledged; one inside a group of several records for the ticker is
+    `settlement_unreadable` (or `settlement_conflict` when it disagrees with the
+    ledger's settlement) until acknowledged on its own evidence. A group never records a
+    settlement: acknowledging one record of a contradictory pair says nothing about the
+    other, so settle this ledger's own market through the ledger and acknowledge every
+    record you reviewed. Once the ledger has settled the market, its settlement must be
+    supported by at least one record the venue lists (covered or not) on result and
+    value, else `settlement_conflict` until a correction supersedes it (N-34a, PR #39
+    review P2 and the internal review of its repair). Within an acknowledged
+    contradictory pair the operator's choice between the listed results is theirs; only
+    the balance check shows which one the venue paid. After a correction, acknowledge
+    the venue record that supports it if it is not already covered. An acknowledgement
+    written before evidence scoping (key
+    `settlement_ack:<token>` with no `evidence`) covers nothing and logs a warning:
+    re-acknowledge with evidence (its own key; the old row stays). For this ledger's
+    own market, also append its settlement as above: an acknowledgement only skips the
+    records, and positions and balance keep flagging until the ledger is settled;
   - `settlement_fills_missing`, `settlement_orders_active`: usually REST lag; reconcile
     again before doing anything;
   - `settlements_deferred`: the fills reconciliation reported a reason. REST lag clears
