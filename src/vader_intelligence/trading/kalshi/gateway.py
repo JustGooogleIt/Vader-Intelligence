@@ -86,6 +86,7 @@ from ..gateway import (
     CancelResult,
     SubmitResult,
     UnreadableSettlement,
+    raw_settlement_excerpt,
     raw_settlement_fingerprint,
     settlement_fingerprint,
 )
@@ -655,7 +656,7 @@ class KalshiGateway:
         items = self._pages(
             "/portfolio/settlements", {"min_ts": min_ts, "limit": PAGE_LIMIT}, "settlements"
         )
-        parsed, errors, raw = {}, {}, {}
+        parsed, errors, raw, excerpts = {}, {}, {}, {}
         for item in items:
             try:
                 settlement = settlement_from_exchange(item)
@@ -665,6 +666,7 @@ class KalshiGateway:
                 fingerprint = raw_settlement_fingerprint(item)
                 if fingerprint not in raw.setdefault(token, []):
                     raw[token].append(fingerprint)
+                    excerpts[fingerprint] = raw_settlement_excerpt(item)
                 continue
             seen = parsed.setdefault(settlement.ticker, [])
             if settlement not in seen:  # an exact duplicate listing is the same record
@@ -683,7 +685,13 @@ class KalshiGateway:
                 # ticker travel with them rather than being read as the settlement.
                 fingerprints = (*raw[token], *(settlement_fingerprint(r) for r in records))
                 unreadable.append(
-                    UnreadableSettlement(token, errors[token], records, tuple(sorted(fingerprints)))
+                    UnreadableSettlement(
+                        token,
+                        errors[token],
+                        records,
+                        tuple(sorted(fingerprints)),
+                        tuple((fp, excerpts[fp]) for fp in sorted(raw[token])),
+                    )
                 )
             elif len(records) > 1:
                 unreadable.append(UnreadableSettlement(token, "conflicting_records", records))

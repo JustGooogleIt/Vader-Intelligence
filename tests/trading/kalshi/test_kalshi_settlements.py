@@ -226,6 +226,34 @@ def test_operator_resolutions_clear_foreign_unreadable_and_fee_records(tmp_path)
     assert h.ledger.processed(SETTLEMENTS_CURSOR) != cursor  # moved past the records
 
 
+def test_two_unparseable_records_of_one_token_are_distinguishable(tmp_path):
+    """Internal review of 553fa99, low finding 2: the evidence listing names what each
+    unreadable record says, bounded, so the operator can tell them apart before
+    acknowledging."""
+    h, held = holding_one_fill(tmp_path)
+    assert h.executor.reconcile(now=h.at(20)).clean
+    first = h.double.settle(VOID, "void")
+    h.double.settlement_log.append(
+        first
+        | {"market_result": "cancelled", "settled_time": iso(h.clock.now() + timedelta(seconds=1))}
+    )
+    assert h.executor.reconcile(now=h.at(3700)).unresolved == ("settlement_unreadable:" + VOID,)
+    seen = evidence(h, VOID)
+    assert len(seen) == 2
+    assert sorted(v["as_listed"]["market_result"] for v in seen.values()) == ["cancelled", "void"]
+    fields = {"ticker", "market_result", "settled_time", "value", "revenue", "fee_cost"}
+    for v in seen.values():
+        assert v["error"] == "unknown_result" and v["as_listed"]["ticker"] == VOID
+        assert set(v["as_listed"]) <= fields
+    only_void = {fp: v for fp, v in seen.items() if v["as_listed"]["market_result"] == "void"}
+    acknowledge_settlement(
+        h.ledger, VOID, actor="operator", note="void only", evidence=only_void, at=h.at(3750)
+    )
+    assert h.executor.reconcile(now=h.at(3800)).unresolved == ("settlement_unreadable:" + VOID,)
+    acknowledge(h, VOID, "both reviewed", 3850)
+    settled_cleanly(h, 3900)
+
+
 def test_an_acknowledgement_needs_a_reason_and_the_evidence_it_resolves(tmp_path, caplog):
     h, held = holding_one_fill(tmp_path)
     assert h.executor.reconcile(now=h.at(20)).clean
@@ -233,7 +261,7 @@ def test_an_acknowledgement_needs_a_reason_and_the_evidence_it_resolves(tmp_path
     unreadable = ("settlement_unreadable:" + VOID,)
     assert h.executor.reconcile(now=h.at(3700)).unresolved == unreadable
     seen = evidence(h, VOID)
-    assert len(seen) == 1 and all(v == {"error": "unknown_result"} for v in seen.values())
+    assert len(seen) == 1 and all(v["error"] == "unknown_result" for v in seen.values())
     for bad in ({"note": " "}, {"evidence": ()}, {"evidence": "vs1:abc"}, {"evidence": [" "]}):
         with pytest.raises(ValueError):
             acknowledge_settlement(
@@ -819,6 +847,7 @@ def test_an_unparseable_record_beside_a_readable_one_is_not_read_as_the_settleme
         "unknown_result",
         "yes",
     ]
+    assert [v["as_listed"]["market_result"] for v in seen.values() if "error" in v] == ["void"]
     void_only = {fp: v for fp, v in seen.items() if "error" in v}
     acknowledge_settlement(
         h.ledger, TICKER, actor="operator", note="void", evidence=void_only, at=h.at(3750)
