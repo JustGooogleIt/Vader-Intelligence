@@ -239,12 +239,23 @@ before production.
     record, unparseable ones as `{"error": code}`), check each record, then acknowledge
     exactly those records: `acknowledge_settlement(ledger, token, actor=..., note=...,
     evidence=<that mapping or its fingerprints>, at=...)`. The acknowledgement covers
-    only the records whose fingerprints it names. A record the venue lists later, or
-    lists with changed content under the same settled time, is reconciled as if nothing
-    had been acknowledged and is reported until resolved on its own evidence; for a
-    market the ledger has settled, a readable record that disagrees on result or value
-    is `settlement_conflict` until a correction supersedes that settlement (N-34a, PR #39
-    review P2). An acknowledgement written before evidence scoping (key
+    only the records whose fingerprints it names, and "covers" means resolved outside
+    the executor: a covered record is never recorded, and never hides the ledger's
+    settlement. A record the venue lists later, or lists with changed content under the
+    same settled time, is not covered: a lone readable one is reconciled as if nothing
+    had been acknowledged; one inside a group of several records for the ticker is
+    `settlement_unreadable` (or `settlement_conflict` when it disagrees with the
+    ledger's settlement) until acknowledged on its own evidence. A group never records a
+    settlement: acknowledging one record of a contradictory pair says nothing about the
+    other, so settle this ledger's own market through the ledger and acknowledge every
+    record you reviewed. Once the ledger has settled the market, its settlement must be
+    supported by at least one record the venue lists (covered or not) on result and
+    value, else `settlement_conflict` until a correction supersedes it (N-34a, PR #39
+    review P2 and the internal review of its repair). Within an acknowledged
+    contradictory pair the operator's choice between the listed results is theirs; only
+    the balance check shows which one the venue paid. After a correction, acknowledge
+    the venue record that supports it if it is not already covered. An acknowledgement
+    written before evidence scoping (key
     `settlement_ack:<token>` with no `evidence`) covers nothing and logs a warning:
     re-acknowledge with evidence (its own key; the old row stays). For this ledger's
     own market, also append its settlement as above: an acknowledgement only skips the
