@@ -28,7 +28,7 @@ STATIC_FILES = {
     "app.js": "text/javascript; charset=utf-8",
     "style.css": "text/css; charset=utf-8",
 }
-MAX_BODY = 16 * 1024
+MAX_BODY = 256 * 1024  # a maintenance brief carries a patch (coding.MAX_PATCH_BYTES)
 RUN_ID = re.compile(r"[0-9a-f-]{8,64}\Z")
 WORKER_ID = re.compile(r"[A-Za-z0-9_.-]{1,64}\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
@@ -229,8 +229,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(HTTPStatus.BAD_REQUEST, "unknown command kind")
         if run_id is not None and (not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id)):
             return self._error(HTTPStatus.BAD_REQUEST, "bad run id")
-        if not isinstance(payload, dict) or len(json.dumps(payload)) > 4096:
-            return self._error(HTTPStatus.BAD_REQUEST, "payload must be a small object")
+        if not isinstance(payload, dict) or len(json.dumps(payload)) > 220 * 1024:
+            return self._error(HTTPStatus.BAD_REQUEST, "payload must be a bounded object")
         try:
             with CenterStore(cfg.root) as center:
                 stored = center.receive_command(command_id, kind, run_id, payload)
