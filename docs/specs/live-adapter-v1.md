@@ -174,12 +174,19 @@ and balance mismatches indefinitely (safe, since buys stop, but never resolved).
   acknowledgement's key names its evidence, so a token can carry several and an exact
   retry is a no-op. It covers exactly those records (`settlement_fingerprint`, scheme
   `vs1`, digests every field of a parsed record; `raw_settlement_fingerprint`, `raw1`,
-  an unparseable one as listed); any other record under the token — listed later, or
-  with changed content under the same settled time — is reconciled as if nothing had
-  been acknowledged, so a disagreeing readable record of a market the ledger has
-  settled is `settlement_conflict` until a correction supersedes it (N-34a, PR #39
-  review P2). A legacy acknowledgement that names no evidence covers nothing and logs
-  a warning. For this ledger's own market an unreadable record needs both. Either lets
+  an unparseable one as listed). A covered record is never recorded and never hides the
+  ledger's settlement. Any other record under the token — listed later, or with changed
+  content under the same settled time — is not covered: a lone readable one is
+  reconciled as if nothing had been acknowledged; inside a group (several records for
+  one ticker) it is `settlement_conflict` when it disagrees with the ledger's
+  settlement, else `settlement_unreadable`, until acknowledged on its own evidence. A
+  group never records a settlement (an acknowledgement of one record of a pair says
+  nothing about the other). A settled market's settlement must be supported on result
+  and value by at least one record the venue currently lists, else `settlement_conflict`
+  until a correction supersedes it (N-34a, PR #39 review P2, internal review of the
+  repair). Evidence fingerprints are validated (`vs1:`/`raw1:` + sha256) before any
+  audit row is written. A legacy acknowledgement that names no evidence covers nothing
+  and logs a warning. For this ledger's own market an unreadable record needs both. Either lets
   the cursor move on. A `fill_conflict` (which defers settlements for every market) has
   no automated remedy.
 - **Late fills.** A fill that arrives after its market's settlement was recorded stays

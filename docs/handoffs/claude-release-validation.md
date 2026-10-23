@@ -17,7 +17,7 @@ sent to a venue; no holdout was consumed; no provider or paid call was made.
 | Contains author candidate (#37 head) | `757c73f986b4481beb2fbddbb596e58450fe2299` (yes, ancestor) |
 | This branch | `fix/claude-release-validation-20261022`, new worktree, private `.venv` (Python 3.11.6, uv 0.12.19, `uv sync --locked` at 04:47:25Z) |
 | Recovery refs inspected, not merged | `recovery/grok-h-20261022` (`0572248…`), `recovery/f50-20261022` (`37c7bac…`), `recovery/history-tier-20261022` (`be6f71f…`) |
-| Commits on this branch | N-34a `500c993c4caa4f96a40b773cab804cd228326fa3`; F51 narrowing + probes `9495817f68dc0d5dd69baff83adee09f1c2747d5`; this document and the findings tracker in the following commit; **2026-10-23 follow-up:** acknowledgement evidence scope (PR #39 review P2) `f24af41be9e02f6453c495b7ab2986347eba32ab`, docs in the next commit |
+| Commits on this branch | N-34a `500c993c4caa4f96a40b773cab804cd228326fa3`; F51 narrowing + probes `9495817f68dc0d5dd69baff83adee09f1c2747d5`; this document and the findings tracker in the following commit; **2026-10-23 follow-up:** acknowledgement evidence scope (PR #39 review P2) `f24af41be9e02f6453c495b7ab2986347eba32ab`, docs `b08d27cbad0ebced276f67cf567ceeddde6d6f09`; after the internal review: `553fa99732e9d49caa7cf5be6541b2b1f2530435` (code, tests, runbook), spec + this record in the next commit |
 | Draft PR base | `fix/integration-readiness-20261022` |
 
 Skills: Cool Coder engineering skills 1.2.0 at `e46e79805be0ee5877fa9bc993492064bbb40aa5`
@@ -158,6 +158,40 @@ shape. Adapted copy of Codex's probe (evidence supplied at the acknowledgement c
 otherwise unchanged): **5 passed** (was 4 failed / 1 passed). Residual: `settlement_evidence`
 re-reads the venue (the same read reconciliation makes); an operator who acknowledges a
 record they did not inspect is outside the mechanism.
+
+#### Internal review (subagent, labelled internal; not Codex's external review) and fix
+
+An independent subagent reviewed `f24af41` in its own worktree with a fresh brief (no
+verdict supplied) and twelve adversarial probes (scratch, not in Git). Its report
+(07:06Z) found, by severity: **(1) high** — acknowledging one record of a conflicting
+pair let `_acknowledged` hand the other record to `_settle`, which recorded it as the
+ledger's settlement; **(2) medium** — covered records were no longer compared with the
+ledger's settlement, so a mistyped operator settlement or an unsupported correction only
+surfaced through the global balance check; **(3) medium** — uncovered records in a group
+that agreed on result/value but differed in payout/fee were skipped while the same listing
+without any acknowledgement was reported; **(4)** runbook/spec described the old call
+(fixed in `b08d27c`, refined now); **(5–7) low** — the outer `settlement_evidence` mapping
+was accepted as evidence, the group error label depended on listing order, mixed-type
+evidence raised `TypeError`. Sound: fingerprint stability (`+00:00` vs `Z`, `0.00` vs
+`0.0000`, `value` null vs 100), raw digests never raise, ten malformed legacy rows do not
+crash and cover nothing, colon tokens cannot collide, the unacknowledged path is unchanged.
+
+Fix `553fa99`: a group never records; a covered record is skipped but the ledger's
+settlement must be supported on result and value by at least one record the venue lists
+(covered or not), else `settlement_conflict`; an uncovered record in a group is
+`settlement_conflict` when it disagrees, `settlement_unreadable` otherwise, until
+acknowledged on its own evidence; a lone uncovered readable record still goes through
+`_settle`; evidence must match `(vs1|raw1):<sha256>`; the group label is the minimum code.
+Consequence for operators (runbook): after a correction, acknowledge the record that
+supports it if it is not already covered. Intentional non-change: within an acknowledged
+contradictory pair, the operator's choice between the two listed results is theirs
+(either is supported); only the balance check shows which one the venue paid. New tests:
+partial acknowledgement never records (YES-only, NO-only, repeat, restart, resolution);
+typo settlement and unsupported correction conflict; new agreeing-but-different records
+reported until acknowledged; evidence validation; label determinism. Reviewer's probes
+re-run on `553fa99`: 10 of 12 pass; the two remaining "failures" are the probe that
+asserted the outer mapping is *accepted* (now refused, i.e. fixed) and P2b (the
+intentional non-change above). A second internal pass on `553fa99` was requested.
 
 ## Task B — F50 analysis (no change to record meaning)
 
@@ -344,6 +378,12 @@ Windows/Mac evidence are separate and were not re-run here.
 | Full suite `python -m pytest -q` at `f24af41` | **1525 passed, 2 failed, 29 subtests, 290.61 s** (06:37:11–06:42:02Z); the 2 failures are the absent-`tmux_jev` baseline |
 | Observer suite, existing pinned private env `…/Vader-Intelligence-observer-mac/.venv/bin/python` (direct-URL metadata verified: `167f94359728a6356fb8a76e62f5cfdc16a6d881`), `-m pytest --noconftest -q tests/worker_observer` from this checkout | **85 passed, 8.56 s** (06:37:20–06:37:29Z); no installation |
 | Skills provenance (`docs/checkpoint-skill-provenance.json` vs `~/.codex/skills`) | 50 files match the pin |
+| Installed-wheel smoke at `b08d27c` (`uv build --wheel`, fresh `uv venv`, `tests/integration/wheel_smoke.py`) | status `complete`, **54 checks** (07:09:24–07:09:27Z) |
+| Settlement suite at `553fa99` | **43 passed**, 5.69 s (07:13:55Z) |
+| Adapted Codex probe / reviewer P3 baseline probe at `553fa99` | 5 passed / 1 passed |
+| `tests/test_release_validation.py tests/test_integration_readiness.py tests/trading` at `553fa99` | 295 passed, 37.64 s (07:14:48–07:15:26Z) |
+| `ruff check` / `ruff format --check` (src tests ops tools/worker_observer) at `553fa99` | clean, 252 files |
+| Full suite at `553fa99` | **1530 passed, 2 failed, 29 subtests, 299.81 s** (07:27:41–07:32:41Z); same two absent-`tmux_jev` baseline failures |
 
 Codex's earlier numbers at `bde8bc3` (1,516 core, 94 focused, 85 observer, 54-check wheel)
 are Codex's; the rows above are new executions on the new code. Installed-wheel smoke on
