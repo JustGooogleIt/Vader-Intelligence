@@ -5,6 +5,7 @@ dispatch. Browser handlers never spawn anything; this loop does."""
 
 import json
 import logging
+import shlex
 import socket
 import sys
 import time
@@ -39,6 +40,7 @@ class Controller:
         self.center = CenterStore(self.root)
         self.coordinator = Coordinator(self.pods, coordinator_config or CoordinatorConfig())
         self.coding = CodingService(cfg, self.center)
+        self.coding.headroom = lambda: self.farms.headroom()
         self.farms = FarmService(
             cfg,
             self.center,
@@ -49,7 +51,7 @@ class Controller:
         self.now = now
         self.tmux = None
         self.tmux_error = None
-        self.observer_python = observer_python or sys.executable
+        self.observer_python = observer_python or cfg.observer_python or sys.executable
         self.registered = {}  # attempt_id -> worker registration
         if tmux:
             server = TmuxServer(self.root)
@@ -111,9 +113,11 @@ class Controller:
                     command["command_id"], "applied", None, now, {"run_id": run["run_id"]}
                 )
                 applied.append((command["command_id"], "applied", run["run_id"]))
-            except ValueError as exc:
-                self.center.settle_command(command["command_id"], "rejected", str(exc)[:300], now)
-                applied.append((command["command_id"], "rejected", str(exc)[:80]))
+            except Exception as exc:  # any failure: a rejected receipt, never a crash loop
+                reason = f"{type(exc).__name__}: {exc}"[:300]
+                log.warning("command %s rejected: %s", command["command_id"], reason)
+                self.center.settle_command(command["command_id"], "rejected", reason, now)
+                applied.append((command["command_id"], "rejected", reason[:80]))
         return applied
 
     def run(self, *, max_steps, deadline_seconds, stop_when_idle=True, poll_seconds=0.25):
@@ -180,7 +184,9 @@ class Controller:
             log_path = row["log_path"]
             try:
                 pane = self.tmux.open_pane(
-                    f"{role}-{attempt_id[:6]}", checkout, f"tail -n 50 -F {json.dumps(log_path)}"
+                    f"{role}-{attempt_id[:6]}",
+                    checkout,
+                    f"tail -n 50 -F {shlex.quote(str(log_path))}",
                 )
                 token = self.tmux.set_identity(
                     pane["pane_id"], f"{run_id}:{worker_id}", row["task_id"], run_id

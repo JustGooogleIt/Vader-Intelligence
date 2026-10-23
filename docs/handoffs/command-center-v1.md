@@ -128,8 +128,35 @@ them. Pilot workers stop when their bounded runs end (no live attempts remain af
 - Decisions for the game workspace come from `forecast_decisions`; the synthetic archive has
   none, so that section shows its empty state (labelled). Forward evidence is never produced
   by the dashboard.
-- Internal (subagent) review of the candidate requested at `d4eeacf`; findings and fixes
-  are recorded below when they arrive. Codex's external exact-SHA review is required.
+- Codex's external exact-SHA review is required (internal review below is not it).
+
+## Internal review (subagent, labelled internal) of `d4eeacf` and the fixes
+
+An independent subagent reviewed commits `30f97e7`, `b93f082`, `d4eeacf` in its own
+worktree with its own probes (`tests/command_center tests/pods`: 118 passed; ruff format
+clean; `ruff check tests` red only by N-CC-1). Findings, all reproduced by probe, and the
+fix in the next commit:
+
+| # | Finding | Fix |
+|---|---|---|
+| H1 | Trusted checks and the reviewer re-run read `conftest.py`/pytest/ruff configuration from the writer's tree; a patch adding `conftest.py` with `os._exit(0)` made a broken patch "accept" | Checks run with the **base commit's** `pyproject.toml` (`ruff --config`, `pytest -c … --rootdir`); any `conftest.py` change is a policy finding; pytest/ruff/tox/setup.cfg configuration files join the protected floor |
+| H2 | `protected_paths` in the brief replaced the defaults, so the patch author could remove the floor | A brief can only add; the floor is always applied |
+| M1 | A schema-valid but mistyped command (`limits: 5`, `template: []`, non-git repo) raised past `apply_commands` and crash-looped the controller across restarts | Every failure settles the command as a `rejected` receipt with the reason; the loop continues |
+| M2 | Re-running the template on the same game after a completed run hit a pods `IdempotencyConflict` (same task ids, new pod) and crashed every step | The experiment manifest carries the run id (distinct task ids per run); a dispatch failure fails that run with a reason instead of raising |
+| M3 | Coding check processes ignored the global cap | The coding service consults the farm headroom before spawning a check (`waiting_for_capacity` shown) |
+| M4 | "No deleted tests" saw only file deletions; a renamed-out test passed | `--no-renames` diffs, a base-vs-commit inventory of `tests/` and a `def test_` count that may not drop |
+| M5 | `observer_python` never reached the controller from the CLI, so real pane capture could not work | Wired through `__main__`; the controller defaults to the config value |
+| M6 | Artifact preview read whole artifacts (up to 1 GiB) before capping | Bounded `O_NOFOLLOW` read of `limit + 1` bytes; preview marked `verified: false` |
+| L1–L3, L6–L9 | Host header unchecked (DNS rebinding read access); hostile JSON nesting; refused POST body re-parsed on keep-alive; paused runs burned budget and spawned checks; shell quoting of the pane command; `test label` literal; `localhost` origin refused | Host allowlist; `RecursionError` → 400; `Connection: close` on refusals; pause excludes time and blocks new checks; `shlex.quote`; label fixed; both loopback origins accepted |
+| Tests | a no-op monkeypatch test, a vacuous `and/or` assertion, `live_processes() <= 2`, no digest check, 30 instead of 50 samples, 2 s instead of 1 s | Replaced/added: same template twice, ops config/state digest unchanged by commands, mistyped commands rejected, cap-aware checks, pause budget, conftest/floor/rename policy, host and nesting checks, 50-sample p95, 1 s bound |
+
+Sound per the review: GETs read-only; origin+token+JSON gate; `app.js` renders data only
+as text; isolation of runs/artifacts/panes; coordinator lock prevents a second controller;
+restart reconciles before dispatch; workers never receive archive/registry/ledger/holdout/
+credential paths; `git apply --index` refuses `../`, absolute and symlinked paths; agent argv
+flags exist in the installed CLIs and execution stays disabled; labels honest.
+Remaining (accepted): private worktrees are not an OS sandbox (owner decision above); the
+pane route spawns the observer per GET with a 20 s timeout (bounded, store-verified ids).
 
 ## Verification
 

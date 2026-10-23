@@ -61,6 +61,15 @@ class CenterServer(ThreadingHTTPServer):
         host, port = self.server_address[:2]
         return f"http://{host}:{port}"
 
+    @property
+    def allowed_hosts(self):
+        port = self.server_address[1]
+        return {f"127.0.0.1:{port}", f"localhost:{port}"}
+
+    @property
+    def allowed_origins(self):
+        return {"http://" + h for h in self.allowed_hosts}
+
     def record_latency(self, seconds):
         with self.lock:
             self.latencies.append(seconds)
@@ -101,7 +110,13 @@ class Handler(BaseHTTPRequestHandler):
         self._send(status, {"ok": projection.get("state") != "unavailable", "data": projection})
 
     def _error(self, status, message):
+        if status in (HTTPStatus.FORBIDDEN, HTTPStatus.BAD_REQUEST):
+            self.close_connection = True  # never parse a refused body as the next request
         self._send(status, {"ok": False, "error": message, "generated_at": now_iso()})
+
+    def _host_ok(self):
+        """DNS-rebinding guard: only the loopback host names this server is bound for."""
+        return (self.headers.get("Host") or "") in self.server.allowed_hosts
 
     def _now(self):
         return self.server.now() if callable(self.server.now) else None
@@ -110,6 +125,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         cfg = self.server.cfg
+        if not self._host_ok():
+            return self._error(HTTPStatus.BAD_REQUEST, "unexpected host")
         url = urlsplit(self.path)
         parts = [p for p in url.path.split("/") if p]
         query = parse_qs(url.query)
@@ -197,10 +214,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         cfg = self.server.cfg
+        if not self._host_ok():
+            return self._error(HTTPStatus.BAD_REQUEST, "unexpected host")
         if urlsplit(self.path).path != "/api/commands":
             return self._error(HTTPStatus.NOT_FOUND, "not found")
         origin = self.headers.get("Origin")
-        if origin is None or origin.rstrip("/") != self.server.origin:
+        if origin is None or origin.rstrip("/") not in self.server.allowed_origins:
             return self._error(HTTPStatus.FORBIDDEN, "origin mismatch")
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return self._error(HTTPStatus.FORBIDDEN, "json content type required")
@@ -215,7 +234,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(HTTPStatus.BAD_REQUEST, "body size out of bounds")
         try:
             body = json.loads(self.rfile.read(length))
-        except ValueError:
+        except (ValueError, RecursionError):
             return self._error(HTTPStatus.BAD_REQUEST, "invalid json")
         if not isinstance(body, dict):
             return self._error(HTTPStatus.BAD_REQUEST, "command must be an object")

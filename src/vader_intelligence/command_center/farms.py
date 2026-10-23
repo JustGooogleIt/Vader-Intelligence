@@ -245,6 +245,9 @@ class FarmService:
             budget={
                 "wall_seconds": run["limits"]["wall_seconds"],
                 "max_tasks": run["limits"]["max_tasks"],
+                # The run id makes task ids distinct per run: the same template on the same
+                # evidence twice is two runs, never an idempotency conflict across pods.
+                "run_id": run["run_id"],
             },
         )
         return self.pods.put_experiment_manifest(manifest)
@@ -325,51 +328,60 @@ class FarmService:
         for run in self.center.runs(kind="game_research", states=("running",)):
             if run["paused"]:
                 continue
-            states = self._task_states(run)
-            roles = run["pins"]["roles"]
-            if run["stage"] == 0:
-                first = [r for r in roles if ROLES[r]["stage"] == 1]
-                if self.headroom() < len(first):
-                    log.info("run %s waits for capacity (%s needed)", run["run_id"], len(first))
-                    continue
-                params = {
-                    "evidence_sha256": run["pins"]["evidence_sha256"],
-                    "game_id": run["pins"]["game_id"],
-                }
-                for role in first:
-                    submitted.append(self._submit(run, role, 1, params, now))
-                self.center.set_run(run["run_id"], stage=1, now=now)
-            elif (
-                run["stage"] == 1
-                and states
-                and all(s in TERMINAL_TASK_STATES for s in states.values())
-            ):
-                second = [r for r in roles if ROLES[r]["stage"] == 2]
-                if not second:
-                    self.center.set_run(
-                        run["run_id"], state="completed", outcome="completed", now=now
-                    )
-                    continue
-                if self.headroom() < len(second):
-                    continue
-                by_role = {b["role"]: b["task_id"] for b in run["tasks"]}
-                summary = self._artifact(by_role.get("evidence_inspector", ""), SUMMARY_KIND)
-                baseline = self._artifact(by_role.get("baseline_analyst", ""), BASELINE_KIND)
-                if not summary or not baseline:
-                    self.center.set_run(
-                        run["run_id"], state="failed", outcome="stage1_artifacts_missing", now=now
-                    )
-                    continue
-                params = {
-                    "evidence_sha256": run["pins"]["evidence_sha256"],
-                    "game_id": run["pins"]["game_id"],
-                    "summary_sha256": summary,
-                    "baseline_sha256": baseline,
-                }
-                for role in second:
-                    submitted.append(self._submit(run, role, 2, params, now))
-                self.center.set_run(run["run_id"], stage=2, now=now)
+            try:
+                submitted.extend(self._dispatch_run(run, now))
+            except Exception as exc:  # a submission failure fails this run, never the loop
+                reason = f"{type(exc).__name__}: {exc}"[:300]
+                log.warning("run %s dispatch failed: %s", run["run_id"], reason)
+                self.center.set_run(
+                    run["run_id"],
+                    state="failed",
+                    outcome="dispatch_failed",
+                    detail={"error": reason},
+                    now=now,
+                )
         return submitted
+
+    def _dispatch_run(self, run, now=None):
+        states = self._task_states(run)
+        roles = run["pins"]["roles"]
+        if run["stage"] == 0:
+            first = [r for r in roles if ROLES[r]["stage"] == 1]
+            if self.headroom() < len(first):
+                log.info("run %s waits for capacity (%s needed)", run["run_id"], len(first))
+                return []
+            params = {
+                "evidence_sha256": run["pins"]["evidence_sha256"],
+                "game_id": run["pins"]["game_id"],
+            }
+            submitted = [self._submit(run, role, 1, params, now) for role in first]
+            self.center.set_run(run["run_id"], stage=1, now=now)
+            return submitted
+        if run["stage"] == 1 and states and all(s in TERMINAL_TASK_STATES for s in states.values()):
+            second = [r for r in roles if ROLES[r]["stage"] == 2]
+            if not second:
+                self.center.set_run(run["run_id"], state="completed", outcome="completed", now=now)
+                return []
+            if self.headroom() < len(second):
+                return []
+            by_role = {b["role"]: b["task_id"] for b in run["tasks"]}
+            summary = self._artifact(by_role.get("evidence_inspector", ""), SUMMARY_KIND)
+            baseline = self._artifact(by_role.get("baseline_analyst", ""), BASELINE_KIND)
+            if not summary or not baseline:
+                self.center.set_run(
+                    run["run_id"], state="failed", outcome="stage1_artifacts_missing", now=now
+                )
+                return []
+            params = {
+                "evidence_sha256": run["pins"]["evidence_sha256"],
+                "game_id": run["pins"]["game_id"],
+                "summary_sha256": summary,
+                "baseline_sha256": baseline,
+            }
+            submitted = [self._submit(run, role, 2, params, now) for role in second]
+            self.center.set_run(run["run_id"], stage=2, now=now)
+            return submitted
+        return []
 
     def check_kind(self):
         return CHECK_KIND

@@ -131,7 +131,7 @@ def test_missing_empty_and_locked_archives_are_distinct_states(tmp_path, dev_roo
 
         started = time.perf_counter()
         out = projections.games(cfg, NOW)
-        assert time.perf_counter() - started < 2.0
+        assert time.perf_counter() - started < 1.0
         assert out["state"] == "unavailable" and "busy" in out["reason"]
     finally:
         holder.execute("ROLLBACK")

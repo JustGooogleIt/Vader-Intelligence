@@ -10,6 +10,7 @@ import uuid
 import pytest
 
 from vader_intelligence.command_center import projections
+from vader_intelligence.command_center.config import CenterConfig
 from vader_intelligence.command_center.controller import Controller
 from vader_intelligence.command_center.farms import build_evidence
 from vader_intelligence.command_center.panes import pane_reader
@@ -270,27 +271,69 @@ def test_global_cap_holds_dispatch_and_cancel_drains_only_owned_work(cfg, contro
     wait(ctl, lambda: ctl.pods.open_attempts() == [])
 
 
-def test_cancel_drains_a_leased_owned_attempt_and_keeps_evidence(cfg, controller, monkeypatch):
+def test_the_same_template_can_run_again_for_the_same_game(cfg, controller):
+    """Internal review M2: a second run on unchanged evidence gets its own task ids (the
+    manifest carries the run id); it never collides with the first run's pod."""
     ctl = controller()
-    cid, _ = command(ctl.center, "start", None, {**START, "game_id": 824948})
-    run_id = ctl.step()["commands"][0][2]
-    # Make this run's stage-1 workers slow so a cancel lands on leased attempts.
-    from vader_intelligence.pods import game_ops
+    command(ctl.center, "start", None, {**START, "game_id": 824948})
+    run_a = ctl.step()["commands"][0][2]
+    wait(ctl, lambda: run_of(cfg, run_a)["state"] == "completed", timeout=60)
+    command(ctl.center, "start", None, {**START, "game_id": 824948})
+    run_b = ctl.step()["commands"][0][2]
+    wait(ctl, lambda: run_of(cfg, run_b)["state"] in ("completed", "failed"), timeout=60)
+    a, b = run_of(cfg, run_a), run_of(cfg, run_b)
+    assert b["state"] == "completed", b["detail"]
+    assert not {t["task_id"] for t in a["tasks"]} & {t["task_id"] for t in b["tasks"]}
+    assert a["pins"]["evidence_sha256"] == b["pins"]["evidence_sha256"]  # same evidence, two runs
 
-    monkeypatch.setattr(game_ops, "EVIDENCE_VERSION", 1)
-    run = run_of(cfg, run_id)
-    assert run["stage"] == 1
-    cancel, _ = command(ctl.center, "cancel", run_id)
-    ctl.step()
-    wait(ctl, lambda: run_of(cfg, run_id)["state"] == "canceled")
-    run = run_of(cfg, run_id)
-    states = {ctl.pods.task(t["task_id"])["state"] for t in run["tasks"]}
-    assert states <= {"canceled", "succeeded"} and run["outcome"] == "canceled"
-    for t in run["tasks"]:
-        for attempt in ctl.pods.attempts(t["task_id"]):
-            from pathlib import Path
 
-            assert Path(attempt["workdir"]).is_dir()  # evidence preserved
+def test_commands_never_touch_the_collection_configuration_or_state(
+    tmp_path, dev_root, two_game_archive
+):
+    """Spec J3: start/pause/cancel change nothing under the ops configuration/state."""
+    import hashlib
+    import json as _json
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "history.json").write_text(
+        _json.dumps({"version": 1, "database": str(two_game_archive), "sequence": 0, "history": []})
+    )
+    ops = tmp_path / "ops.json"
+    ops.write_text(
+        _json.dumps(
+            {
+                "version": 1,
+                "database": str(two_game_archive),
+                "state": str(state_dir),
+                "cadence": 120,
+                "grace": 5,
+                "deadline": 90,
+            }
+        )
+    )
+
+    def digest():
+        h = hashlib.sha256()
+        for path in sorted([ops, *state_dir.rglob("*")]):
+            h.update(path.read_bytes() if path.is_file() else path.name.encode())
+        return h.hexdigest()
+
+    before = digest()
+    cfg = CenterConfig(
+        root=dev_root, archive=two_game_archive, ops_config=ops, labels={"archive": "fixture"}
+    )
+    ctl = Controller(cfg, coordinator_config=FAST, tmux=False)
+    try:
+        command(ctl.center, "start", None, {**START, "game_id": 824948})
+        run_id = ctl.step()["commands"][0][2]
+        command(ctl.center, "pause", run_id)
+        ctl.step()
+        command(ctl.center, "cancel", run_id)
+        wait(ctl, lambda: run_of(cfg, run_id)["state"] == "canceled")
+    finally:
+        ctl.shutdown()
+    assert digest() == before
 
 
 def test_controller_restart_reconciles_live_attempts_before_dispatching(cfg, controller):

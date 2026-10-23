@@ -96,6 +96,24 @@ def test_unknown_and_malformed_routes_fail_closed(server):
         server, "OPTIONS", "/api/commands", headers={"Origin": "http://evil.example"}
     )
     assert status == 403
+    # DNS rebinding: a request whose Host is not this loopback server is refused (L1).
+    status, _, payload = call(server, "GET", "/api/session", headers={"Host": "attacker.example"})
+    assert status == 400 and "token" not in payload
+    port = server.server_address[1]
+    status, _, _ = call(server, "GET", "/api/overview", headers={"Host": f"localhost:{port}"})
+    assert status == 200
+    # Hostile JSON nesting is a 400, not a dropped connection (L2).
+    token = call(server, "GET", "/api/session")[2]["token"]
+    deep = "[" * 5000 + "]" * 5000
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    headers = {
+        "Origin": server.origin,
+        "Content-Type": "application/json",
+        "X-Vader-Session": token,
+    }
+    conn.request("POST", "/api/commands", body=deep.encode(), headers=headers)
+    assert conn.getresponse().status == 400
+    conn.close()
 
 
 def test_command_intake_requires_origin_token_and_json(server, cfg):
@@ -147,12 +165,12 @@ def test_command_intake_requires_origin_token_and_json(server, cfg):
 
 def test_overview_latency_is_measured(server):
     samples = []
-    for _ in range(30):
+    for _ in range(50):
         started = time.perf_counter()
         status, _, payload = call(server, "GET", "/api/overview")
         samples.append(time.perf_counter() - started)
         assert status == 200
     summary = payload["data"]["latency"]
-    assert summary["samples"] == 30 and summary["p95_ms"] is not None
+    assert summary["samples"] == 50 and summary["p95_ms"] is not None
     samples.sort()
     assert samples[int(len(samples) * 0.95) - 1] < 1.0  # the one-second p95 target, measured here

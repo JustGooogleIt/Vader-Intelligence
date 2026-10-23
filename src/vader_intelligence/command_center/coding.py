@@ -33,6 +33,8 @@ AUTHORIZATION_FILE = "authorization.json"
 MAX_WRITERS = 2
 MAX_PATCH_BYTES = 200 * 1024
 LOG_TAIL = 4000
+# The floor every maintenance run keeps, whatever the brief says (a brief can only add):
+# protected data and policy modules, and every file that could steer the trusted checks.
 DEFAULT_PROTECTED = (
     "docs/evidence/",
     "src/vader_intelligence/pods/evaluator.py",
@@ -41,7 +43,16 @@ DEFAULT_PROTECTED = (
     "src/vader_intelligence/command_center/coding.py",
     "uv.lock",
     "pyproject.toml",
+    "pytest.ini",
+    ".pytest.ini",
+    "tox.ini",
+    "setup.cfg",
+    "ruff.toml",
+    ".ruff.toml",
+    ".pre-commit-config.yaml",
+    ".github/",
 )
+CONFTEST = re.compile(r"(^|/)conftest\.py\Z")
 CHECKS = {
     "ruff_check": lambda paths: ["-m", "ruff", "check", *(paths or ["src", "tests"])],
     "ruff_format": lambda paths: ["-m", "ruff", "format", "--check", *(paths or ["src", "tests"])],
@@ -97,9 +108,10 @@ def validate_brief(payload):
     wall = limits.get("wall_seconds", 1800)
     if not isinstance(wall, int) or isinstance(wall, bool) or not 30 <= wall <= 3600:
         raise ValueError("limits.wall_seconds must be an integer in 30..3600")
-    protected = tuple(payload.get("protected_paths") or DEFAULT_PROTECTED)
-    if not all(isinstance(p, str) and SAFE_PATH.fullmatch(p) for p in protected):
+    extra = tuple(payload.get("protected_paths") or ())
+    if not all(isinstance(p, str) and SAFE_PATH.fullmatch(p) for p in extra):
         raise ValueError("protected paths must be plain repo-relative prefixes")
+    protected = tuple(dict.fromkeys((*DEFAULT_PROTECTED, *extra)))  # the floor plus extras
     brief = {
         "kind": "maintenance",
         "issue": issue.strip(),
@@ -209,6 +221,7 @@ class CodingService:
         self.python = python or sys.executable
         self.workspace = cfg.root / "coding"
         self.processes = {}  # run_id -> live process record
+        self.headroom = lambda: 1  # the controller wires the farm service's global headroom
 
     # Capacity -----------------------------------------------------------------------------
 
@@ -295,13 +308,18 @@ class CodingService:
         changed = []
         for run in self.center.runs(kind="maintenance", states=("running", "paused")):
             detail = dict(run["detail"])
-            if run["state"] == "paused" and run["run_id"] not in self.processes:
-                continue  # pause: no new phase; a running check finishes
+            if run["state"] == "paused":
+                since = detail.get("paused_since") or time.time()
+                detail["paused_seconds"] = detail.get("paused_seconds", 0.0) + (time.time() - since)
+                detail["paused_since"] = time.time()
+                self.center.set_run(run["run_id"], detail=detail, now=now)
+                if run["run_id"] not in self.processes:
+                    continue  # pause: no new phase; a running check finishes
+            else:
+                detail.pop("paused_since", None)
             try:
-                if (
-                    time.time() - detail.get("started_at", time.time())
-                    > run["limits"]["wall_seconds"]
-                ):
+                elapsed = time.time() - detail.get("started_at", time.time())
+                if elapsed - detail.get("paused_seconds", 0.0) > run["limits"]["wall_seconds"]:
                     self._kill(run["run_id"])
                     self._finish(run, "failed", "budget_exhausted", detail, now)
                     changed.append((run["run_id"], "budget_exhausted"))
@@ -414,18 +432,16 @@ class CodingService:
             raise ValueError(
                 "real agent execution is not exercised in this pilot even when authorized"
             )
-        changed = _git(
-            worktree, "diff", "--name-only", f"{run['pins']['base_commit']}..{detail['commit']}"
-        ).splitlines()
+        span = f"{run['pins']['base_commit']}..{detail['commit']}"
+        changed = _git(worktree, "diff", "--no-renames", "--name-only", span).splitlines()
         deleted = _git(
-            worktree,
-            "diff",
-            "--diff-filter=D",
-            "--name-only",
-            f"{run['pins']['base_commit']}..{detail['commit']}",
+            worktree, "diff", "--no-renames", "--diff-filter=D", "--name-only", span
         ).splitlines()
         brief = json.loads((run_dir / "brief.json").read_text())
         findings = self._policy(changed, deleted, brief)
+        for finding in self._test_inventory(worktree, run["pins"]["base_commit"], detail["commit"]):
+            if finding not in findings:
+                findings.append(finding)
         detail["files_changed"] = changed
         detail["policy_findings"] = findings
         if findings:
@@ -452,13 +468,94 @@ class CodingService:
         for path in deleted:
             if path.startswith("tests/"):
                 findings.append({"kind": "deleted_test", "path": path})
+        for path in changed:
+            if CONFTEST.search(path):
+                findings.append({"kind": "conftest_changed", "path": path})
         if not changed:
             findings.append({"kind": "empty_patch"})
         return findings
 
+    @staticmethod
+    def _test_inventory(worktree, base, commit):
+        """Tests may be added, never removed: every test file under tests/ at the base must
+        exist at the commit, and the count of `def test_` must not drop."""
+        findings = []
+        before = set(
+            _git(worktree, "ls-tree", "-r", "--name-only", base, "--", "tests").splitlines()
+        )
+        after = set(
+            _git(worktree, "ls-tree", "-r", "--name-only", commit, "--", "tests").splitlines()
+        )
+        for path in sorted(before - after):
+            findings.append({"kind": "deleted_test", "path": path})
+
+        def count(rev):
+            done = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(worktree),
+                    "grep",
+                    "-c",
+                    "-E",
+                    r"^\s*(async )?def test_",
+                    rev,
+                    "--",
+                    "tests",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            return sum(
+                int(line.rsplit(":", 1)[1]) for line in done.stdout.splitlines() if line.strip()
+            )
+
+        n_before, n_after = count(base), count(commit)
+        if n_after < n_before:
+            findings.append({"kind": "fewer_tests", "before": n_before, "after": n_after})
+        return findings
+
+    def _trusted_config(self, run):
+        """`pyproject.toml` of the BASE commit, copied into the run directory: ruff and
+        pytest read their configuration from here, never from the writer's tree."""
+        run_dir = self._run_dir(run)
+        # Named pyproject.toml so ruff reads its [tool.ruff] table (a ruff.toml has no wrapper).
+        path = run_dir / "trusted" / "pyproject.toml"
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            done = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(self.repo),
+                    "show",
+                    f"{run['pins']['base_commit']}:pyproject.toml",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            path.write_text(done.stdout if done.returncode == 0 else "", encoding="utf-8")
+        return path
+
+    def check_argv(self, run, worktree, check):
+        """The trusted argv: configuration from the base commit, rootdir pinned, so a patch
+        cannot steer ruff or pytest through files in its own tree."""
+        config = self._trusted_config(run)
+        argv = [self.python, *CHECKS[check["name"]](check["paths"])]
+        trusted = config.stat().st_size > 0
+        if check["name"].startswith("ruff"):
+            # `--config <file>` replaces configuration discovery; `--isolated` only when the
+            # base commit has no pyproject at all (ruff refuses the two together).
+            argv[3:3] = ["--config", str(config)] if trusted else ["--isolated"]
+        else:
+            argv[4:4] = ["--rootdir", str(worktree), *(["-c", str(config)] if trusted else [])]
+        return argv
+
     def _spawn_check(self, run, detail, worktree, check, phase_key):
         run_dir = self._run_dir(run)
-        argv = [self.python, *CHECKS[check["name"]](check["paths"])]
+        argv = self.check_argv(run, worktree, check)
         log = run_dir / f"{phase_key}-{len(detail[phase_key])}-{check['name']}.log"
         handle = open(log, "wb")
         popen = subprocess.Popen(
@@ -506,6 +603,12 @@ class CodingService:
             )
         queue = detail.get("check_queue") or []
         if queue:
+            if run["paused"]:
+                return  # pause: no new check process; a running one finishes
+            if self.headroom() < 1:
+                detail["waiting_for_capacity"] = True
+                return  # the global cap counts these processes too
+            detail.pop("waiting_for_capacity", None)
             check = queue.pop(0)
             detail["check_queue"] = queue
             self._spawn_check(run, detail, worktree, check, phase_key)

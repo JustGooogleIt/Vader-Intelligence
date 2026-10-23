@@ -456,7 +456,7 @@ def collection(cfg: CenterConfig, now=None):
         state,
         {
             "status": status,
-            "label": config.get("test_label") and "test label" or None,
+            "label": "test label" if config.get("test_label") else None,
             "cadence": config.get("cadence"),
             "latest": latest,
             "age_seconds": age,
@@ -745,17 +745,28 @@ def artifact_preview(cfg: CenterConfig, run_id, sha256, limit, now=None):
     }
     if sha256 not in declared:
         return _wrap("empty", {"reason": "artifact not declared by this run"}, None, now)
-    from ..pods.artifacts import ArtifactCorrupted, ArtifactMissing, ArtifactStore
+    import os
 
+    from ..pods.artifacts import ArtifactStore
+
+    path = ArtifactStore(cfg.root / "artifacts").path(sha256)
     try:
-        data = ArtifactStore(cfg.root / "artifacts").get_bytes(sha256)
-    except (ArtifactMissing, ArtifactCorrupted, OSError) as exc:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as handle:
+            data = handle.read(limit + 1)  # bounded: never the whole artifact
+    except OSError as exc:
         return unavailable(f"artifact unreadable: {type(exc).__name__}", now)
     truncated = len(data) > limit
     text = data[:limit].decode("utf-8", errors="replace")
     return _wrap(
         "ok",
-        {"sha256": sha256, "text": text, "truncated": truncated, "bytes": len(data[:limit])},
+        {
+            "sha256": sha256,
+            "text": text,
+            "truncated": truncated,
+            "bytes": len(data[:limit]),
+            "verified": False,
+        },
         None,
         now,
     )

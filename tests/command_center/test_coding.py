@@ -208,11 +208,10 @@ def test_one_complete_cycle_on_a_genuine_defect(ctl, cfg, repo):
     assert packet["writer"]["simulated"] is True and "not merged" in packet["integration"]
     assert (cfg.root / "coding" / run_id / "review-packet.md").exists()
     for check in d["checks"]:
-        assert (
-            Path(check["log"]).exists()
-            and "pytest" not in check["name"]
-            or "passed" in check["tail"]
-        )
+        assert Path(check["log"]).exists()
+        if check["name"] == "pytest":
+            assert "passed" in check["tail"]
+        assert "--config" in check["argv"] or "-c" in check["argv"]  # trusted configuration
     eng = projections.engineering(cfg)
     assert (
         eng["state"] == "ok"
@@ -243,7 +242,8 @@ def test_policy_violations_are_rejected_before_any_check(ctl, patch, kind):
     run = drive(ctl, run_id)
     d = run["detail"]
     assert run["state"] == "completed" and run["outcome"] == "reject"
-    assert [f["kind"] for f in d["policy_findings"]] == [kind]
+    kinds = {f["kind"] for f in d["policy_findings"]}
+    assert kind in kinds and kinds <= {kind, "fewer_tests"}
     assert "checks" not in d or d["checks"] == []  # no check ran on a disallowed patch
 
 
@@ -323,3 +323,139 @@ def test_budget_writer_cap_cancel_and_invalid_briefs(ctl, cfg):
     assert run_a["state"] == "failed" and run_a["outcome"] == "budget_exhausted"
     with CenterStore(cfg.root, readonly=True) as center:
         assert {r["state"] for r in center.runs(kind="maintenance")} == {"failed", "canceled"}
+
+
+CONFTEST_PATCH = BAD_PATCH + textwrap.dedent(
+    """\
+    diff --git a/conftest.py b/conftest.py
+    new file mode 100644
+    --- /dev/null
+    +++ b/conftest.py
+    @@ -0,0 +1,3 @@
+    +import os
+    +
+    +os._exit(0)
+    """
+)
+RENAME_PATCH = textwrap.dedent(
+    """\
+    diff --git a/tests/test_mod.py b/scratch/not_a_test.py
+    similarity index 100%
+    rename from tests/test_mod.py
+    rename to scratch/not_a_test.py
+    diff --git a/tests/test_other.py b/tests/test_other.py
+    new file mode 100644
+    --- /dev/null
+    +++ b/tests/test_other.py
+    @@ -0,0 +1,2 @@
+    +def test_other():
+    +    assert True
+    """
+)
+
+
+def test_a_patch_that_steers_the_checks_is_rejected_by_policy(ctl):
+    """Internal review H1: a conftest.py (or any check configuration) in the patch is a
+    policy finding before any check runs; checks read the base commit's configuration."""
+    from vader_intelligence.command_center.coding import DEFAULT_PROTECTED
+
+    run_id = start(ctl, brief(CONFTEST_PATCH))
+    run = drive(ctl, run_id)
+    d = run["detail"]
+    assert run["outcome"] == "reject"
+    assert {f["kind"] for f in d["policy_findings"]} >= {"conftest_changed"}
+    assert d.get("checks", []) == []
+    for name in ("pytest.ini", "ruff.toml", "setup.cfg", "tox.ini"):
+        assert name in DEFAULT_PROTECTED
+
+
+def test_the_protected_floor_cannot_be_removed_by_the_brief(ctl):
+    """Internal review H2: `protected_paths` in a brief only adds to the floor."""
+    payload = brief(PROTECTED_PATCH, protected_paths=["nothing-here/"])
+    frozen, _ = validate_brief(payload)
+    assert (
+        "docs/evidence/" in frozen["protected_paths"]
+        and "nothing-here/" in frozen["protected_paths"]
+    )
+    run_id = start(ctl, payload)
+    run = drive(ctl, run_id)
+    assert run["outcome"] == "reject"
+    assert {f["kind"] for f in run["detail"]["policy_findings"]} == {"protected_path"}
+
+
+def test_renamed_or_removed_tests_are_findings(ctl):
+    """Internal review M4: moving a test out of tests/ or lowering the test count is caught."""
+    run_id = start(ctl, brief(RENAME_PATCH))
+    run = drive(ctl, run_id)
+    kinds = {f["kind"] for f in run["detail"]["policy_findings"]}
+    assert run["outcome"] == "reject" and "deleted_test" in kinds
+
+
+def test_mistyped_commands_settle_as_rejected_receipts(ctl):
+    """Internal review M1: schema-valid but mistyped payloads never crash the controller
+    loop; the receipt says why, and the next step proceeds."""
+    bad = [
+        {**brief(GOOD_PATCH), "limits": 5},
+        {**brief(GOOD_PATCH), "checks": 7},
+        {"template": [], "game_id": 824948},
+        {"template": "evidence_review_v1", "roles": 5, "game_id": 824948},
+    ]
+    ids = []
+    for payload in bad:
+        cid = str(uuid.uuid4())
+        ctl.center.receive_command(cid, "start", None, payload)
+        ids.append(cid)
+    ctl.step()
+    ctl.step()
+    for cid in ids:
+        row = ctl.center.command(cid)
+        assert row["state"] == "rejected" and row["reason"], row
+    assert ctl.center.pending_commands() == []
+    assert ctl.center.runs() == []
+
+
+def test_coding_checks_wait_for_global_capacity(ctl, cfg):
+    """Internal review M3: check processes count toward the global cap of four and are not
+    spawned while foreign attempts fill it."""
+    from .test_farms import fill_capacity
+
+    sleepers = fill_capacity(ctl, seconds=6, count=4)
+    end = time.monotonic() + 20
+    while time.monotonic() < end and len(ctl.pods.open_attempts()) < 4:
+        ctl.step()
+        time.sleep(0.05)
+    assert len(ctl.pods.open_attempts()) == 4 and ctl.farms.headroom() <= 0
+    run_id = start(ctl, brief(GOOD_PATCH))
+    for _ in range(10):
+        ctl.step()
+        time.sleep(0.05)
+    run = ctl.center.run(run_id)
+    assert run["detail"]["phase"] == "checks" and run["detail"].get("waiting_for_capacity") is True
+    assert ctl.coding.live_processes() == 0
+    for t in sleepers:
+        ctl.coordinator.cancel(t)
+    run = drive(ctl, run_id)
+    assert run["outcome"] == "accept"
+
+
+def test_pause_excludes_time_from_the_wall_budget(ctl):
+    """Internal review L6: a paused maintenance run does not burn its wall budget and does
+    not start new check processes."""
+    run_id = start(ctl, brief(GOOD_PATCH))
+    pause = str(uuid.uuid4())
+    ctl.center.receive_command(pause, "pause", run_id, {})
+    ctl.step()
+    run = ctl.center.run(run_id)
+    assert run["paused"] and ctl.center.command(pause)["state"] == "applied"
+    ctl.center.set_run(run_id, detail={**run["detail"], "started_at": time.time() - 590})
+    for _ in range(5):
+        ctl.step()
+        time.sleep(0.1)
+    run = ctl.center.run(run_id)
+    assert run["state"] == "paused" and run["detail"].get("paused_seconds", 0) > 0
+    assert ctl.coding.live_processes() == 0
+    resume = str(uuid.uuid4())
+    ctl.center.receive_command(resume, "resume", run_id, {})
+    ctl.step()
+    run = drive(ctl, run_id)
+    assert run["state"] == "completed" and run["outcome"] == "accept"

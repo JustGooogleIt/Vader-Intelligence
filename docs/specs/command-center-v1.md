@@ -177,7 +177,7 @@ its own tmux server for live attempts and writes the observer config; (5) sleeps
 run's non-terminal tasks (the coordinator kills owned process groups) and marks the run
 `canceled` when they are terminal; attempt directories are never deleted.
 
-Acceptance (`test_farms.py`, `test_controller.py`): the same `command_id` twice → one
+Acceptance (`tests/command_center/test_farms.py`): the same `command_id` twice → one
 command row, one run; two `start` commands with different ids for the same game while a
 run is active → second rejected `run_active`; cancel drains only the run's attempts (a
 second run's attempt survives); controller restart with a live attempt re-adopts it
@@ -193,7 +193,10 @@ changes the collection configuration or state directory (digest check).
 `command_center/coding.py`: maintenance run with roles `coordinator` (the controller,
 deterministic), `writer` (≤ 2), `reviewer` (1). Executors: `scripted` applies a patch
 file from the task's staged input in a fresh worktree/branch `cc/<run>/<writer>` and
-commits it (labelled **simulated writer**); `claude_cli` / `codex_cli` build the exact
+commits it (labelled **simulated writer**); trusted checks run with ruff/pytest
+configuration taken from the **base commit** (`--config`/`-c` on a copy, `--rootdir`
+pinned), and any change to `conftest.py`, pytest/ruff configuration or `pyproject.toml`
+is a policy finding (the protected floor cannot be removed by a brief; a brief only adds); `claude_cli` / `codex_cli` build the exact
 argv from the inspected CLI (`claude -p --permission-mode plan|default
 --allowedTools … --max-budget-usd 0 --output-format json`; `codex exec --sandbox
 workspace-write -a never --json -C <worktree>`), but `execute()` refuses unless an

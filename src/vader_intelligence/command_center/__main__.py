@@ -60,6 +60,7 @@ def main(argv=None):
             max_steps=args.max_steps,
             deadline_seconds=args.deadline_seconds,
             stop_when_idle=args.stop_when_idle,
+            observer_python=cfg.observer_python,
         )
         print(json.dumps(report, sort_keys=True), flush=True)
         return 0
