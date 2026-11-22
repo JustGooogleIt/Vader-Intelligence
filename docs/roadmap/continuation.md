@@ -19,6 +19,9 @@ always names the exact next action.
 
 ## PR ledger (all drafts, none merged, none reviewed yet)
 
+Update 2026-11-22: every PR below is now on `main` through #38; see
+`docs/handoffs/source-merge-20261122.md`.
+
 | PR | Branch | Scope |
 |---|---|---|
 | #17 | `fix/record-contract-3` | D-001 contract 3 / schema 5, contract 2 frozen, legacy archives |
