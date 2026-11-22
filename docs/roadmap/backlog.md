@@ -67,10 +67,10 @@ The current Claude stabilization assignment is unchanged.
 
 | ID | Item | Depends on | Completion criteria | State |
 |---|---|---|---|---|
-| J1 | GUI operations overview | Stable read interfaces after I2 review | Bounded views of collection, games, runs and worker health; timestamps, stale/disconnected states and honest empty/failure distinctions | todo |
-| J2 | Game workspace and farm monitoring | J1, canonical mapping | Choose one game and see its contracts, cutoff, evidence, tasks, registered tmux workers, forecasts and settlement; ambiguous games cannot start a farm | todo |
-| J3 | Controlled per-game agent farms | J2, verified execution adapter on G1/G2 | Start a budgeted run; pause dispatch/cancel owned tasks; idempotent commands, global/per-game limits, restart recovery and cross-game isolation demonstrated | todo |
-| J4 | Code-improvement review queue | J1, separate coding-farm pilot | Show task → branch/patch → checks → independent review → promotion; worker claims stay distinct from verified completion | todo |
+| J1 | GUI operations overview | Stable read interfaces after I2 review | Bounded views of collection, games, runs and worker health; timestamps, stale/disconnected states and honest empty/failure distinctions | demonstrated on a synthetic archive (#40, merged 2026-11-22) |
+| J2 | Game workspace and farm monitoring | J1, canonical mapping | Choose one game and see its contracts, cutoff, evidence, tasks, registered tmux workers, forecasts and settlement; ambiguous games cannot start a farm | demonstrated on a synthetic archive (#40) |
+| J3 | Controlled per-game agent farms | J2, verified execution adapter on G1/G2 | Start a budgeted run; pause dispatch/cancel owned tasks; idempotent commands, global/per-game limits, restart recovery and cross-game isolation demonstrated | demonstrated with fixed Python operations only (#40); one active farm at a time; LLM roles unavailable |
+| J4 | Code-improvement review queue | J1, separate coding-farm pilot | Show task → branch/patch → checks → independent review → promotion; worker claims stay distinct from verified completion | demonstrated with a scripted writer (#40); real writers blocked: no authorization record of $0-incremental usage, and checks are not yet sandboxed |
 
 Plan: [`dashboard-and-game-farms.md`](dashboard-and-game-farms.md). First ship
 visibility, then controls. The GUI does not require proven model edge, and its
