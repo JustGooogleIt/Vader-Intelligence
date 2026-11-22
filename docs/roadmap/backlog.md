@@ -5,6 +5,9 @@ Single persistent backlog for the research-to-trading roadmap run that started
 `todo`, `active`, `done` (implemented and tested), `demonstrated` (run with recorded
 output), `blocked` (names the concrete external dependency), `deferred` (named reason).
 
+Update 2026-11-22: the whole stack (#8–#40) is merged into `main`; see
+`docs/handoffs/source-merge-20261122.md`. The baseline below is the historical one.
+
 Release baseline: `main` `ebb58df`; stacked drafts #8–#16 unmerged, unreviewed since
 2026-10-14 (no new Codex findings exist on disk or GitHub as of 2026-10-18). This run
 stacks on PR #16 `feat/forward-shadow-ops` @ `82665cd02a9db9694f957eca32537cca5cf71c31`.

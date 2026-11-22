@@ -27,12 +27,26 @@ F50 settlement fallback, holdout-use policy and historical feature interpretatio
 remain explicit policy gates. Existing defaults and archived meanings stay intact.
 The scoped implementation and verification contract is in executor.md, Integration I2.
 
+## Integration I3 — source merge (2026-11-22)
+
+The owner instructed the merge. #38, #39 and #40 were merged into `main` in that
+order after a native verification of the exact #40 head (1568 passed, 2 known
+`tmux_jev` baseline failures; observer suite 85 passed; wheel smoke 54 checks), then
+#41 (D-001 note on the F3.3 plan, N-CC-1 lint fix). #9–#37 were closed with records,
+their heads being ancestors of `main`. Source merge only: no deployment, production
+change, migration, activation or holdout use. Open policy decisions are unchanged.
+Record: [source merge](docs/handoffs/source-merge-20261122.md).
+
+- [x] Verify the exact stack head natively; merge with merge commits; record every SHA.
+- [ ] Production rule-v2 rollout (owner window; see the source-merge record).
+
 ## Dashboard and game-specific agent farms — roadmap addition (2026-10-22)
 
 The owner requested a GUI to see system activity, run agent farms for selected
 games and actively monitor their work. Status: **development candidate in progress on
 `feat/command-center-v1` (2026-10-23)**; specification `docs/specs/command-center-v1.md`,
-progress `docs/handoffs/command-center-v1.md`. Not deployed, not merged.
+progress `docs/handoffs/command-center-v1.md`. Merged to `main` on 2026-11-22 (#40);
+not deployed.
 The initial assumption is a local browser dashboard for one operator on this Mac.
 
 - [ ] J1: Read-only overview of collection, games, research runs and worker health.
