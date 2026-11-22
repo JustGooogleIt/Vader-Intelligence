@@ -49,12 +49,12 @@ progress `docs/handoffs/command-center-v1.md`. Merged to `main` on 2026-11-22 (#
 not deployed.
 The initial assumption is a local browser dashboard for one operator on this Mac.
 
-- [ ] J1: Read-only overview of collection, games, research runs and worker health.
-- [ ] J2: Per-game workspace with canonical identity, cutoff timeline, evidence,
+- [x] J1: Read-only overview of collection, games, research runs and worker health.
+- [x] J2: Per-game workspace with canonical identity, cutoff timeline, evidence,
   registered workers, forecasts, settlement and evaluation.
-- [ ] J3: Bounded per-game farm controls through the existing task coordinator,
+- [x] J3: Bounded per-game farm controls through the existing task coordinator,
   with isolated run context, explicit budgets and durable command receipts.
-- [ ] J4: Engineering-improvement queue showing proposed patches, checks,
+- [ ] J4 (scripted writer demonstrated; real writers blocked): Engineering-improvement queue showing proposed patches, checks,
   independent review and promotion decisions from a separately implemented coding farm.
 
 The monitoring slice can follow stabilization of its read interfaces; J3 depends
