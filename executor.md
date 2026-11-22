@@ -230,3 +230,34 @@ reproduce a remaining acknowledged-result-revision gap (two failed, one control
 passed). No main merge or production change. Exact evidence and Claude's
 next bounded task are in docs/handoffs/integration-readiness-20261022.md and
 docs/handoffs/claude-next-20261022.md.
+
+## Command Center v1 — development candidate (2026-10-23)
+
+Base: `fix/integration-readiness-20261022` at `f5e92b7` merged with the repaired PR #39
+branch (`ad94063`). Own worktree, private environment, disposable archives and
+orchestration roots only. Specification: `docs/specs/command-center-v1.md`.
+
+1. J1: `vader_intelligence.command_center.projections` (overview, games, game, farms,
+   engineering; each with `source_time`, `generated_at`, `state`), `server` (stdlib,
+   loopback, JSON API, static page, CSP), tests for empty/missing/locked/stale archives
+   and read-only GETs; p95 read latency measured.
+2. J2: game workspace projection (identity pins, evidence timeline, frozen decisions
+   with publication status, settlement, evaluation, runs); ambiguity fails closed; two
+   fixture games shown without blending.
+3. J3: `templates`, `farms`, `controller`: approved declarative operations
+   (`cc_evidence_summary`, `cc_baseline_analysis`, `cc_independent_check`), run pins,
+   durable commands with receipts, global/per-run caps, pause/cancel, restart
+   reconciliation, disposable tmux server with registered panes read through the
+   observer. Unsupported roles shown unavailable.
+4. J4: `coding`: maintenance runs (writer worktrees, trusted checks on the exact
+   commit, deterministic reviewer, packet, recommendation); `claude_cli`/`codex_cli`
+   adapters disabled without an authorization record; one scripted-writer cycle on a
+   genuine issue, labelled simulated.
+5. Verification: focused tests per phase; final combined suite, lint/format, wheel
+   smoke; real browser + disposable tmux evidence outside Git; exact SHAs and commands
+   in `docs/handoffs/command-center-v1.md`.
+
+Compatibility: no change to collection, forecast, evaluation, settlement or trading
+modules, record contracts, archive schema or pods store schema; the Command Center
+store is a separate SQLite file. Reverse path: delete the package and its tests; no
+archive or service is touched.

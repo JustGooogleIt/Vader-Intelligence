@@ -30,7 +30,9 @@ The scoped implementation and verification contract is in executor.md, Integrati
 ## Dashboard and game-specific agent farms — roadmap addition (2026-10-22)
 
 The owner requested a GUI to see system activity, run agent farms for selected
-games and actively monitor their work. Status: **planned, not implemented**.
+games and actively monitor their work. Status: **development candidate in progress on
+`feat/command-center-v1` (2026-10-23)**; specification `docs/specs/command-center-v1.md`,
+progress `docs/handoffs/command-center-v1.md`. Not deployed, not merged.
 The initial assumption is a local browser dashboard for one operator on this Mac.
 
 - [ ] J1: Read-only overview of collection, games, research runs and worker health.
@@ -58,6 +60,11 @@ J1–J4 development. This document prepares the prompt; it starts no service or 
 2026-10-22: owner added GUI visibility and per-game agent farms. Added J1–J4 as
 future phases; current stabilization, production configuration and completed
 historical phase evidence are unchanged.
+
+2026-10-23: the PR #39 acknowledgement-scope P2 was closed first (`553fa99`, internal
+review recorded). J1–J4 started as an isolated development candidate per the
+2026-10-22 assignment; stdlib HTTP server + static page chosen (no lockfile change);
+real agent execution stays disabled pending an authorization record ($0 incremental).
 
 ## Requirements and design
 - Sports only: MLB `KXMLBGAME`, full single-game team winner contracts, pregame only.
