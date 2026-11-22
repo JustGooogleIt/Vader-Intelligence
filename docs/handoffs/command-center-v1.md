@@ -112,6 +112,8 @@ them. Pilot workers stop when their bounded runs end (no live attempts remain af
   candidate defect; fix by moving the file under `docs/` (or configuring ruff's
   first-party detection). Lint reported here therefore excludes those four pre-existing
   errors; `ruff check src` and the Command Center tests are clean.
+  Resolved 2026-11-22 after the source merge: the file moved to
+  `docs/roadmap/archive/dashboard-and-game-farms-20261022.md`.
 
 ## Limitations and remaining decisions
 

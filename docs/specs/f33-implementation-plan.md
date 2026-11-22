@@ -18,6 +18,17 @@ compatibility policy with an explicit record-contract version (§9.6), applies t
 operator's decisions on the three open questions (§10.1), reconciles rollback (§5.5),
 and adds one cohort rule to the governing specification (§5 and §6 there).
 
+Revision note (2026-11-22, accepted by the owner for the source merge): the
+record-contract mechanism of §9.6 and §9.7 (contract 2 on schema 4) was implemented and
+then superseded by decision D-001 in [`docs/roadmap/decisions.md`](../roadmap/decisions.md).
+Draft code amended contract 2 in place, so contract 2 is now frozen as the union of its
+draft writers' rules, and the amended rules are contract 3 on schema 5
+(`forecast migrate --record-contract 3`); decision contract 4 on schema 6 followed under
+D-004. Where §5.4, §5.5, §9.6, §9.7 or acceptance cases N1–N13 name contract 2 or
+schema 4, the current mechanism is the one in D-001 and D-004. The principles stated here
+are unchanged: a per-record contract version, an explicit archive migration, legacy rows
+that stay valid but never count as evidence, and no conversion of existing rows.
+
 Governing documents: [forecast/evaluation specification](forecast-evaluation-v1.md)
 (§2, §3, §6, §7, §8), [F3.1 handoff](../handoffs/forecast-policies.md), and the F3.2
 storage handoff `docs/handoffs/forecast-storage.md`, on `main` since PR #7 merged.
