@@ -12,7 +12,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ops.archive import classify
-from ops.common import adjacent, command, digest, environment, lock, read_state, write_json
+from ops.common import (
+    adjacent,
+    command,
+    digest,
+    environment,
+    lock,
+    maintenance_command,
+    read_state,
+    tick_command,
+    write_json,
+)
+
+TICK_STATUSES = {"complete", "inconclusive", "partial", "failed"}
 
 
 def utc():
@@ -195,6 +207,11 @@ def run_locked(config):
     exit_code = 1
     try:
         entry["collector_config_sha256"] = digest(config["collector_config"])
+        if "shadow" in config:
+            # The archive-only forecast tick runs first, serialized in this invocation,
+            # with its own bounded deadline; its status is recorded separately from the
+            # collection that follows (specification §7: tick before collection).
+            entry["tick"] = run_tick(config, slot, state)
         code, reason = supervise(config, entry["argv"], stdout, stderr)
         entry["collector_exit_code"] = code
         if reason:
@@ -213,6 +230,18 @@ def run_locked(config):
             exit_code = code if code in (0, 1, 3, 130) else 1
             if entry["status"] not in {"collected_eligible_games", "discovery_no_eligible_games"}:
                 exit_code = exit_code or 1
+        if entry.get("tick") and entry["tick"]["status"] in (
+            "failed",
+            "deadline_exceeded",
+            "interrupted",
+            "invalid_output",
+            "log_write_failed",
+            "wrapper_failed",
+            "output_limit_exceeded",
+        ):
+            # An operational tick failure is never hidden behind a healthy collection
+            # exit code; collection status itself stays separate in the entry.
+            exit_code = 1 if exit_code in (0, 3) else exit_code
     except (
         OSError,
         ValueError,
@@ -231,6 +260,155 @@ def run_locked(config):
         )
         write_json(state / "history.json", data)
     return entry, exit_code
+
+
+def run_tick(config, slot, state):
+    """Supervise one forecast tick with the shadow tick budget plus grace as its deadline."""
+    shadow = config["shadow"]
+    tick_config = dict(config, deadline=shadow["tick_budget"] + config["grace"])
+    stdout, stderr = state / f"tick-stdout-{slot}.log", state / f"tick-stderr-{slot}.log"
+    record = {
+        "argv": tick_command(config),
+        "stdout": str(stdout),
+        "stderr": str(stderr),
+        "started_at": utc(),
+        "research_config_sha256": digest(shadow["research_config"]),
+    }
+    mono = time.monotonic()
+    try:
+        code, reason = supervise(tick_config, record["argv"], stdout, stderr)
+        record["exit_code"] = code
+        if reason:
+            record["status"] = reason
+        else:
+            try:
+                result = json.loads(stdout.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                result = None
+            if not isinstance(result, dict) or result.get("status") not in TICK_STATUSES:
+                record["status"] = "invalid_output"
+            else:
+                record["status"] = result["status"]
+                record["run_id"] = result.get("run_id")
+                record["decisions_eligible"] = result.get("decisions_eligible")
+                record["decisions_abstained"] = result.get("decisions_abstained")
+                record["due_opportunities"] = result.get("due_opportunities")
+                record["bindings_prepared"] = result.get("bindings_prepared")
+                record["publications"] = result.get("publications")
+                record["errors"] = str(result.get("errors", []))[:1000]
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        record.update(status="wrapper_failed", error=str(exc)[:1000])
+    record["ended_at"] = utc()
+    record["runtime_seconds"] = time.monotonic() - mono
+    return record
+
+
+def shadow_health(config, latest):
+    """Shadow-specific status: separates 'no eligible markets' from operational failure.
+
+    Uses the latest history entry (tick and collection) only; it does not open the
+    archive, so it is available even when the database is locked by a running cycle.
+    """
+    if latest is None or "tick" not in latest:
+        return {"status": "never_invoked", "tick": None, "collection": None}
+    tick = latest["tick"]
+    collection = latest["status"]
+    operational = {
+        "failed",
+        "deadline_exceeded",
+        "interrupted",
+        "invalid_output",
+        "wrapper_failed",
+        "log_write_failed",
+        "output_limit_exceeded",
+    }
+    if tick["status"] in operational or collection in {
+        "failed_or_partial",
+        "wrapper_failed",
+        "deadline_exceeded",
+        "interrupted",
+        "log_write_failed",
+        "output_limit_exceeded",
+        "unverified_result",
+        "completion_unknown",
+    }:
+        status = "operational_failure"
+    elif (tick.get("decisions_eligible") or 0) + (tick.get("decisions_abstained") or 0) > 0:
+        status = "forecasting"
+    elif collection == "discovery_no_eligible_games":
+        status = "no_eligible_markets"
+    elif collection == "collected_eligible_games":
+        status = "waiting_for_cutoff"  # eligible games collected; no cutoff due yet
+    else:
+        status = "inconclusive"
+    return {
+        "status": status,
+        "tick": {
+            k: tick.get(k)
+            for k in (
+                "status",
+                "exit_code",
+                "run_id",
+                "decisions_eligible",
+                "decisions_abstained",
+                "due_opportunities",
+                "bindings_prepared",
+                "publications",
+                "runtime_seconds",
+                "started_at",
+                "ended_at",
+                "stdout",
+                "stderr",
+                "errors",
+            )
+        },
+        "collection": collection,
+        "meaning": {
+            "no_eligible_markets": "discovery completed with no eligible contracts; inconclusive, not a failure",
+            "waiting_for_cutoff": "eligible games collected; no decision cutoff reached in the last tick",
+            "forecasting": "the last tick recorded at least one decision or explicit abstention",
+            "operational_failure": "the tick or the collection failed, timed out or was interrupted",
+            "inconclusive": "neither failure nor evidence of eligible markets in the last cycle",
+            "never_invoked": "no shadow cycle has run",
+        }[status],
+    }
+
+
+def maintenance(config, argv, *, name, deadline):
+    """Run one bounded vader command under the operations lock, with its output kept in
+    the state directory. A concurrently scheduled cycle skips as an overlap."""
+    try:
+        with lock(adjacent(config, "run.lockfile")):
+            state = Path(config["state"])
+            stamp = utc().replace(":", "").replace("+00:00", "Z")
+            stdout, stderr = (
+                state / f"{name}-{stamp}.stdout.log",
+                state / f"{name}-{stamp}.stderr.log",
+            )
+            started = time.monotonic()
+            record = {"name": name, "argv": maintenance_command(config, argv), "started_at": utc()}
+            code, reason = supervise(
+                dict(config, deadline=deadline), record["argv"], stdout, stderr
+            )
+            record.update(exit_code=code, stdout=str(stdout), stderr=str(stderr))
+            if reason:
+                record["status"] = reason
+            else:
+                try:
+                    result = json.loads(stdout.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    result = None
+                record["status"] = (
+                    result.get("status", "invalid_output")
+                    if isinstance(result, dict)
+                    else "invalid_output"
+                )
+                record["result"] = result
+            record["ended_at"] = utc()
+            record["runtime_seconds"] = time.monotonic() - started
+            return record
+    except BlockingIOError:
+        return {"name": name, "status": "overlap_skipped", "exit_code": 75}
 
 
 def health(config, *, now=None):
@@ -253,8 +431,10 @@ def health(config, *, now=None):
             status = latest["status"]
     db = Path(config["database"])
     free = shutil.disk_usage(db.parent).free
+    shadow = shadow_health(config, latest) if "shadow" in config else None
     return {
         "status": status,
+        "shadow": shadow,
         "latest": latest,
         "current_gap": current_gap,
         "recorded_gaps": [e["gap_before"] for e in history if e.get("gap_before")],

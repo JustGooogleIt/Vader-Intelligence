@@ -1,0 +1,1698 @@
+{
+  "kind": "paper-backtest-pod-reports",
+  "note": "paper_backtest_report artifacts written by the robust pod (verified input copies; no archive access); content-addressed by sha256",
+  "reports": {
+    "27172b28bd22b1b1dff596dd2b9d7adfcbd0c994728dda34706298119d288e47": {
+      "candidate": "gradient_boosting",
+      "report": {
+        "code_hash": "0d8674af2495ac145a32607b3d31fd08d4b1669ec0ba0e3c147b804c55502db7",
+        "dataset_id": "a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435",
+        "execution_window_seconds": {
+          "after": 300,
+          "before": 120
+        },
+        "forecasts": 401,
+        "kind": "historical-paper-backtest",
+        "markets_with_execution_data": 401,
+        "model_id": "a6d69da1f90519eedc146c1d6b8ea50fa4b464cea96132f159268cb5ee7bc407",
+        "note": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "notice": "Historical paper backtest on archived candles. Candles have no sizes: fills exist only under the assumed_depth SCENARIO. Not evidence of edge or of live profitability.",
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-08-02"
+        },
+        "report": {
+          "manifest": {
+            "assumptions": [
+              "Simulated paper-trading results under stated assumptions; these are not live results.",
+              "Paper network is lossless: a durable submit_requested reaches the simulated venue after the modelled latency.",
+              "Latency per order: decision 0-0 ms plus submit 250-250 ms, seeded by (seed, client order id).",
+              "Book state at arrival: worst_of_bracketing; a snapshot gap above 120 s makes execution unidentifiable (no fill).",
+              "Decisions use only snapshots with as_of <= decision time; execution may use the first snapshot after arrival, as a conservative execution model only.",
+              "Taker fills consume 0.5 of displayed depth per level with 0 extra slippage tick(s); earlier simulated fills in the same snapshot interval are assumed to have taken the best levels.",
+              "Maker model none: resting orders never fill.",
+              "Simulated orders do not move the archived book beyond the depth haircut and the consumed-liquidity accounting (no market-impact model).",
+              "Fee schedule kalshi-2026-02-general (verified=False).",
+              "Formula and rates (taker 0.07, maker 0.0175, rounded up to the cent, no settlement fee) are as read by the integrator from an archived copy of the February 2026 Kalshi fee schedule; not verified in this repository (verified=False).",
+              "Source URL and retrieval time are not recorded yet; the integrator records them when the schedule is verified.",
+              "Rounding up is applied per fill at the stated increment; the venue's rounding unit (per fill, order or trade) and increment (current docs mention $0.0001 for direct members) are schedule parameters, not verified.",
+              "No fee caps, rebates, volume tiers or per-market overrides are modelled.",
+              "fee_multiplier 1: the general schedule; market fee multipliers are not applied.",
+              "Markets without settlement evidence at run end are reported open at conservative best-bid marks.",
+              "Depth-unknown snapshots (candles or quotes without sizes) supply no depth.",
+              "Risk limits are SIMULATION ASSUMPTIONS for paper runs, not recommendations and not live settings (live requires every limit to be set explicitly).",
+              "kelly_fraction 0.10; Kelly portfolio cap 0.25 of bankroll; per-market, per-event and per-group exposure 5% of bankroll; portfolio exposure 25%; order cost 5%.",
+              "Data age <= 300 s, forecast age <= 3600 s, <= 10 orders/minute, <= 20 open orders.",
+              "Daily loss stop 5% and drawdown stop 15% of bankroll on conservative equity, with automatic kill switch; cash buffer 5%; minimum edge 0.02; price deviation <= 0.10."
+            ],
+            "base_config_digest": "75bb0c6304523ba3c06f37e72231695d4ea464bfd4b25ecd81f698f63b8adfd0",
+            "code_hash": "0d8674af2495ac145a32607b3d31fd08d4b1669ec0ba0e3c147b804c55502db7",
+            "grid": {
+              "assumed_depth": [
+                null,
+                "5",
+                "25"
+              ],
+              "extra_slippage_ticks": [
+                0,
+                1
+              ],
+              "fee_schedules": [
+                {
+                  "assumptions": [
+                    "Formula and rates (taker 0.07, maker 0.0175, rounded up to the cent, no settlement fee) are as read by the integrator from an archived copy of the February 2026 Kalshi fee schedule; not verified in this repository (verified=False).",
+                    "Source URL and retrieval time are not recorded yet; the integrator records them when the schedule is verified.",
+                    "Rounding up is applied per fill at the stated increment; the venue's rounding unit (per fill, order or trade) and increment (current docs mention $0.0001 for direct members) are schedule parameters, not verified.",
+                    "No fee caps, rebates, volume tiers or per-market overrides are modelled.",
+                    "fee_multiplier 1: the general schedule; market fee multipliers are not applied."
+                  ],
+                  "digest": "cd4ce1d14e4012d7aa5c03eb5f88e467301e6756b62cfa424deed73ab1551df7",
+                  "retrieved_at": null,
+                  "source_url": null,
+                  "verified": false,
+                  "version": "kalshi-2026-02-general"
+                }
+              ],
+              "latency": [
+                {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                }
+              ],
+              "maker_fill_model": [
+                "none"
+              ]
+            },
+            "input_digests": {
+              "forecasts": "fd06b7d7799d0de2b4b281b3841d7c685538c7ce46cb19c98c91ee81dc02166a",
+              "markets": "d863cadda9a98ab9cc74f26cf2e2e2b61fc9c3ea0a23534cb62316cbb5ea6497",
+              "settlements": "958c22a4fd71eb11618f79a6782b13f2ca0a9e8a0e47e4b2c7aa59161fb54215",
+              "snapshots": "d5ce0302c94a16845ffcbcd5d8b97563c64276ec8141b435adc72ad9eec741aa"
+            },
+            "input_label": "history-validation:a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435",
+            "kind": "paper-sensitivity",
+            "notice": "Simulated paper-trading results under stated assumptions; these are not live results.",
+            "seed": 0,
+            "simulated": true
+          },
+          "rows": [
+            {
+              "config_digest": "75bb0c6304523ba3c06f37e72231695d4ea464bfd4b25ecd81f698f63b8adfd0",
+              "fills": 0,
+              "orders": 220,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "592e52b2dfd46b11d7d1461ef21fc9ec7ca2c3b87c0f54279120afc458aa0056",
+              "fills": 220,
+              "orders": 220,
+              "pnl": {
+                "cash": "986.64",
+                "equity_conservative": "986.64",
+                "equity_mid": "986.64",
+                "fees": "8.66",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-13.36",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "09e20be433b464ff124df71a26c411810bdaf212bb47de3a8978e189b54395a5",
+              "fills": 220,
+              "orders": 220,
+              "pnl": {
+                "cash": "932.5",
+                "equity_conservative": "932.5",
+                "equity_mid": "932.5",
+                "fees": "43.45",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-67.5",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "44cca7458754df16f736a1342f5059cf2e13add19902721d0d54de9617a6db37",
+              "fills": 0,
+              "orders": 220,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "839c3f10c2de93da6ccabe14726f9386eea3b9776fef36908f282612228fe541",
+              "fills": 220,
+              "orders": 220,
+              "pnl": {
+                "cash": "986.64",
+                "equity_conservative": "986.64",
+                "equity_mid": "986.64",
+                "fees": "8.66",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-13.36",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "514a21c804c2b4a1e3352735bb07198ac11a1ee09beea270dc2e38c6897c3a1b",
+              "fills": 220,
+              "orders": 220,
+              "pnl": {
+                "cash": "932.5",
+                "equity_conservative": "932.5",
+                "equity_mid": "932.5",
+                "fees": "43.45",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-67.5",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "650e00df1475f01517e1e864c4ef9a18006cd0f120ca22dc66a1f46b6cc0814e",
+              "fills": 0,
+              "orders": 220,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "9253156a383b594ecb3b0e9deb54b1289f8108affa428a833ae17d640c679bca",
+              "fills": 0,
+              "orders": 220,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "cede64131f5f85f15d85b88aa93ab3f9d4f5e8b45ca4b5185ea2840e274f05d6",
+              "fills": 0,
+              "orders": 220,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "713fe0f6d756f0d065bb9dc7ee0f1a63654a6a1e451dee722e33867e63b225dd",
+              "fills": 0,
+              "orders": 220,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "1547cda686767aa938901bb28f5770789834d49054380b0cbcdbe659ec59e8a1",
+              "fills": 0,
+              "orders": 220,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "11eb90ba85a0cfdc63fa763f1609806cda35489b92dc3f2da79c559b370684d8",
+              "fills": 0,
+              "orders": 220,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            }
+          ]
+        },
+        "rows": 401,
+        "segment": "validation",
+        "selection_biased": true,
+        "simulated": true,
+        "skipped": {},
+        "snapshots": 3171
+      }
+    },
+    "89d50c3651c578922363aa94bc0d6b0ad2d9cebd0f3ba44e108c17efa0a8820b": {
+      "candidate": "symbolic",
+      "report": {
+        "code_hash": "0d8674af2495ac145a32607b3d31fd08d4b1669ec0ba0e3c147b804c55502db7",
+        "dataset_id": "a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435",
+        "execution_window_seconds": {
+          "after": 300,
+          "before": 120
+        },
+        "forecasts": 401,
+        "kind": "historical-paper-backtest",
+        "markets_with_execution_data": 401,
+        "model_id": "06891d035c2156ad5c52b9be5a78656e934eea1926016de22c6e93ffdb287a01",
+        "note": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "notice": "Historical paper backtest on archived candles. Candles have no sizes: fills exist only under the assumed_depth SCENARIO. Not evidence of edge or of live profitability.",
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-08-02"
+        },
+        "report": {
+          "manifest": {
+            "assumptions": [
+              "Simulated paper-trading results under stated assumptions; these are not live results.",
+              "Paper network is lossless: a durable submit_requested reaches the simulated venue after the modelled latency.",
+              "Latency per order: decision 0-0 ms plus submit 250-250 ms, seeded by (seed, client order id).",
+              "Book state at arrival: worst_of_bracketing; a snapshot gap above 120 s makes execution unidentifiable (no fill).",
+              "Decisions use only snapshots with as_of <= decision time; execution may use the first snapshot after arrival, as a conservative execution model only.",
+              "Taker fills consume 0.5 of displayed depth per level with 0 extra slippage tick(s); earlier simulated fills in the same snapshot interval are assumed to have taken the best levels.",
+              "Maker model none: resting orders never fill.",
+              "Simulated orders do not move the archived book beyond the depth haircut and the consumed-liquidity accounting (no market-impact model).",
+              "Fee schedule kalshi-2026-02-general (verified=False).",
+              "Formula and rates (taker 0.07, maker 0.0175, rounded up to the cent, no settlement fee) are as read by the integrator from an archived copy of the February 2026 Kalshi fee schedule; not verified in this repository (verified=False).",
+              "Source URL and retrieval time are not recorded yet; the integrator records them when the schedule is verified.",
+              "Rounding up is applied per fill at the stated increment; the venue's rounding unit (per fill, order or trade) and increment (current docs mention $0.0001 for direct members) are schedule parameters, not verified.",
+              "No fee caps, rebates, volume tiers or per-market overrides are modelled.",
+              "fee_multiplier 1: the general schedule; market fee multipliers are not applied.",
+              "Markets without settlement evidence at run end are reported open at conservative best-bid marks.",
+              "Depth-unknown snapshots (candles or quotes without sizes) supply no depth.",
+              "Risk limits are SIMULATION ASSUMPTIONS for paper runs, not recommendations and not live settings (live requires every limit to be set explicitly).",
+              "kelly_fraction 0.10; Kelly portfolio cap 0.25 of bankroll; per-market, per-event and per-group exposure 5% of bankroll; portfolio exposure 25%; order cost 5%.",
+              "Data age <= 300 s, forecast age <= 3600 s, <= 10 orders/minute, <= 20 open orders.",
+              "Daily loss stop 5% and drawdown stop 15% of bankroll on conservative equity, with automatic kill switch; cash buffer 5%; minimum edge 0.02; price deviation <= 0.10."
+            ],
+            "base_config_digest": "75bb0c6304523ba3c06f37e72231695d4ea464bfd4b25ecd81f698f63b8adfd0",
+            "code_hash": "0d8674af2495ac145a32607b3d31fd08d4b1669ec0ba0e3c147b804c55502db7",
+            "grid": {
+              "assumed_depth": [
+                null,
+                "5",
+                "25"
+              ],
+              "extra_slippage_ticks": [
+                0,
+                1
+              ],
+              "fee_schedules": [
+                {
+                  "assumptions": [
+                    "Formula and rates (taker 0.07, maker 0.0175, rounded up to the cent, no settlement fee) are as read by the integrator from an archived copy of the February 2026 Kalshi fee schedule; not verified in this repository (verified=False).",
+                    "Source URL and retrieval time are not recorded yet; the integrator records them when the schedule is verified.",
+                    "Rounding up is applied per fill at the stated increment; the venue's rounding unit (per fill, order or trade) and increment (current docs mention $0.0001 for direct members) are schedule parameters, not verified.",
+                    "No fee caps, rebates, volume tiers or per-market overrides are modelled.",
+                    "fee_multiplier 1: the general schedule; market fee multipliers are not applied."
+                  ],
+                  "digest": "cd4ce1d14e4012d7aa5c03eb5f88e467301e6756b62cfa424deed73ab1551df7",
+                  "retrieved_at": null,
+                  "source_url": null,
+                  "verified": false,
+                  "version": "kalshi-2026-02-general"
+                }
+              ],
+              "latency": [
+                {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                }
+              ],
+              "maker_fill_model": [
+                "none"
+              ]
+            },
+            "input_digests": {
+              "forecasts": "f3a7b1566f988504ab78df284c7ca80e7c740244350f161789490881c1cd3cdb",
+              "markets": "d863cadda9a98ab9cc74f26cf2e2e2b61fc9c3ea0a23534cb62316cbb5ea6497",
+              "settlements": "958c22a4fd71eb11618f79a6782b13f2ca0a9e8a0e47e4b2c7aa59161fb54215",
+              "snapshots": "d5ce0302c94a16845ffcbcd5d8b97563c64276ec8141b435adc72ad9eec741aa"
+            },
+            "input_label": "history-validation:a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435",
+            "kind": "paper-sensitivity",
+            "notice": "Simulated paper-trading results under stated assumptions; these are not live results.",
+            "seed": 0,
+            "simulated": true
+          },
+          "rows": [
+            {
+              "config_digest": "75bb0c6304523ba3c06f37e72231695d4ea464bfd4b25ecd81f698f63b8adfd0",
+              "fills": 0,
+              "orders": 100,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "592e52b2dfd46b11d7d1461ef21fc9ec7ca2c3b87c0f54279120afc458aa0056",
+              "fills": 100,
+              "orders": 100,
+              "pnl": {
+                "cash": "993.01",
+                "equity_conservative": "993.01",
+                "equity_mid": "993.01",
+                "fees": "3.91",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-6.99",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "09e20be433b464ff124df71a26c411810bdaf212bb47de3a8978e189b54395a5",
+              "fills": 100,
+              "orders": 100,
+              "pnl": {
+                "cash": "961.12",
+                "equity_conservative": "961.12",
+                "equity_mid": "961.12",
+                "fees": "18.45",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-38.88",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "44cca7458754df16f736a1342f5059cf2e13add19902721d0d54de9617a6db37",
+              "fills": 0,
+              "orders": 100,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "839c3f10c2de93da6ccabe14726f9386eea3b9776fef36908f282612228fe541",
+              "fills": 100,
+              "orders": 100,
+              "pnl": {
+                "cash": "993.01",
+                "equity_conservative": "993.01",
+                "equity_mid": "993.01",
+                "fees": "3.91",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-6.99",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "514a21c804c2b4a1e3352735bb07198ac11a1ee09beea270dc2e38c6897c3a1b",
+              "fills": 100,
+              "orders": 100,
+              "pnl": {
+                "cash": "961.12",
+                "equity_conservative": "961.12",
+                "equity_mid": "961.12",
+                "fees": "18.45",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-38.88",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "650e00df1475f01517e1e864c4ef9a18006cd0f120ca22dc66a1f46b6cc0814e",
+              "fills": 0,
+              "orders": 100,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "9253156a383b594ecb3b0e9deb54b1289f8108affa428a833ae17d640c679bca",
+              "fills": 0,
+              "orders": 100,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "cede64131f5f85f15d85b88aa93ab3f9d4f5e8b45ca4b5185ea2840e274f05d6",
+              "fills": 0,
+              "orders": 100,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "713fe0f6d756f0d065bb9dc7ee0f1a63654a6a1e451dee722e33867e63b225dd",
+              "fills": 0,
+              "orders": 100,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "1547cda686767aa938901bb28f5770789834d49054380b0cbcdbe659ec59e8a1",
+              "fills": 0,
+              "orders": 100,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "11eb90ba85a0cfdc63fa763f1609806cda35489b92dc3f2da79c559b370684d8",
+              "fills": 0,
+              "orders": 100,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            }
+          ]
+        },
+        "rows": 401,
+        "segment": "validation",
+        "selection_biased": true,
+        "simulated": true,
+        "skipped": {},
+        "snapshots": 3171
+      }
+    },
+    "8b8cf750a4e96b766863ec522f478281380b1f70f81353f82e3e82037838f6bf": {
+      "candidate": "logistic",
+      "report": {
+        "code_hash": "0d8674af2495ac145a32607b3d31fd08d4b1669ec0ba0e3c147b804c55502db7",
+        "dataset_id": "a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435",
+        "execution_window_seconds": {
+          "after": 300,
+          "before": 120
+        },
+        "forecasts": 401,
+        "kind": "historical-paper-backtest",
+        "markets_with_execution_data": 401,
+        "model_id": "d316e849de67b8cd318606987d74208e866d8e1bba99d744179db788442b11b5",
+        "note": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "notice": "Historical paper backtest on archived candles. Candles have no sizes: fills exist only under the assumed_depth SCENARIO. Not evidence of edge or of live profitability.",
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-08-02"
+        },
+        "report": {
+          "manifest": {
+            "assumptions": [
+              "Simulated paper-trading results under stated assumptions; these are not live results.",
+              "Paper network is lossless: a durable submit_requested reaches the simulated venue after the modelled latency.",
+              "Latency per order: decision 0-0 ms plus submit 250-250 ms, seeded by (seed, client order id).",
+              "Book state at arrival: worst_of_bracketing; a snapshot gap above 120 s makes execution unidentifiable (no fill).",
+              "Decisions use only snapshots with as_of <= decision time; execution may use the first snapshot after arrival, as a conservative execution model only.",
+              "Taker fills consume 0.5 of displayed depth per level with 0 extra slippage tick(s); earlier simulated fills in the same snapshot interval are assumed to have taken the best levels.",
+              "Maker model none: resting orders never fill.",
+              "Simulated orders do not move the archived book beyond the depth haircut and the consumed-liquidity accounting (no market-impact model).",
+              "Fee schedule kalshi-2026-02-general (verified=False).",
+              "Formula and rates (taker 0.07, maker 0.0175, rounded up to the cent, no settlement fee) are as read by the integrator from an archived copy of the February 2026 Kalshi fee schedule; not verified in this repository (verified=False).",
+              "Source URL and retrieval time are not recorded yet; the integrator records them when the schedule is verified.",
+              "Rounding up is applied per fill at the stated increment; the venue's rounding unit (per fill, order or trade) and increment (current docs mention $0.0001 for direct members) are schedule parameters, not verified.",
+              "No fee caps, rebates, volume tiers or per-market overrides are modelled.",
+              "fee_multiplier 1: the general schedule; market fee multipliers are not applied.",
+              "Markets without settlement evidence at run end are reported open at conservative best-bid marks.",
+              "Depth-unknown snapshots (candles or quotes without sizes) supply no depth.",
+              "Risk limits are SIMULATION ASSUMPTIONS for paper runs, not recommendations and not live settings (live requires every limit to be set explicitly).",
+              "kelly_fraction 0.10; Kelly portfolio cap 0.25 of bankroll; per-market, per-event and per-group exposure 5% of bankroll; portfolio exposure 25%; order cost 5%.",
+              "Data age <= 300 s, forecast age <= 3600 s, <= 10 orders/minute, <= 20 open orders.",
+              "Daily loss stop 5% and drawdown stop 15% of bankroll on conservative equity, with automatic kill switch; cash buffer 5%; minimum edge 0.02; price deviation <= 0.10."
+            ],
+            "base_config_digest": "75bb0c6304523ba3c06f37e72231695d4ea464bfd4b25ecd81f698f63b8adfd0",
+            "code_hash": "0d8674af2495ac145a32607b3d31fd08d4b1669ec0ba0e3c147b804c55502db7",
+            "grid": {
+              "assumed_depth": [
+                null,
+                "5",
+                "25"
+              ],
+              "extra_slippage_ticks": [
+                0,
+                1
+              ],
+              "fee_schedules": [
+                {
+                  "assumptions": [
+                    "Formula and rates (taker 0.07, maker 0.0175, rounded up to the cent, no settlement fee) are as read by the integrator from an archived copy of the February 2026 Kalshi fee schedule; not verified in this repository (verified=False).",
+                    "Source URL and retrieval time are not recorded yet; the integrator records them when the schedule is verified.",
+                    "Rounding up is applied per fill at the stated increment; the venue's rounding unit (per fill, order or trade) and increment (current docs mention $0.0001 for direct members) are schedule parameters, not verified.",
+                    "No fee caps, rebates, volume tiers or per-market overrides are modelled.",
+                    "fee_multiplier 1: the general schedule; market fee multipliers are not applied."
+                  ],
+                  "digest": "cd4ce1d14e4012d7aa5c03eb5f88e467301e6756b62cfa424deed73ab1551df7",
+                  "retrieved_at": null,
+                  "source_url": null,
+                  "verified": false,
+                  "version": "kalshi-2026-02-general"
+                }
+              ],
+              "latency": [
+                {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                }
+              ],
+              "maker_fill_model": [
+                "none"
+              ]
+            },
+            "input_digests": {
+              "forecasts": "0ca359139d83a36015113df19e6138ccf78c53dcbe00adaeab4be4fe79496862",
+              "markets": "d863cadda9a98ab9cc74f26cf2e2e2b61fc9c3ea0a23534cb62316cbb5ea6497",
+              "settlements": "958c22a4fd71eb11618f79a6782b13f2ca0a9e8a0e47e4b2c7aa59161fb54215",
+              "snapshots": "d5ce0302c94a16845ffcbcd5d8b97563c64276ec8141b435adc72ad9eec741aa"
+            },
+            "input_label": "history-validation:a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435",
+            "kind": "paper-sensitivity",
+            "notice": "Simulated paper-trading results under stated assumptions; these are not live results.",
+            "seed": 0,
+            "simulated": true
+          },
+          "rows": [
+            {
+              "config_digest": "75bb0c6304523ba3c06f37e72231695d4ea464bfd4b25ecd81f698f63b8adfd0",
+              "fills": 0,
+              "orders": 51,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "592e52b2dfd46b11d7d1461ef21fc9ec7ca2c3b87c0f54279120afc458aa0056",
+              "fills": 51,
+              "orders": 51,
+              "pnl": {
+                "cash": "996.42",
+                "equity_conservative": "996.42",
+                "equity_mid": "996.42",
+                "fees": "1.9",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-3.58",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "09e20be433b464ff124df71a26c411810bdaf212bb47de3a8978e189b54395a5",
+              "fills": 51,
+              "orders": 51,
+              "pnl": {
+                "cash": "982.67",
+                "equity_conservative": "982.67",
+                "equity_mid": "982.67",
+                "fees": "8.79",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-17.33",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "44cca7458754df16f736a1342f5059cf2e13add19902721d0d54de9617a6db37",
+              "fills": 0,
+              "orders": 51,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "839c3f10c2de93da6ccabe14726f9386eea3b9776fef36908f282612228fe541",
+              "fills": 51,
+              "orders": 51,
+              "pnl": {
+                "cash": "996.42",
+                "equity_conservative": "996.42",
+                "equity_mid": "996.42",
+                "fees": "1.9",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-3.58",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "514a21c804c2b4a1e3352735bb07198ac11a1ee09beea270dc2e38c6897c3a1b",
+              "fills": 51,
+              "orders": 51,
+              "pnl": {
+                "cash": "982.67",
+                "equity_conservative": "982.67",
+                "equity_mid": "982.67",
+                "fees": "8.79",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "-17.33",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 0,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "650e00df1475f01517e1e864c4ef9a18006cd0f120ca22dc66a1f46b6cc0814e",
+              "fills": 0,
+              "orders": 51,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "9253156a383b594ecb3b0e9deb54b1289f8108affa428a833ae17d640c679bca",
+              "fills": 0,
+              "orders": 51,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "cede64131f5f85f15d85b88aa93ab3f9d4f5e8b45ca4b5185ea2840e274f05d6",
+              "fills": 0,
+              "orders": 51,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    250,
+                    250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "713fe0f6d756f0d065bb9dc7ee0f1a63654a6a1e451dee722e33867e63b225dd",
+              "fills": 0,
+              "orders": 51,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": null,
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "1547cda686767aa938901bb28f5770789834d49054380b0cbcdbe659ec59e8a1",
+              "fills": 0,
+              "orders": 51,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "5",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            },
+            {
+              "config_digest": "11eb90ba85a0cfdc63fa763f1609806cda35489b92dc3f2da79c559b370684d8",
+              "fills": 0,
+              "orders": 51,
+              "pnl": {
+                "cash": "1000",
+                "equity_conservative": "1000",
+                "equity_mid": "1000",
+                "fees": "0",
+                "marks_missing": [],
+                "net_deposits": "1000",
+                "realized": "0",
+                "reserved_cash": "0",
+                "unrealized_conservative": "0",
+                "unrealized_mid": "0"
+              },
+              "rejections_by_reason": {},
+              "scenario": {
+                "assumed_depth": "25",
+                "extra_slippage_ticks": 1,
+                "fee_schedule": "kalshi-2026-02-general",
+                "fee_verified": false,
+                "latency": {
+                  "decision_ms": [
+                    0,
+                    0
+                  ],
+                  "submit_ms": [
+                    1250,
+                    1250
+                  ]
+                },
+                "maker_fill_model": "none"
+              },
+              "unidentifiable": 0,
+              "verification_failures": 0
+            }
+          ]
+        },
+        "rows": 401,
+        "segment": "validation",
+        "selection_biased": true,
+        "simulated": true,
+        "skipped": {},
+        "snapshots": 3171
+      }
+    }
+  }
+}

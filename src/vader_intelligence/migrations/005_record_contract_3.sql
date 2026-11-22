@@ -1,0 +1,10 @@
+-- Record contract 3 (decision D-001, docs/roadmap/decisions.md). This migration changes
+-- no table and touches no row. Its only effect is the schema_migrations ledger row and
+-- user_version 5, written by forecast.schema.migrate in the same transaction (with the
+-- contract-2 ledger row first when migrating directly from schema 3).
+--
+-- Contract 2 was amended in place by the draft PR #12 without a version change, so the
+-- label names two writer rule sets. Contract 3 carries the amended rules at the storage
+-- level and is the only contract open for new receipts and decisions on schema 5.
+-- Contract-1 and contract-2 rows stay valid, inspectable and byte-for-byte preserved;
+-- every binary that predates contract 3 refuses a schema-5 archive at open.

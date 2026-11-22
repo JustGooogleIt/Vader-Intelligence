@@ -62,7 +62,7 @@ def test_migration_failure_rolls_back_every_ddl_statement(tmp_path, monkeypatch)
     db.close()
 
 
-@pytest.mark.parametrize("version", [0, -1, 4, 999])
+@pytest.mark.parametrize("version", [0, -1, 5, 999])
 def test_future_and_unsupported_versions_fail_without_changes(tmp_path, version):
     path = tmp_path / "future.sqlite3"
     db = legacy(path)
@@ -261,11 +261,15 @@ def test_no_nested_commit_or_missing_fk_enforcement(sample):
 def test_integrity_is_read_only(sample):
     db, _ = sample
     before = snapshot(db)
-    assert journal.integrity(db) == {
+    result = journal.integrity(db)
+    assert {k: result[k] for k in ("integrity", "materialization", "publication_verified")} == {
         "integrity": "verified",
         "materialization": "not_implemented",
         "publication_verified": False,
     }
+    # Record-contract counts are additive (F3.3 plan §9.6); every fixture row is contract 1.
+    assert all(v == {"1": 1, "2": 0, "3": 0, "4": 0} for v in result["record_contracts"].values())
+    assert result["latest_discovery"] == {"id": 1, "complete": True, "reasons": []}
     assert snapshot(db) == before
 
 

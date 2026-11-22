@@ -183,3 +183,50 @@ Live-check integrity failures override inconclusive status; fixture runs cannot
 mask live health failures. Malformed schedule/eligibility shapes fail closed.
 See `docs/checkpoint-review.md` for regression results and fresh live evidence,
 and `docs/handoffs/baseline.md` for the two independent ownership boundaries.
+
+## Integration I2 — mechanical release repairs (2026-10-22)
+
+Base: PR #37 at `757c73f986b4481beb2fbddbb596e58450fe2299`. Work only in the
+integration checkout and private environment. Preserve author branches and all archives.
+
+1. Add regression cases that fail at the base for F39 (one-shot space guard error
+   at summary insertion), F47 (configure with a non-forward-capable artifact), F48
+   (legacy init deposit retry and mismatched amount), F49 (removed registry), and
+   F51 (header-less wrapped private-key material).
+2. Repair summary failure bookkeeping; use the runtime forecaster constructor at
+   configure time; make an unavailable registry an explicit model abstention;
+   preserve legacy initial deposit identity; refuse wrapped secret-body fragments.
+3. Keep startup validation strict for unknown model feature sets. Lifecycle stop
+   and uninstall must still work after a registry disappears. Do not change the
+   settlement fallback rule, selection defaults, holdout policy or live activation.
+4. Run focused checks, lint/format, the native suite and installed-wheel checks.
+   Report the optional observer dependency separately. Keep outputs outside Git.
+5. Record exact heads, findings, evidence and remaining owner decisions; publish
+   a draft integration repair PR and a Claude continuation prompt. Main can advance
+   only after the repaired candidate and semantic gates are cleared; no bypass.
+
+Compatibility: no schema or record-contract change. Existing cash events remain
+immutable. Exact init retries add no cash; conflicting requested amounts are errors.
+Unavailable models abstain while baseline computation continues. A rejected config
+writes nothing. The new secret-body heuristic is conservative and documented; it is
+not a proof that arbitrary encoded secret fragments are absent.
+
+Reverse path: revert this repair commit on the integration branch. No deployment,
+archive migration or external side effect occurs. Test databases are disposable.
+
+### I2 verification and handoff
+
+Repair code `3b0ed7c7de90daf95e801410eaeffeb5e9a6470f`, consolidated draft #38.
+Native combined suite: 1,494 passed / 2 absent optional `tmux_jev` failures;
+the same two fail at the unmodified candidate. Separate pinned observer
+environment: 85 passed. Ruff lint/format, sdist/wheel build, installed-wheel
+54-check smoke, synthetic E2E and crash-recovery demos complete. All 50 files
+in the baseline's skill manifest still match the pin.
+
+Recovered local worker commits on three recovery branches without changing
+their worktrees. F50 and N-20c change interpretation semantics and are retained
+for review, not applied. The unfinished N-34a settlement tests independently
+reproduce a remaining acknowledged-result-revision gap (two failed, one control
+passed). No main merge or production change. Exact evidence and Claude's
+next bounded task are in docs/handoffs/integration-readiness-20261022.md and
+docs/handoffs/claude-next-20261022.md.

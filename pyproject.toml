@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Read-only, reproducible MLB prediction-market collection"
 requires-python = ">=3.11"
 dependencies = [
+    "cryptography>=50.0.2",
     "httpx>=0.28.1",
+    "numpy>=2.4.6",
+    "scikit-learn>=1.9.1",
 ]
 
 [project.scripts]
@@ -12,6 +15,9 @@ vader = "vader_intelligence.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The top-level `ops` package is not installed; without the repository root on sys.path
+# the console script would resolve `ops` to the tests/ops namespace directory.
+pythonpath = ["."]
 
 [tool.ruff]
 target-version = "py311"
@@ -27,6 +33,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "build>=1.6.1",
+    "hypothesis>=6.170.1",
     "pytest>=9.1.1",
     "ruff>=0.16.9",
 ]

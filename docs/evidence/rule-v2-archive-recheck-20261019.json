@@ -1,0 +1,474 @@
+{
+  "archive": "/Users/ashwin/Documents/Vader-Intelligence-operations/20260930-first-deployment/production.sqlite3",
+  "by_ticker": {
+    "KXMLBGAME-26OCT072200MILSD-MIL": {
+      "archived_checks": 48,
+      "archived_reasons": {
+        "eligible": 48
+      },
+      "sampled": 25,
+      "v1": {
+        "eligible": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 25
+      },
+      "v2_official_starts": [
+        "2026-10-08T02:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT072200MILSD-SD": {
+      "archived_checks": 48,
+      "archived_reasons": {
+        "eligible": 48
+      },
+      "sampled": 25,
+      "v1": {
+        "eligible": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 25
+      },
+      "v2_official_starts": [
+        "2026-10-08T02:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT081700CLECWS-CLE": {
+      "archived_checks": 90,
+      "archived_reasons": {
+        "eligible": 90
+      },
+      "sampled": 25,
+      "v1": {
+        "eligible": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 25
+      },
+      "v2_official_starts": [
+        "2026-10-08T21:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT081700CLECWS-CWS": {
+      "archived_checks": 90,
+      "archived_reasons": {
+        "eligible": 90
+      },
+      "sampled": 25,
+      "v1": {
+        "eligible": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 25
+      },
+      "v2_official_starts": [
+        "2026-10-08T21:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT102000CWSCLE-CLE": {
+      "archived_checks": 728,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 728
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 22,
+        "not_scheduled_pregame": 3
+      },
+      "v2_official_starts": [
+        "2026-10-11T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT102000CWSCLE-CWS": {
+      "archived_checks": 728,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 728
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 22,
+        "not_scheduled_pregame": 3
+      },
+      "v2_official_starts": [
+        "2026-10-11T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT112000LADMIL-LAD": {
+      "archived_checks": 1265,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 1265
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 23,
+        "not_scheduled_pregame": 1,
+        "start_time_unknown": 1
+      },
+      "v2_official_starts": [
+        "2026-10-12T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT112000LADMIL-MIL": {
+      "archived_checks": 1265,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 1265
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 23,
+        "not_scheduled_pregame": 1,
+        "start_time_unknown": 1
+      },
+      "v2_official_starts": [
+        "2026-10-12T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT122000CLETB-CLE": {
+      "archived_checks": 829,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 829
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 22,
+        "not_scheduled_pregame": 3
+      },
+      "v2_official_starts": [
+        "2026-10-13T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT122000CLETB-TB": {
+      "archived_checks": 829,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 829
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 22,
+        "not_scheduled_pregame": 3
+      },
+      "v2_official_starts": [
+        "2026-10-13T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT122000LADMIL-LAD": {
+      "archived_checks": 1589,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 1589
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "not_scheduled_pregame": 2,
+        "start_time_unknown": 1,
+        "ticker_start_mismatch": 22
+      },
+      "v2_official_starts": []
+    },
+    "KXMLBGAME-26OCT122000LADMIL-MIL": {
+      "archived_checks": 1589,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 1589
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "not_scheduled_pregame": 2,
+        "start_time_unknown": 1,
+        "ticker_start_mismatch": 22
+      },
+      "v2_official_starts": []
+    },
+    "KXMLBGAME-26OCT132000CLETB-CLE": {
+      "archived_checks": 1290,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 1290
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 24,
+        "not_scheduled_pregame": 1
+      },
+      "v2_official_starts": [
+        "2026-10-14T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT132000CLETB-TB": {
+      "archived_checks": 1290,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 1290
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 24,
+        "not_scheduled_pregame": 1
+      },
+      "v2_official_starts": [
+        "2026-10-14T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT142000MILLAD-LAD": {
+      "archived_checks": 2618,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 2618
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 23,
+        "not_scheduled_pregame": 1,
+        "start_time_unknown": 1
+      },
+      "v2_official_starts": [
+        "2026-10-15T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT142000MILLAD-MIL": {
+      "archived_checks": 2618,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 2618
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 23,
+        "not_scheduled_pregame": 1,
+        "start_time_unknown": 1
+      },
+      "v2_official_starts": [
+        "2026-10-15T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT151800TBCLE-CLE": {
+      "archived_checks": 2024,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 2024
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 19,
+        "not_scheduled_pregame": 1,
+        "ticker_start_mismatch": 5
+      },
+      "v2_official_starts": [
+        "2026-10-15T22:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT151800TBCLE-TB": {
+      "archived_checks": 2024,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 2024
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 19,
+        "not_scheduled_pregame": 1,
+        "ticker_start_mismatch": 5
+      },
+      "v2_official_starts": [
+        "2026-10-15T22:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT152000MILLAD-LAD": {
+      "archived_checks": 2879,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 2879
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 3,
+        "not_scheduled_pregame": 1,
+        "start_time_unknown": 1,
+        "ticker_start_mismatch": 20
+      },
+      "v2_official_starts": [
+        "2026-10-16T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT152000MILLAD-MIL": {
+      "archived_checks": 2879,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 2879
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 3,
+        "not_scheduled_pregame": 1,
+        "start_time_unknown": 1,
+        "ticker_start_mismatch": 20
+      },
+      "v2_official_starts": [
+        "2026-10-16T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT161800TBCLE-CLE": {
+      "archived_checks": 2825,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 2825
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 18,
+        "ticker_start_mismatch": 1,
+        "unmapped_game": 6
+      },
+      "v2_official_starts": [
+        "2026-10-16T22:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT161800TBCLE-TB": {
+      "archived_checks": 2825,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 2825
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 18,
+        "ticker_start_mismatch": 1,
+        "unmapped_game": 6
+      },
+      "v2_official_starts": [
+        "2026-10-16T22:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT172000TBCLE-CLE": {
+      "archived_checks": 1915,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 1915
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 15,
+        "not_scheduled_pregame": 6,
+        "ticker_start_mismatch": 4
+      },
+      "v2_official_starts": [
+        "2026-10-18T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT172000TBCLE-TB": {
+      "archived_checks": 1915,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 1915
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 15,
+        "not_scheduled_pregame": 6,
+        "ticker_start_mismatch": 4
+      },
+      "v2_official_starts": [
+        "2026-10-18T00:00:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT192008CLETB-CLE": {
+      "archived_checks": 147,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 147
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 25
+      },
+      "v2_official_starts": [
+        "2026-10-20T00:08:00+00:00"
+      ]
+    },
+    "KXMLBGAME-26OCT192008CLETB-TB": {
+      "archived_checks": 147,
+      "archived_reasons": {
+        "unrecognized_full_game_rule": 147
+      },
+      "sampled": 25,
+      "v1": {
+        "unrecognized_full_game_rule": 25
+      },
+      "v1_plus_v2": {
+        "eligible": 25
+      },
+      "v2_official_starts": [
+        "2026-10-20T00:08:00+00:00"
+      ]
+    }
+  },
+  "evidence_kind": "historical recheck of archived bytes; not forward evidence",
+  "opened": "read-only (mode=ro, query_only)",
+  "per_ticker": 25,
+  "since": "2026-10-08",
+  "tickers": 26,
+  "totals": {
+    "v1": {
+      "eligible": 100,
+      "unrecognized_full_game_rule": 550
+    },
+    "v1_plus_v2": {
+      "eligible": 488,
+      "not_scheduled_pregame": 38,
+      "start_time_unknown": 8,
+      "ticker_start_mismatch": 104,
+      "unmapped_game": 12
+    }
+  },
+  "v2_start_equals_ticker_time": {
+    "True": 488
+  }
+}

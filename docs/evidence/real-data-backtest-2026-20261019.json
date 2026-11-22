@@ -1,0 +1,2695 @@
+{
+  "steps": [
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "snapshot",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--dataset",
+        "a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435",
+        "--development-through",
+        "2026-07-31",
+        "--validation-through",
+        "2026-08-31"
+      ],
+      "result": {
+        "development_rows": 1611,
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "snapshot_sha256": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "status": "complete",
+        "validation_rows": 401
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "execution-snapshot",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--dataset",
+        "a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435",
+        "--history-db",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/history/history.sqlite3",
+        "--development-through",
+        "2026-07-31",
+        "--validation-through",
+        "2026-08-31"
+      ],
+      "result": {
+        "execution_inputs_sha256": "6d5a616e194a2f14a49425e85afc346f5d37d8116f9d78a0b790c1ee7ed01d70",
+        "status": "complete"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "submit",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2026",
+        "--pod",
+        "robust",
+        "--operation",
+        "paper_backtest",
+        "--params",
+        "{\"candidate_id\": \"5c7d3401dfc7906f41221317e485123d\", \"dataset_manifest_hash\": \"77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a\", \"fee_schedule_version\": \"kalshi-2026-02-general\", \"execution_inputs_hash\": \"6d5a616e194a2f14a49425e85afc346f5d37d8116f9d78a0b790c1ee7ed01d70\", \"assumed_depths\": [\"5\", \"25\"]}"
+      ],
+      "result": {
+        "status": "complete",
+        "task_id": "475416991e1f2dd5818cb5c39ad855ce"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "submit",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2026",
+        "--pod",
+        "robust",
+        "--operation",
+        "paper_backtest",
+        "--params",
+        "{\"candidate_id\": \"1b72ae970acc421c01087c0acbab1f25\", \"dataset_manifest_hash\": \"77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a\", \"fee_schedule_version\": \"kalshi-2026-02-general\", \"execution_inputs_hash\": \"6d5a616e194a2f14a49425e85afc346f5d37d8116f9d78a0b790c1ee7ed01d70\", \"assumed_depths\": [\"5\", \"25\"]}"
+      ],
+      "result": {
+        "status": "complete",
+        "task_id": "c744e57386d54317bd7c32576af67a95"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "submit",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2026",
+        "--pod",
+        "robust",
+        "--operation",
+        "paper_backtest",
+        "--params",
+        "{\"candidate_id\": \"783d05112ac4c70569062eb929fa2c1e\", \"dataset_manifest_hash\": \"77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a\", \"fee_schedule_version\": \"kalshi-2026-02-general\", \"execution_inputs_hash\": \"6d5a616e194a2f14a49425e85afc346f5d37d8116f9d78a0b790c1ee7ed01d70\", \"assumed_depths\": [\"5\", \"25\"]}"
+      ],
+      "result": {
+        "status": "complete",
+        "task_id": "158a0d990dfce2963da8535ce98aadae"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "run",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2026",
+        "--deadline-seconds",
+        "3600"
+      ],
+      "result": {
+        "recent_failures": [],
+        "run": {
+          "steps": 7233,
+          "stopped": "idle"
+        },
+        "tasks_by_state": {
+          "succeeded": 9
+        }
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "backtest",
+        "run",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--history-db",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/history/history.sqlite3",
+        "--dataset",
+        "a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435",
+        "--model",
+        "d316e849de67b8cd318606987d74208e866d8e1bba99d744179db788442b11b5",
+        "--development-through",
+        "2026-07-31",
+        "--validation-through",
+        "2026-08-31",
+        "--segment",
+        "validation",
+        "--assumed-depth",
+        "5",
+        "--assumed-depth",
+        "25"
+      ],
+      "result": {
+        "forecasts": 401,
+        "markets_with_execution_data": 401,
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-08-02"
+        },
+        "rows": 401,
+        "scenarios": [
+          {
+            "fills": 0,
+            "orders": 51,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 51,
+            "orders": 51,
+            "pnl": {
+              "cash": "996.42",
+              "equity_conservative": "996.42",
+              "equity_mid": "996.42",
+              "fees": "1.9",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-3.58",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 51,
+            "orders": 51,
+            "pnl": {
+              "cash": "982.67",
+              "equity_conservative": "982.67",
+              "equity_mid": "982.67",
+              "fees": "8.79",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-17.33",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 51,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 51,
+            "orders": 51,
+            "pnl": {
+              "cash": "996.42",
+              "equity_conservative": "996.42",
+              "equity_mid": "996.42",
+              "fees": "1.9",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-3.58",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 51,
+            "orders": 51,
+            "pnl": {
+              "cash": "982.67",
+              "equity_conservative": "982.67",
+              "equity_mid": "982.67",
+              "fees": "8.79",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-17.33",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 51,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 51,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 51,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 51,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 51,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 51,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 94,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 94,
+            "orders": 94,
+            "pnl": {
+              "cash": "997.26",
+              "equity_conservative": "997.26",
+              "equity_mid": "997.26",
+              "fees": "1.88",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-2.74",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 94,
+            "orders": 94,
+            "pnl": {
+              "cash": "984.48",
+              "equity_conservative": "984.48",
+              "equity_mid": "984.48",
+              "fees": "8.76",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-15.52",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 94,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 94,
+            "orders": 94,
+            "pnl": {
+              "cash": "997.26",
+              "equity_conservative": "997.26",
+              "equity_mid": "997.26",
+              "fees": "1.88",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-2.74",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 94,
+            "orders": 94,
+            "pnl": {
+              "cash": "984.48",
+              "equity_conservative": "984.48",
+              "equity_mid": "984.48",
+              "fees": "8.76",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-15.52",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 94,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 94,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 94,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 94,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 94,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 94,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          }
+        ],
+        "segment": "validation",
+        "selection_biased": true,
+        "skipped": {}
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "backtest",
+        "run",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--history-db",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/history/history.sqlite3",
+        "--dataset",
+        "a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435",
+        "--model",
+        "a6d69da1f90519eedc146c1d6b8ea50fa4b464cea96132f159268cb5ee7bc407",
+        "--development-through",
+        "2026-07-31",
+        "--validation-through",
+        "2026-08-31",
+        "--segment",
+        "validation",
+        "--assumed-depth",
+        "5",
+        "--assumed-depth",
+        "25"
+      ],
+      "result": {
+        "forecasts": 401,
+        "markets_with_execution_data": 401,
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-08-02"
+        },
+        "rows": 401,
+        "scenarios": [
+          {
+            "fills": 0,
+            "orders": 220,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 220,
+            "orders": 220,
+            "pnl": {
+              "cash": "986.64",
+              "equity_conservative": "986.64",
+              "equity_mid": "986.64",
+              "fees": "8.66",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-13.36",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 220,
+            "orders": 220,
+            "pnl": {
+              "cash": "932.5",
+              "equity_conservative": "932.5",
+              "equity_mid": "932.5",
+              "fees": "43.45",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-67.5",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 220,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 220,
+            "orders": 220,
+            "pnl": {
+              "cash": "986.64",
+              "equity_conservative": "986.64",
+              "equity_mid": "986.64",
+              "fees": "8.66",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-13.36",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 220,
+            "orders": 220,
+            "pnl": {
+              "cash": "932.5",
+              "equity_conservative": "932.5",
+              "equity_mid": "932.5",
+              "fees": "43.45",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-67.5",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 220,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 220,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 220,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 220,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 220,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 220,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 254,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 254,
+            "orders": 254,
+            "pnl": {
+              "cash": "998.24",
+              "equity_conservative": "998.24",
+              "equity_mid": "998.24",
+              "fees": "5.08",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-1.76",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 169,
+            "orders": 169,
+            "pnl": {
+              "cash": "951.69",
+              "equity_conservative": "951.69",
+              "equity_mid": "951.69",
+              "fees": "17.29",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-48.31",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 254,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 254,
+            "orders": 254,
+            "pnl": {
+              "cash": "998.24",
+              "equity_conservative": "998.24",
+              "equity_mid": "998.24",
+              "fees": "5.08",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-1.76",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 169,
+            "orders": 169,
+            "pnl": {
+              "cash": "951.69",
+              "equity_conservative": "951.69",
+              "equity_mid": "951.69",
+              "fees": "17.29",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-48.31",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 254,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 254,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 254,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 254,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 254,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 254,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          }
+        ],
+        "segment": "validation",
+        "selection_biased": true,
+        "skipped": {}
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "backtest",
+        "run",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--history-db",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/history/history.sqlite3",
+        "--dataset",
+        "a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435",
+        "--model",
+        "06891d035c2156ad5c52b9be5a78656e934eea1926016de22c6e93ffdb287a01",
+        "--development-through",
+        "2026-07-31",
+        "--validation-through",
+        "2026-08-31",
+        "--segment",
+        "validation",
+        "--assumed-depth",
+        "5",
+        "--assumed-depth",
+        "25"
+      ],
+      "result": {
+        "forecasts": 401,
+        "markets_with_execution_data": 401,
+        "period": {
+          "end": "2026-08-31",
+          "start": "2026-08-02"
+        },
+        "rows": 401,
+        "scenarios": [
+          {
+            "fills": 0,
+            "orders": 100,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 100,
+            "orders": 100,
+            "pnl": {
+              "cash": "993.01",
+              "equity_conservative": "993.01",
+              "equity_mid": "993.01",
+              "fees": "3.91",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-6.99",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 100,
+            "orders": 100,
+            "pnl": {
+              "cash": "961.12",
+              "equity_conservative": "961.12",
+              "equity_mid": "961.12",
+              "fees": "18.45",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-38.88",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 100,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 100,
+            "orders": 100,
+            "pnl": {
+              "cash": "993.01",
+              "equity_conservative": "993.01",
+              "equity_mid": "993.01",
+              "fees": "3.91",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-6.99",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 100,
+            "orders": 100,
+            "pnl": {
+              "cash": "961.12",
+              "equity_conservative": "961.12",
+              "equity_mid": "961.12",
+              "fees": "18.45",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-38.88",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 100,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 100,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 100,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 100,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 100,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 100,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-general",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 145,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 145,
+            "orders": 145,
+            "pnl": {
+              "cash": "993.3",
+              "equity_conservative": "993.3",
+              "equity_mid": "993.3",
+              "fees": "2.9",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-6.7",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 145,
+            "orders": 145,
+            "pnl": {
+              "cash": "956.4",
+              "equity_conservative": "956.4",
+              "equity_mid": "956.4",
+              "fees": "14.12",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-43.6",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 145,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 145,
+            "orders": 145,
+            "pnl": {
+              "cash": "993.3",
+              "equity_conservative": "993.3",
+              "equity_mid": "993.3",
+              "fees": "2.9",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-6.7",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 145,
+            "orders": 145,
+            "pnl": {
+              "cash": "956.4",
+              "equity_conservative": "956.4",
+              "equity_mid": "956.4",
+              "fees": "14.12",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "-43.6",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 0,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 145,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 145,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 145,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  250,
+                  250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 145,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": null,
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 145,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "5",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          },
+          {
+            "fills": 0,
+            "orders": 145,
+            "pnl": {
+              "cash": "1000",
+              "equity_conservative": "1000",
+              "equity_mid": "1000",
+              "fees": "0",
+              "marks_missing": [],
+              "net_deposits": "1000",
+              "realized": "0",
+              "reserved_cash": "0",
+              "unrealized_conservative": "0",
+              "unrealized_mid": "0"
+            },
+            "scenario": {
+              "assumed_depth": "25",
+              "extra_slippage_ticks": 1,
+              "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+              "fee_verified": false,
+              "latency": {
+                "decision_ms": [
+                  0,
+                  0
+                ],
+                "submit_ms": [
+                  1250,
+                  1250
+                ]
+              },
+              "maker_fill_model": "none"
+            },
+            "unidentifiable": 0
+          }
+        ],
+        "segment": "validation",
+        "selection_biased": true,
+        "skipped": {}
+      }
+    }
+  ]
+}

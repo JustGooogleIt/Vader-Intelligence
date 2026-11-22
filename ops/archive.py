@@ -62,10 +62,10 @@ def connect(path):
 
 def schema(db):
     version = db.execute("PRAGMA user_version").fetchone()[0]
-    if version not in (1, 2, 3):
-        raise ValueError("expected supported collector schema version 1, 2 or 3")
+    if version not in (1, 2, 3, 4, 5, 6):
+        raise ValueError("expected supported collector schema version 1 to 6")
     tables = COLUMNS | (SETTLEMENT_COLUMNS if version >= 2 else {})
-    if version == 3:
+    if version >= 3:
         from vader_intelligence.forecast.schema import COLUMNS as FORECAST_COLUMNS
         from vader_intelligence.forecast.schema import check_schema
 
@@ -93,11 +93,12 @@ def inspect(path):
         for sha, body, length in db.execute("SELECT sha256,body,byte_count FROM blobs"):
             if len(body) != length or hashlib.sha256(body).hexdigest() != sha:
                 raise ValueError("raw response hash/length mismatch")
-        if version == 3:
+        research = None
+        if version >= 3:
             from vader_intelligence.forecast.journal import integrity
 
-            integrity(db)
-        return {
+            research = integrity(db)
+        report = {
             "database": str(Path(path).resolve()),
             "schema_version": version,
             "integrity": "ok",
@@ -106,6 +107,11 @@ def inspect(path):
                 table: db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in tables
             },
         }
+        if research is not None:
+            # Per-table, per-record-contract counts and the latest immutable discovery
+            # fact, so operators can see legacy versus current evidence without SQL.
+            report["research"] = research
+        return report
 
 
 def backup(source, destination, *, timeout=300):

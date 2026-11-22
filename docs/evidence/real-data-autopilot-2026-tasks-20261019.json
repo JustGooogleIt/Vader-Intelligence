@@ -1,0 +1,910 @@
+{
+  "kind": "autopilot-task-details",
+  "note": "read-only extract of the autopilot pods' tasks behind \u00a74 (parameters and development-only scores); run A = auto-*, run B = auto2-*",
+  "tasks": [
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 4,
+        "development_cv_log_loss": 0.687563074322604,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.67612928,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "logistic",
+        "grid": {
+          "C": [
+            0.01,
+            0.1,
+            1.0,
+            10.0
+          ]
+        },
+        "model_sha256": "39c2821945a97398a206f77c759455869bf5d407960e2f2e1d42263c49b5ae20",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "C": 0.01
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "search_seconds": 300.0
+        },
+        "model_family": "logistic",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto-baseline",
+      "state": "succeeded",
+      "task_id": "8ebe6aea2df5fc270a7956739f48c07f"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 8,
+        "development_cv_log_loss": 0.6919066297071617,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.68531559,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "gbm",
+        "grid": {
+          "l2_regularization": [
+            1.0
+          ],
+          "learning_rate": [
+            0.05,
+            0.1
+          ],
+          "max_iter": [
+            100,
+            300
+          ],
+          "max_leaf_nodes": [
+            7,
+            15
+          ],
+          "min_samples_leaf": [
+            40
+          ]
+        },
+        "model_sha256": "b20f1291f91e4b730807d13e01c07bf148e0fd7b36558d5d807c870b2c52c438",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.05,
+          "max_iter": 100,
+          "max_leaf_nodes": 7,
+          "min_samples_leaf": 40
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "search_seconds": 300.0
+        },
+        "model_family": "gradient_boosting",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto-baseline",
+      "state": "succeeded",
+      "task_id": "af5c0dd292be30c6032f9461bc7fa3ea"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 3,
+        "development_cv_log_loss": 0.686874538906209,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.67561106,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "logistic",
+        "grid": {
+          "C": [
+            0.0003333333,
+            0.001,
+            0.0033333333
+          ]
+        },
+        "model_sha256": "f7d156b55fc1efa438b783e657492dd220573afc3c711edac4c4a047f7106a3a",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "C": 0.0033333333
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "grid": {
+            "C": [
+              0.0003333333,
+              0.001,
+              0.0033333333
+            ]
+          },
+          "search_seconds": 300.0
+        },
+        "model_family": "logistic",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto-baseline",
+      "state": "succeeded",
+      "task_id": "15529a6ce221c9f53e70f7b2e657d58d"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 12,
+        "development_cv_log_loss": 0.685246622114756,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.6831183,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "gbm",
+        "grid": {
+          "l2_regularization": [
+            1.0
+          ],
+          "learning_rate": [
+            0.025,
+            0.05
+          ],
+          "max_iter": [
+            100,
+            200
+          ],
+          "max_leaf_nodes": [
+            3,
+            7,
+            14
+          ],
+          "min_samples_leaf": [
+            40
+          ]
+        },
+        "model_sha256": "6f9dccb8f572568b152f41cdae44ca9671b4374dfb151eed1062d3d781dbc6db",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.025,
+          "max_iter": 100,
+          "max_leaf_nodes": 3,
+          "min_samples_leaf": 40
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "grid": {
+            "l2_regularization": [
+              1.0
+            ],
+            "learning_rate": [
+              0.025,
+              0.05
+            ],
+            "max_iter": [
+              100,
+              200
+            ],
+            "max_leaf_nodes": [
+              3,
+              7,
+              14
+            ],
+            "min_samples_leaf": [
+              40
+            ]
+          },
+          "search_seconds": 300.0
+        },
+        "model_family": "gradient_boosting",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto-baseline",
+      "state": "succeeded",
+      "task_id": "700fab99d1b7c9ee55ff97d439b4b909"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 3,
+        "development_cv_log_loss": 0.6875630743130682,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.67612928,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "logistic",
+        "grid": {
+          "C": [
+            0.0099999999,
+            0.033333333,
+            0.099999999
+          ]
+        },
+        "model_sha256": "838cda8e66663cd432f99b3985060c6109a6d83b32afb3628845be9808b0b104",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "C": 0.0099999999
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "grid": {
+            "C": [
+              0.0099999999,
+              0.033333333,
+              0.099999999
+            ]
+          },
+          "search_seconds": 300.0
+        },
+        "model_family": "logistic",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto-baseline",
+      "state": "succeeded",
+      "task_id": "6530797f624941ac7a7fd6663f6fd2ae"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 8,
+        "development_cv_log_loss": 0.685246622114756,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.6831183,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "gbm",
+        "grid": {
+          "l2_regularization": [
+            1.0
+          ],
+          "learning_rate": [
+            0.0125,
+            0.025
+          ],
+          "max_iter": [
+            100,
+            200
+          ],
+          "max_leaf_nodes": [
+            3,
+            6
+          ],
+          "min_samples_leaf": [
+            40
+          ]
+        },
+        "model_sha256": "8bec95c9e5a04b7cf791c232664c127bfa97a6a91054ec0d54a069a69783c8bc",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.025,
+          "max_iter": 100,
+          "max_leaf_nodes": 3,
+          "min_samples_leaf": 40
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "grid": {
+            "l2_regularization": [
+              1.0
+            ],
+            "learning_rate": [
+              0.0125,
+              0.025
+            ],
+            "max_iter": [
+              100,
+              200
+            ],
+            "max_leaf_nodes": [
+              3,
+              6
+            ],
+            "min_samples_leaf": [
+              40
+            ]
+          },
+          "search_seconds": 300.0
+        },
+        "model_family": "gradient_boosting",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto-baseline",
+      "state": "succeeded",
+      "task_id": "2126655a238a1ac006f6b14a4ff67720"
+    },
+    {
+      "operation": "symbolic_search",
+      "output": {
+        "candidates_evaluated": 2907,
+        "complexity": 1,
+        "development_inner_log_loss": 0.6854477043793691,
+        "diagnostic_validation_log_loss": 0.67331261,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "expression": "pair_mid_c",
+        "generations_completed": 30,
+        "model_sha256": "22ba69a87dfc5946bc93c1d63e6459de1566d87dc7eaed8710e1a0519c95bbd0",
+        "parity": 1.1102230246251565e-16,
+        "selection_biased": true,
+        "status": "complete",
+        "stop_reason": "generations"
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "max_candidates": 20000,
+        "max_generations": 30,
+        "max_seconds": 300.0,
+        "operator_set": "ops-v1",
+        "population": 200,
+        "seed": 0
+      },
+      "pod": "auto-symbolic",
+      "search_summary": {
+        "counters": {
+          "candidates_evaluated": 2907,
+          "duplicates": {
+            "canonical": 6826,
+            "semantic": 1408
+          },
+          "invalid": {
+            "near_constant": 162,
+            "non_finite": 0,
+            "platt_failure": 0,
+            "unstable": 0
+          },
+          "oversized_discarded": 4,
+          "valid": 1337
+        },
+        "generations_completed": 30,
+        "selected": {
+          "complexity": 1,
+          "description": "pair_mid_c",
+          "train_log_loss": 0.6840180474871861,
+          "validation_log_loss": 0.6854477043793691,
+          "validation_log_loss_se": 0.006123678422234204
+        },
+        "selection": {
+          "min_validation_log_loss": 0.6829842428000897,
+          "rule": "simplest_within_one_standard_error",
+          "standard_error": 0.006084400560041501,
+          "threshold": 0.6890686433601312
+        },
+        "stop_reason": "generations"
+      },
+      "state": "succeeded",
+      "task_id": "1fcbbe627c30ffc1f841b9346ab0ca12"
+    },
+    {
+      "operation": "symbolic_search",
+      "output": {
+        "candidates_evaluated": 11977,
+        "complexity": 2,
+        "development_inner_log_loss": 0.6853596590951448,
+        "diagnostic_validation_log_loss": 0.67620296,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "expression": "tanh(logit_pair_mid_c)",
+        "generations_completed": 60,
+        "model_sha256": "ff83f3b8c522edab8fe9f94626d24944b6ec6400c0cb90402114de1d53516f7b",
+        "parity": 1.1102230246251565e-16,
+        "selection_biased": true,
+        "status": "complete",
+        "stop_reason": "generations"
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "max_candidates": 40000,
+        "max_generations": 60,
+        "max_seconds": 300.0,
+        "operator_set": "ops-v1",
+        "population": 400,
+        "seed": 0
+      },
+      "pod": "auto-symbolic",
+      "search_summary": {
+        "counters": {
+          "candidates_evaluated": 11977,
+          "duplicates": {
+            "canonical": 24590,
+            "semantic": 4620
+          },
+          "invalid": {
+            "near_constant": 1074,
+            "non_finite": 0,
+            "platt_failure": 0,
+            "unstable": 0
+          },
+          "oversized_discarded": 6,
+          "valid": 6283
+        },
+        "generations_completed": 60,
+        "selected": {
+          "complexity": 2,
+          "description": "tanh(logit_pair_mid_c)",
+          "train_log_loss": 0.6841325598124939,
+          "validation_log_loss": 0.6853596590951448,
+          "validation_log_loss_se": 0.006119872474236702
+        },
+        "selection": {
+          "min_validation_log_loss": 0.6808206719399843,
+          "rule": "simplest_within_one_standard_error",
+          "standard_error": 0.005673234219168619,
+          "threshold": 0.686493906159153
+        },
+        "stop_reason": "generations"
+      },
+      "state": "succeeded",
+      "task_id": "19be849e16d5de6b1b4b0f555f356e0a"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 4,
+        "development_cv_log_loss": 0.687563074322604,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.67612928,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "logistic",
+        "grid": {
+          "C": [
+            0.01,
+            0.1,
+            1.0,
+            10.0
+          ]
+        },
+        "model_sha256": "ea76615830cf1af5925940e7be7d78871a11099305a67cc2d2f67ffa822b6b42",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "C": 0.01
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "search_seconds": 300.0
+        },
+        "model_family": "logistic",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto2-baseline",
+      "state": "succeeded",
+      "task_id": "4fa6f718796753037975774a7d210adc"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 8,
+        "development_cv_log_loss": 0.6919066297071617,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.68531559,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "gbm",
+        "grid": {
+          "l2_regularization": [
+            1.0
+          ],
+          "learning_rate": [
+            0.05,
+            0.1
+          ],
+          "max_iter": [
+            100,
+            300
+          ],
+          "max_leaf_nodes": [
+            7,
+            15
+          ],
+          "min_samples_leaf": [
+            40
+          ]
+        },
+        "model_sha256": "9a1c6cd70310415b14af909018a2433682d7922bd0e074dde58b394f81084afd",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.05,
+          "max_iter": 100,
+          "max_leaf_nodes": 7,
+          "min_samples_leaf": 40
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "search_seconds": 300.0
+        },
+        "model_family": "gradient_boosting",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto2-baseline",
+      "state": "succeeded",
+      "task_id": "8cb78a585df80d59b65861f991973073"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 3,
+        "development_cv_log_loss": 0.686874538786428,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.67561106,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "logistic",
+        "grid": {
+          "C": [
+            0.000333333,
+            0.001,
+            0.00333333
+          ]
+        },
+        "model_sha256": "56b842d2f6c7b845c55247085cf88e730ee9fe453ce5d6bb52ccd4bfc8e94cac",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "C": 0.00333333
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "grid": {
+            "C": [
+              0.000333333,
+              0.001,
+              0.00333333
+            ]
+          },
+          "search_seconds": 300.0
+        },
+        "model_family": "logistic",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto2-baseline",
+      "state": "succeeded",
+      "task_id": "23ba84dc0c480c46c61fb70f6c865926"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 12,
+        "development_cv_log_loss": 0.685246622114756,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.6831183,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "gbm",
+        "grid": {
+          "l2_regularization": [
+            1.0
+          ],
+          "learning_rate": [
+            0.025,
+            0.05
+          ],
+          "max_iter": [
+            100,
+            200
+          ],
+          "max_leaf_nodes": [
+            3,
+            7,
+            14
+          ],
+          "min_samples_leaf": [
+            40
+          ]
+        },
+        "model_sha256": "26fbeeeb1b27bf80c00f731aa28051ba047ff76ca54d511ee9a0d80d4dcf3330",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.025,
+          "max_iter": 100,
+          "max_leaf_nodes": 3,
+          "min_samples_leaf": 40
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "grid": {
+            "l2_regularization": [
+              1.0
+            ],
+            "learning_rate": [
+              0.025,
+              0.05
+            ],
+            "max_iter": [
+              100,
+              200
+            ],
+            "max_leaf_nodes": [
+              3,
+              7,
+              14
+            ],
+            "min_samples_leaf": [
+              40
+            ]
+          },
+          "search_seconds": 300.0
+        },
+        "model_family": "gradient_boosting",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto2-baseline",
+      "state": "succeeded",
+      "task_id": "9551ef81d9b5106fc11692d172a2c97d"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 3,
+        "development_cv_log_loss": 0.686874538786428,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.67561106,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "logistic",
+        "grid": {
+          "C": [
+            0.00182574,
+            0.00333333,
+            0.0057735
+          ]
+        },
+        "model_sha256": "98bb28218fc4608509e981a2f2bc6f326833954602b59a1887326541c9ed20fd",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "C": 0.00333333
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "grid": {
+            "C": [
+              0.00182574,
+              0.00333333,
+              0.0057735
+            ]
+          },
+          "search_seconds": 300.0
+        },
+        "model_family": "logistic",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto2-baseline",
+      "state": "succeeded",
+      "task_id": "4c94bb012df29cde2468c15561c74f5e"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 8,
+        "development_cv_log_loss": 0.685246622114756,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.6831183,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "gbm",
+        "grid": {
+          "l2_regularization": [
+            1.0
+          ],
+          "learning_rate": [
+            0.0125,
+            0.025
+          ],
+          "max_iter": [
+            100,
+            200
+          ],
+          "max_leaf_nodes": [
+            3,
+            6
+          ],
+          "min_samples_leaf": [
+            40
+          ]
+        },
+        "model_sha256": "d84ae40d55ef73d88b968fdcae2393a0b7b64979f160170eec83468dba7ac82c",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.025,
+          "max_iter": 100,
+          "max_leaf_nodes": 3,
+          "min_samples_leaf": 40
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {
+          "grid": {
+            "l2_regularization": [
+              1.0
+            ],
+            "learning_rate": [
+              0.0125,
+              0.025
+            ],
+            "max_iter": [
+              100,
+              200
+            ],
+            "max_leaf_nodes": [
+              3,
+              6
+            ],
+            "min_samples_leaf": [
+              40
+            ]
+          },
+          "search_seconds": 300.0
+        },
+        "model_family": "gradient_boosting",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "auto2-baseline",
+      "state": "succeeded",
+      "task_id": "ba7a2ed5e4abeb11e06f70a21754ba1c"
+    },
+    {
+      "operation": "symbolic_search",
+      "output": {
+        "candidates_evaluated": 2907,
+        "complexity": 1,
+        "development_inner_log_loss": 0.6854477043793691,
+        "diagnostic_validation_log_loss": 0.67331261,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "expression": "pair_mid_c",
+        "generations_completed": 30,
+        "model_sha256": "13dd52084faf653d89752695714bae69edde3afbdb39cc4d5f66996e0ea6c356",
+        "parity": 1.1102230246251565e-16,
+        "selection_biased": true,
+        "status": "complete",
+        "stop_reason": "generations"
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "max_candidates": 20000,
+        "max_generations": 30,
+        "max_seconds": 300.0,
+        "operator_set": "ops-v1",
+        "population": 200,
+        "seed": 0
+      },
+      "pod": "auto2-symbolic",
+      "search_summary": {
+        "counters": {
+          "candidates_evaluated": 2907,
+          "duplicates": {
+            "canonical": 6826,
+            "semantic": 1408
+          },
+          "invalid": {
+            "near_constant": 162,
+            "non_finite": 0,
+            "platt_failure": 0,
+            "unstable": 0
+          },
+          "oversized_discarded": 4,
+          "valid": 1337
+        },
+        "generations_completed": 30,
+        "selected": {
+          "complexity": 1,
+          "description": "pair_mid_c",
+          "train_log_loss": 0.6840180474871861,
+          "validation_log_loss": 0.6854477043793691,
+          "validation_log_loss_se": 0.006123678422234204
+        },
+        "selection": {
+          "min_validation_log_loss": 0.6829842428000897,
+          "rule": "simplest_within_one_standard_error",
+          "standard_error": 0.006084400560041501,
+          "threshold": 0.6890686433601312
+        },
+        "stop_reason": "generations"
+      },
+      "state": "succeeded",
+      "task_id": "73af0b3eba8498c9127fc69478988afb"
+    },
+    {
+      "operation": "symbolic_search",
+      "output": {
+        "candidates_evaluated": 11977,
+        "complexity": 2,
+        "development_inner_log_loss": 0.6853596590951448,
+        "diagnostic_validation_log_loss": 0.67620296,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "expression": "tanh(logit_pair_mid_c)",
+        "generations_completed": 60,
+        "model_sha256": "62c6b42f049b2ccb107674dad9b11a23734365b067a6a33e7818ce5c2f7c1b8c",
+        "parity": 1.1102230246251565e-16,
+        "selection_biased": true,
+        "status": "complete",
+        "stop_reason": "generations"
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "max_candidates": 40000,
+        "max_generations": 60,
+        "max_seconds": 300.0,
+        "operator_set": "ops-v1",
+        "population": 400,
+        "seed": 0
+      },
+      "pod": "auto2-symbolic",
+      "search_summary": {
+        "counters": {
+          "candidates_evaluated": 11977,
+          "duplicates": {
+            "canonical": 24590,
+            "semantic": 4620
+          },
+          "invalid": {
+            "near_constant": 1074,
+            "non_finite": 0,
+            "platt_failure": 0,
+            "unstable": 0
+          },
+          "oversized_discarded": 6,
+          "valid": 6283
+        },
+        "generations_completed": 60,
+        "selected": {
+          "complexity": 2,
+          "description": "tanh(logit_pair_mid_c)",
+          "train_log_loss": 0.6841325598124939,
+          "validation_log_loss": 0.6853596590951448,
+          "validation_log_loss_se": 0.006119872474236702
+        },
+        "selection": {
+          "min_validation_log_loss": 0.6808206719399843,
+          "rule": "simplest_within_one_standard_error",
+          "standard_error": 0.005673234219168619,
+          "threshold": 0.686493906159153
+        },
+        "stop_reason": "generations"
+      },
+      "state": "succeeded",
+      "task_id": "474cf6e13c1bf4504334af89e2437c32"
+    }
+  ]
+}

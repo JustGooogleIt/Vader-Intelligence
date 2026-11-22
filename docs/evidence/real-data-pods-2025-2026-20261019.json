@@ -1,0 +1,453 @@
+{
+  "steps": [
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "init",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026"
+      ],
+      "result": {
+        "root": "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "status": "complete"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "register",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--pod",
+        "baseline",
+        "--role",
+        "baseline_models",
+        "--wall-seconds",
+        "1800"
+      ],
+      "result": {
+        "created": true,
+        "pod": "baseline",
+        "status": "complete"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "register",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--pod",
+        "symbolic",
+        "--role",
+        "symbolic_search",
+        "--wall-seconds",
+        "1800"
+      ],
+      "result": {
+        "created": true,
+        "pod": "symbolic",
+        "status": "complete"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "register",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--pod",
+        "robust",
+        "--role",
+        "robustness_execution",
+        "--wall-seconds",
+        "1800"
+      ],
+      "result": {
+        "created": true,
+        "pod": "robust",
+        "status": "complete"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "snapshot",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--dataset",
+        "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+        "--development-through",
+        "2025-12-31",
+        "--validation-through",
+        "2026-08-31"
+      ],
+      "result": {
+        "development_rows": 2101,
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "snapshot_sha256": "701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904",
+        "status": "complete",
+        "validation_rows": 2027
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "submit",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--pod",
+        "baseline",
+        "--operation",
+        "train_model",
+        "--params",
+        "{\"dataset_manifest_hash\": \"701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904\", \"feature_set\": \"fs-market-v1\", \"feature_set_version\": \"9c15ae73c8f511e2\", \"seed\": 0, \"model_family\": \"logistic\"}"
+      ],
+      "result": {
+        "status": "complete",
+        "task_id": "36d1fefc58492247e34aa6b4e0ec25e8"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "submit",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--pod",
+        "baseline",
+        "--operation",
+        "train_model",
+        "--params",
+        "{\"dataset_manifest_hash\": \"701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904\", \"feature_set\": \"fs-market-v1\", \"feature_set_version\": \"9c15ae73c8f511e2\", \"seed\": 0, \"model_family\": \"gradient_boosting\"}"
+      ],
+      "result": {
+        "status": "complete",
+        "task_id": "c16d5c13b91c3c7226c30982e53d8759"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "submit",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--pod",
+        "symbolic",
+        "--operation",
+        "symbolic_search",
+        "--params",
+        "{\"dataset_manifest_hash\": \"701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904\", \"seed\": 0, \"max_candidates\": 20000, \"max_generations\": 30, \"max_seconds\": 300.0}"
+      ],
+      "result": {
+        "status": "complete",
+        "task_id": "484a7f7a1f224478e94a674122138ed6"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "run",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--deadline-seconds",
+        "3600"
+      ],
+      "result": {
+        "recent_failures": [],
+        "run": {
+          "steps": 58,
+          "stopped": "idle"
+        },
+        "tasks_by_state": {
+          "succeeded": 3
+        }
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "accept",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--task",
+        "36d1fefc58492247e34aa6b4e0ec25e8"
+      ],
+      "result": {
+        "candidate_id": "1947681b71e2b383691b84b4c2bff160",
+        "spec": {
+          "dataset_id": "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+          "family": "logistic",
+          "model_sha256": "d9d84aa49b5a8863bb2ca88d765f10f8fdbda1a292ae6d17261d52dcb9dcf51e",
+          "snapshot_sha256": "701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904",
+          "split": {
+            "development_through": "2025-12-31",
+            "embargo_days": 1,
+            "validation_through": "2026-08-31"
+          },
+          "split_key": "dev<=2025-12-31|val<=2026-08-31|embargo=1"
+        }
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "accept",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--task",
+        "c16d5c13b91c3c7226c30982e53d8759"
+      ],
+      "result": {
+        "candidate_id": "4565618811b2d3bc27840fa24327ba2f",
+        "spec": {
+          "dataset_id": "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+          "family": "gbm",
+          "model_sha256": "86646fec31f2d4de5e1622fd573ef66e8c45c1eadcd9e302bc102e6052277ac4",
+          "snapshot_sha256": "701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904",
+          "split": {
+            "development_through": "2025-12-31",
+            "embargo_days": 1,
+            "validation_through": "2026-08-31"
+          },
+          "split_key": "dev<=2025-12-31|val<=2026-08-31|embargo=1"
+        }
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "accept",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--task",
+        "484a7f7a1f224478e94a674122138ed6"
+      ],
+      "result": {
+        "candidate_id": "1ba3f65e9a1a818825a33f8ef3d8f0e9",
+        "spec": {
+          "dataset_id": "8bdc1e113fb674381b58faf14133058c15a1bbbac9e26f446dcf0ac65d6f7d0f",
+          "family": "symbolic",
+          "model_sha256": "1ee191c40748cd6590ea430ef649db64bdcb8f0c779cfd63eaa83602a4e4dd4f",
+          "snapshot_sha256": "701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904",
+          "split": {
+            "development_through": "2025-12-31",
+            "embargo_days": 1,
+            "validation_through": "2026-08-31"
+          },
+          "split_key": "dev<=2025-12-31|val<=2026-08-31|embargo=1"
+        }
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "evaluate",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--candidate",
+        "1947681b71e2b383691b84b4c2bff160"
+      ],
+      "result": {
+        "proposals": 3,
+        "recomputed": {
+          "baseline_value": 0.6820655411965184,
+          "candidate_value": 0.6824679538567421,
+          "half_deltas": [
+            -0.002637532499726758,
+            0.0034333727605880826
+          ],
+          "half_split_date": "2026-06-13",
+          "paired_delta": {
+            "ci95": [
+              -0.0030684995023566412,
+              0.0038835080462756725
+            ],
+            "estimate": 0.00040241266022367217
+          },
+          "paired_n": 2027,
+          "stability_passed": false,
+          "status": "computed",
+          "validation_rows": 2027
+        },
+        "state": "rejected"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "submit",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--pod",
+        "robust",
+        "--operation",
+        "robustness_analysis",
+        "--params",
+        "{\"candidate_id\": \"1947681b71e2b383691b84b4c2bff160\", \"dataset_manifest_hash\": \"701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904\", \"perturbations\": [\"by_month\", \"regular_season_only\", \"tight_spread\", \"wide_spread\", \"drop_feature:mid_c\"], \"seed\": 0}"
+      ],
+      "result": {
+        "status": "complete",
+        "task_id": "ad588a8bb97b0e89156f3c9ae590eb71"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "evaluate",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--candidate",
+        "4565618811b2d3bc27840fa24327ba2f"
+      ],
+      "result": {
+        "proposals": 3,
+        "recomputed": {
+          "baseline_value": 0.6820655411965184,
+          "candidate_value": 0.6915387397648877,
+          "half_deltas": [
+            0.0051297124692986085,
+            0.013803846777492468
+          ],
+          "half_split_date": "2026-06-13",
+          "paired_delta": {
+            "ci95": [
+              0.003469408360482045,
+              0.015842006010195614
+            ],
+            "estimate": 0.009473198568369257
+          },
+          "paired_n": 2027,
+          "stability_passed": false,
+          "status": "computed",
+          "validation_rows": 2027
+        },
+        "state": "rejected"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "submit",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--pod",
+        "robust",
+        "--operation",
+        "robustness_analysis",
+        "--params",
+        "{\"candidate_id\": \"4565618811b2d3bc27840fa24327ba2f\", \"dataset_manifest_hash\": \"701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904\", \"perturbations\": [\"by_month\", \"regular_season_only\", \"tight_spread\", \"wide_spread\", \"drop_feature:mid_c\"], \"seed\": 0}"
+      ],
+      "result": {
+        "status": "complete",
+        "task_id": "19b8e7d5f34210603c9e07ce0d68ee92"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "evaluate",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--candidate",
+        "1ba3f65e9a1a818825a33f8ef3d8f0e9"
+      ],
+      "result": {
+        "proposals": 3,
+        "recomputed": {
+          "baseline_value": 0.6820655411965184,
+          "candidate_value": 0.6816499474314272,
+          "half_deltas": [
+            -0.0017076427670774663,
+            0.0008726363728497333
+          ],
+          "half_split_date": "2026-06-13",
+          "paired_delta": {
+            "ci95": [
+              -0.0017210352863710808,
+              0.0010353795744017758
+            ],
+            "estimate": -0.00041559376509126
+          },
+          "paired_n": 2027,
+          "stability_passed": false,
+          "status": "computed",
+          "validation_rows": 2027
+        },
+        "state": "rejected"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "submit",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--pod",
+        "robust",
+        "--operation",
+        "robustness_analysis",
+        "--params",
+        "{\"candidate_id\": \"1ba3f65e9a1a818825a33f8ef3d8f0e9\", \"dataset_manifest_hash\": \"701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904\", \"perturbations\": [\"by_month\", \"regular_season_only\", \"tight_spread\", \"wide_spread\", \"drop_feature:mid_c\"], \"seed\": 0}"
+      ],
+      "result": {
+        "status": "complete",
+        "task_id": "09592bde4e72377d437a88e6b9b16aae"
+      }
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "run",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2025-2026",
+        "--deadline-seconds",
+        "1800"
+      ],
+      "result": {
+        "recent_failures": [],
+        "run": {
+          "steps": 251,
+          "stopped": "idle"
+        },
+        "tasks_by_state": {
+          "succeeded": 6
+        }
+      }
+    }
+  ]
+}

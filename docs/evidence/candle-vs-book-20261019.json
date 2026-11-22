@@ -1,0 +1,690 @@
+{
+  "book_exclusions": {
+    "identity:start_differs": 5,
+    "identity:unmapped_game": 1,
+    "no_book_before_cutoff": 12
+  },
+  "book_only": [],
+  "book_rows": 16,
+  "candle_exclusions": {
+    "event_ticker_unparsed": 13,
+    "identity:start_differs": 5,
+    "identity:unmapped_game": 1
+  },
+  "candle_only": [
+    "game:849809",
+    "game:849810",
+    "game:849811",
+    "game:849813",
+    "game:849820",
+    "game:849831",
+    "game:849841",
+    "game:849843",
+    "game:849845",
+    "game:849846",
+    "game:849849",
+    "game:849851"
+  ],
+  "candle_rows": 28,
+  "games": [
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.4900",
+          "size": "5908057.53"
+        },
+        "retrieved_at": "2026-10-06T20:59:46.658347+00:00",
+        "yes": {
+          "price": "0.5000",
+          "size": "1127298.77"
+        }
+      },
+      "book_quotes_before_c": 1401,
+      "cutoff": "2026-10-06T21:00:00+00:00",
+      "last_book_at": "2026-10-06T20:59:46.658347+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.0046
+      },
+      "mid_c": {
+        "book": 0.505,
+        "candle": 0.505,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-10-06",
+      "opportunity_key": "game:849819",
+      "pair_mid_c": {
+        "book": 0.505,
+        "candle": 0.505,
+        "candle_minus_book": 0.0
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT061800LADATL-LAD"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.4200",
+          "size": "3539545.33"
+        },
+        "retrieved_at": "2026-10-07T20:57:50.473167+00:00",
+        "yes": {
+          "price": "0.5700",
+          "size": "435719.46"
+        }
+      },
+      "book_quotes_before_c": 840,
+      "cutoff": "2026-10-07T21:00:00+00:00",
+      "last_book_at": "2026-10-07T20:57:50.473167+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.005
+      },
+      "mid_c": {
+        "book": 0.575,
+        "candle": 0.575,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-10-07",
+      "opportunity_key": "game:849822",
+      "pair_mid_c": {
+        "book": 0.575,
+        "candle": 0.575,
+        "candle_minus_book": 0.0
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT071800LADATL-LAD"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.3100",
+          "size": "1646129.24"
+        },
+        "retrieved_at": "2026-10-04T22:58:26.092611+00:00",
+        "yes": {
+          "price": "0.6800",
+          "size": "71487.22"
+        }
+      },
+      "book_quotes_before_c": 835,
+      "cutoff": "2026-10-04T23:00:00+00:00",
+      "last_book_at": "2026-10-04T22:58:26.092611+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.0037
+      },
+      "mid_c": {
+        "book": 0.685,
+        "candle": 0.685,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-10-04",
+      "opportunity_key": "game:849823",
+      "pair_mid_c": {
+        "book": 0.685,
+        "candle": 0.685,
+        "candle_minus_book": 0.0
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT042000ATLLAD-LAD"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.5500",
+          "size": "97749.97"
+        },
+        "retrieved_at": "2026-10-04T00:23:53.922630+00:00",
+        "yes": {
+          "price": "0.4300",
+          "size": "55536.60"
+        }
+      },
+      "book_quotes_before_c": 1212,
+      "cutoff": "2026-10-04T19:00:00+00:00",
+      "last_book_at": "2026-10-04T00:23:53.922630+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.005
+      },
+      "mid_c": {
+        "book": null,
+        "candle": 0.445
+      },
+      "official_date": "2026-10-04",
+      "opportunity_key": "game:849825",
+      "pair_mid_c": {
+        "book": null,
+        "candle": 0.445
+      },
+      "spread_c": {
+        "book": null,
+        "candle": 0.01
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT041600SDMIL-SD"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.4400",
+          "size": "4456363.93"
+        },
+        "retrieved_at": "2026-10-06T23:54:59.569154+00:00",
+        "yes": {
+          "price": "0.5500",
+          "size": "588597.08"
+        }
+      },
+      "book_quotes_before_c": 1458,
+      "cutoff": "2026-10-07T00:30:00+00:00",
+      "last_book_at": "2026-10-06T23:54:59.569154+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.005
+      },
+      "mid_c": {
+        "book": null,
+        "candle": 0.555
+      },
+      "official_date": "2026-10-06",
+      "opportunity_key": "game:849826",
+      "pair_mid_c": {
+        "book": null,
+        "candle": 0.555
+      },
+      "spread_c": {
+        "book": null,
+        "candle": 0.01
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT062130MILSD-SD"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.4900",
+          "size": "2684846.79"
+        },
+        "retrieved_at": "2026-10-08T00:58:42.115946+00:00",
+        "yes": {
+          "price": "0.5000",
+          "size": "80192.05"
+        }
+      },
+      "book_quotes_before_c": 325,
+      "cutoff": "2026-10-08T01:00:00+00:00",
+      "last_book_at": "2026-10-08T00:58:42.115946+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.005
+      },
+      "mid_c": {
+        "book": 0.505,
+        "candle": 0.505,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-10-07",
+      "opportunity_key": "game:849827",
+      "pair_mid_c": {
+        "book": 0.505,
+        "candle": 0.505,
+        "candle_minus_book": 0.0
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT072200MILSD-SD"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.3200",
+          "size": "3264659.22"
+        },
+        "retrieved_at": "2026-10-03T18:58:34.589195+00:00",
+        "yes": {
+          "price": "0.6700",
+          "size": "189987.74"
+        }
+      },
+      "book_quotes_before_c": 703,
+      "cutoff": "2026-10-03T19:00:00+00:00",
+      "last_book_at": "2026-10-03T18:58:34.589195+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.005
+      },
+      "mid_c": {
+        "book": 0.675,
+        "candle": 0.675,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-10-03",
+      "opportunity_key": "game:849828",
+      "pair_mid_c": {
+        "book": 0.675,
+        "candle": 0.675,
+        "candle_minus_book": 0.0
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT031600ATLLAD-LAD"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.4100",
+          "size": "3342248.58"
+        },
+        "retrieved_at": "2026-10-03T15:58:02.105036+00:00",
+        "yes": {
+          "price": "0.5800",
+          "size": "11208.88"
+        }
+      },
+      "book_quotes_before_c": 1082,
+      "cutoff": "2026-10-03T16:00:00+00:00",
+      "last_book_at": "2026-10-03T15:58:02.105036+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.0049
+      },
+      "mid_c": {
+        "book": 0.585,
+        "candle": 0.585,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-10-03",
+      "opportunity_key": "game:849829",
+      "pair_mid_c": {
+        "book": 0.58,
+        "candle": 0.58,
+        "candle_minus_book": 0.0
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT031300CWSCLE-CLE"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.6400",
+          "size": "2451498.19"
+        },
+        "retrieved_at": "2026-10-03T23:29:28.509800+00:00",
+        "yes": {
+          "price": "0.3500",
+          "size": "175515.10"
+        }
+      },
+      "book_quotes_before_c": 1189,
+      "cutoff": "2026-10-03T23:30:00+00:00",
+      "last_book_at": "2026-10-03T23:29:28.509800+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.005
+      },
+      "mid_c": {
+        "book": 0.355,
+        "candle": 0.355,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-10-03",
+      "opportunity_key": "game:849830",
+      "pair_mid_c": {
+        "book": 0.355,
+        "candle": 0.355,
+        "candle_minus_book": 0.0
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT032030SDMIL-SD"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.5300",
+          "size": "4930698.02"
+        },
+        "retrieved_at": "2026-10-07T18:59:48.404886+00:00",
+        "yes": {
+          "price": "0.4600",
+          "size": "694280.05"
+        }
+      },
+      "book_quotes_before_c": 1706,
+      "cutoff": "2026-10-07T19:00:00+00:00",
+      "last_book_at": "2026-10-07T18:59:48.404886+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.0049
+      },
+      "mid_c": {
+        "book": 0.465,
+        "candle": 0.465,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-10-07",
+      "opportunity_key": "game:849833",
+      "pair_mid_c": {
+        "book": 0.465,
+        "candle": 0.465,
+        "candle_minus_book": 0.0
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT071600CLECWS-CLE"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.4100",
+          "size": "2074356.18"
+        },
+        "retrieved_at": "2026-10-05T15:16:48.638241+00:00",
+        "yes": {
+          "price": "0.5800",
+          "size": "218765.67"
+        }
+      },
+      "book_quotes_before_c": 1618,
+      "cutoff": "2026-10-05T20:00:00+00:00",
+      "last_book_at": "2026-10-05T15:16:48.638241+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.005
+      },
+      "mid_c": {
+        "book": null,
+        "candle": 0.585
+      },
+      "official_date": "2026-10-05",
+      "opportunity_key": "game:849834",
+      "pair_mid_c": {
+        "book": null,
+        "candle": 0.585
+      },
+      "spread_c": {
+        "book": null,
+        "candle": 0.01
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT051700CWSCLE-CLE"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.4400",
+          "size": "2907235.35"
+        },
+        "retrieved_at": "2026-10-03T21:28:33.442754+00:00",
+        "yes": {
+          "price": "0.5500",
+          "size": "66382.17"
+        }
+      },
+      "book_quotes_before_c": 1162,
+      "cutoff": "2026-10-03T21:30:00+00:00",
+      "last_book_at": "2026-10-03T21:28:33.442754+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.0042
+      },
+      "mid_c": {
+        "book": 0.555,
+        "candle": 0.555,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-10-03",
+      "opportunity_key": "game:849835",
+      "pair_mid_c": {
+        "book": 0.55,
+        "candle": 0.555,
+        "candle_minus_book": 0.005
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT031830NYYTB-TB"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.6000",
+          "size": "5330009.55"
+        },
+        "retrieved_at": "2026-10-07T22:59:46.615813+00:00",
+        "yes": {
+          "price": "0.3900",
+          "size": "331537.15"
+        }
+      },
+      "book_quotes_before_c": 1771,
+      "cutoff": "2026-10-07T23:00:00+00:00",
+      "last_book_at": "2026-10-07T22:59:46.615813+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.005
+      },
+      "mid_c": {
+        "book": 0.395,
+        "candle": 0.395,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-10-07",
+      "opportunity_key": "game:849838",
+      "pair_mid_c": {
+        "book": 0.395,
+        "candle": 0.395,
+        "candle_minus_book": 0.0
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT072000TBNYY-TB"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.5200",
+          "size": "1747834.19"
+        },
+        "retrieved_at": "2026-10-05T15:16:50.234690+00:00",
+        "yes": {
+          "price": "0.4700",
+          "size": "73255.68"
+        }
+      },
+      "book_quotes_before_c": 1585,
+      "cutoff": "2026-10-05T23:00:00+00:00",
+      "last_book_at": "2026-10-05T15:16:50.234690+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.0035
+      },
+      "mid_c": {
+        "book": null,
+        "candle": 0.475
+      },
+      "official_date": "2026-10-05",
+      "opportunity_key": "game:849839",
+      "pair_mid_c": {
+        "book": null,
+        "candle": 0.475
+      },
+      "spread_c": {
+        "book": null,
+        "candle": 0.01
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26OCT052000NYYTB-TB"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.5600",
+          "size": "3278382.25"
+        },
+        "retrieved_at": "2026-10-01T00:58:24.809385+00:00",
+        "yes": {
+          "price": "0.4300",
+          "size": "155953.09"
+        }
+      },
+      "book_quotes_before_c": 68,
+      "cutoff": "2026-10-01T01:00:00+00:00",
+      "last_book_at": "2026-10-01T00:58:24.809385+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.0049
+      },
+      "mid_c": {
+        "book": 0.435,
+        "candle": 0.435,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-09-30",
+      "opportunity_key": "game:849842",
+      "pair_mid_c": {
+        "book": 0.435,
+        "candle": 0.435,
+        "candle_minus_book": 0.0
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26SEP302200CHCSD-CHC"
+    },
+    {
+      "book_best_levels_at_c": {
+        "no": {
+          "price": "0.5500",
+          "size": "2989848.58"
+        },
+        "retrieved_at": "2026-09-30T22:59:11.818682+00:00",
+        "yes": {
+          "price": "0.4400",
+          "size": "1133005.36"
+        }
+      },
+      "book_quotes_before_c": 31,
+      "cutoff": "2026-09-30T23:00:00+00:00",
+      "last_book_at": "2026-09-30T22:59:11.818682+00:00",
+      "last_trade_gap_c": {
+        "book": null,
+        "candle": 0.005
+      },
+      "mid_c": {
+        "book": 0.445,
+        "candle": 0.445,
+        "candle_minus_book": 0.0
+      },
+      "official_date": "2026-09-30",
+      "opportunity_key": "game:849848",
+      "pair_mid_c": {
+        "book": 0.445,
+        "candle": 0.445,
+        "candle_minus_book": 0.0
+      },
+      "spread_c": {
+        "book": 0.01,
+        "candle": 0.01,
+        "candle_minus_book": 0.0
+      },
+      "start_corroborated": true,
+      "ticker": "KXMLBGAME-26SEP302000BOSNYY-BOS"
+    }
+  ],
+  "games_in_both": 16,
+  "identity_rules": [
+    "default",
+    "history-date-only"
+  ],
+  "kind": "candle-vs-collected-book-check",
+  "notes": [
+    "candle features: closing best bid/ask of one-minute candles ending at or before C",
+    "book features: order books retrieved by the production collector at or before C",
+    "date-only postseason identities carry start_corroborated=false"
+  ],
+  "period": {
+    "from": "2026-09-28",
+    "through": "2026-10-31"
+  },
+  "summary": {
+    "book_best_level_size": {
+      "max": 5908057.53,
+      "median": 1130152.065,
+      "min": 11208.88,
+      "n": 32
+    },
+    "last_trade_gap_c": {
+      "n": 0
+    },
+    "mid_c": {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "mean_candle_minus_book": 0.0,
+      "median": 0.0,
+      "n": 12
+    },
+    "pair_mid_c": {
+      "max_abs": 0.005,
+      "mean_abs": 0.000417,
+      "mean_candle_minus_book": 0.000417,
+      "median": 0.0,
+      "n": 12
+    },
+    "spread_c": {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "mean_candle_minus_book": 0.0,
+      "median": 0.0,
+      "n": 12
+    }
+  }
+}

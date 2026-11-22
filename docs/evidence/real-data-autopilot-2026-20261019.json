@@ -1,0 +1,349 @@
+{
+  "steps": [
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "register",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2026",
+        "--pod",
+        "auto-baseline",
+        "--role",
+        "baseline_models",
+        "--wall-seconds",
+        "1800"
+      ],
+      "result": {
+        "created": true,
+        "pod": "auto-baseline",
+        "status": "complete"
+      },
+      "wall_seconds": 1.1
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "register",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2026",
+        "--pod",
+        "auto-symbolic",
+        "--role",
+        "symbolic_search",
+        "--wall-seconds",
+        "1800"
+      ],
+      "result": {
+        "created": true,
+        "pod": "auto-symbolic",
+        "status": "complete"
+      },
+      "wall_seconds": 0.0
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "autopilot",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2026",
+        "--pod",
+        "auto-baseline",
+        "--snapshot",
+        "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "--planner",
+        "vendor",
+        "--vendor",
+        "any-vendor"
+      ],
+      "result": {
+        "best": null,
+        "evidence": "planning record; development scores only; not promotion evidence",
+        "planner": "provider-v1",
+        "pod": "auto-baseline",
+        "rounds": [
+          {
+            "accepted": [],
+            "new_task_ids": [],
+            "planner_stop": "paid_calls_disabled",
+            "rejected": [],
+            "round": 1,
+            "sha256": "1e61298fb43b8c9b6757a2e487444b497e921469b6ab6659e0699fab95f537f2"
+          }
+        ],
+        "score_field": "development_cv_log_loss",
+        "snapshot_sha256": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "status": "complete",
+        "stop": "paid_calls_disabled",
+        "submitted": []
+      },
+      "wall_seconds": 0.0
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "autopilot",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--pod",
+        "auto-baseline",
+        "--snapshot",
+        "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "--rounds",
+        "4",
+        "--max-tasks",
+        "8",
+        "--deadline-seconds",
+        "5400",
+        "--accept-best"
+      ],
+      "result": {
+        "best": {
+          "development_score": 0.685246622114756,
+          "task_id": "2126655a238a1ac006f6b14a4ff67720"
+        },
+        "candidate": {
+          "candidate_id": "233294ca918fb8b2ef24a0b14c9de601",
+          "proposals": 4,
+          "recomputed": {
+            "baseline_value": 0.6710536826080215,
+            "candidate_value": 0.6831182997201602,
+            "half_deltas": [
+              0.0036358580544383345,
+              0.019356473785312578
+            ],
+            "half_split_date": "2026-08-16",
+            "paired_delta": {
+              "ci95": [
+                0.0014601982631334426,
+                0.023208369059476625
+              ],
+              "estimate": 0.012064617112138798
+            },
+            "paired_n": 401,
+            "stability_passed": false,
+            "status": "computed",
+            "validation_rows": 401
+          },
+          "state": "rejected"
+        },
+        "evidence": "planning record; development scores only; not promotion evidence",
+        "planner": "heuristic-v1",
+        "pod": "auto-baseline",
+        "rounds": [
+          {
+            "accepted": [
+              {
+                "operation": "train_model",
+                "task_id": "8ebe6aea2df5fc270a7956739f48c07f"
+              },
+              {
+                "operation": "train_model",
+                "task_id": "af5c0dd292be30c6032f9461bc7fa3ea"
+              }
+            ],
+            "coordinator": {
+              "steps": 38,
+              "stopped": "idle"
+            },
+            "new_task_ids": [
+              "8ebe6aea2df5fc270a7956739f48c07f",
+              "af5c0dd292be30c6032f9461bc7fa3ea"
+            ],
+            "planner_stop": null,
+            "rejected": [],
+            "round": 1,
+            "sha256": "097a14629ab0986a0f8b2b19706f601bf2d47af403aa64378cf8914f9585e4b6"
+          },
+          {
+            "accepted": [
+              {
+                "operation": "train_model",
+                "task_id": "15529a6ce221c9f53e70f7b2e657d58d"
+              },
+              {
+                "operation": "train_model",
+                "task_id": "700fab99d1b7c9ee55ff97d439b4b909"
+              }
+            ],
+            "coordinator": {
+              "steps": 37,
+              "stopped": "idle"
+            },
+            "new_task_ids": [
+              "15529a6ce221c9f53e70f7b2e657d58d",
+              "700fab99d1b7c9ee55ff97d439b4b909"
+            ],
+            "planner_stop": null,
+            "rejected": [],
+            "round": 2,
+            "sha256": "43e5c061bc6dc010d3c6704b1670b8d0b17d3b263a1c7c4fdf08335a1f07af99"
+          },
+          {
+            "accepted": [
+              {
+                "operation": "train_model",
+                "task_id": "6530797f624941ac7a7fd6663f6fd2ae"
+              },
+              {
+                "operation": "train_model",
+                "task_id": "2126655a238a1ac006f6b14a4ff67720"
+              }
+            ],
+            "coordinator": {
+              "steps": 28,
+              "stopped": "idle"
+            },
+            "new_task_ids": [
+              "6530797f624941ac7a7fd6663f6fd2ae",
+              "2126655a238a1ac006f6b14a4ff67720"
+            ],
+            "planner_stop": null,
+            "rejected": [],
+            "round": 3,
+            "sha256": "a3b916860d9c05c0480fd2d50508d1530769cae4c8af09e57fb8d20b8bac9951"
+          },
+          {
+            "accepted": [],
+            "new_task_ids": [],
+            "planner_stop": "no_improving_refinement",
+            "rejected": [],
+            "round": 4,
+            "sha256": "0e8d9260e3b377fa0d7598e313b428d6dcc3794cc4633ab72b5cb80d05a2f8d6"
+          }
+        ],
+        "score_field": "development_cv_log_loss",
+        "snapshot_sha256": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "status": "complete",
+        "stop": "no_improving_refinement",
+        "submitted": [
+          "8ebe6aea2df5fc270a7956739f48c07f",
+          "af5c0dd292be30c6032f9461bc7fa3ea",
+          "15529a6ce221c9f53e70f7b2e657d58d",
+          "700fab99d1b7c9ee55ff97d439b4b909",
+          "6530797f624941ac7a7fd6663f6fd2ae",
+          "2126655a238a1ac006f6b14a4ff67720"
+        ]
+      },
+      "wall_seconds": 26.6
+    },
+    {
+      "argv": [
+        "vader",
+        "pods",
+        "autopilot",
+        "--root",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/pods-2026",
+        "--registry",
+        "/Users/ashwin/Documents/Vader-Intelligence-research/registry",
+        "--pod",
+        "auto-symbolic",
+        "--snapshot",
+        "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "--rounds",
+        "3",
+        "--max-tasks",
+        "3",
+        "--deadline-seconds",
+        "5400",
+        "--accept-best"
+      ],
+      "result": {
+        "best": {
+          "development_score": 0.6853596590951448,
+          "task_id": "19be849e16d5de6b1b4b0f555f356e0a"
+        },
+        "candidate": {
+          "candidate_id": "5cb66bcc675a9936e6a6733191cbfd06",
+          "proposals": 5,
+          "recomputed": {
+            "baseline_value": 0.6710536826080215,
+            "candidate_value": 0.6762029588541494,
+            "half_deltas": [
+              -0.000981011389746933,
+              0.010452687875303623
+            ],
+            "half_split_date": "2026-08-16",
+            "paired_delta": {
+              "ci95": [
+                -0.004031628122385681,
+                0.013905503740460868
+              ],
+              "estimate": 0.005149276246127932
+            },
+            "paired_n": 401,
+            "stability_passed": false,
+            "status": "computed",
+            "validation_rows": 401
+          },
+          "state": "rejected"
+        },
+        "evidence": "planning record; development scores only; not promotion evidence",
+        "planner": "heuristic-v1",
+        "pod": "auto-symbolic",
+        "rounds": [
+          {
+            "accepted": [
+              {
+                "operation": "symbolic_search",
+                "task_id": "1fcbbe627c30ffc1f841b9346ab0ca12"
+              }
+            ],
+            "coordinator": {
+              "steps": 12,
+              "stopped": "idle"
+            },
+            "new_task_ids": [
+              "1fcbbe627c30ffc1f841b9346ab0ca12"
+            ],
+            "planner_stop": null,
+            "rejected": [],
+            "round": 1,
+            "sha256": "6364422f4f5b313513cf87dda9b5f98b4761a57e878e96847d9a12f6276957a2"
+          },
+          {
+            "accepted": [
+              {
+                "operation": "symbolic_search",
+                "task_id": "19be849e16d5de6b1b4b0f555f356e0a"
+              }
+            ],
+            "coordinator": {
+              "steps": 21,
+              "stopped": "idle"
+            },
+            "new_task_ids": [
+              "19be849e16d5de6b1b4b0f555f356e0a"
+            ],
+            "planner_stop": null,
+            "rejected": [],
+            "round": 2,
+            "sha256": "3f9168d1cf33eccfc56ccd529c4850151d2b78a87a019891b022d5a5bfedb8ff"
+          },
+          {
+            "accepted": [],
+            "new_task_ids": [],
+            "planner_stop": "no_improving_refinement",
+            "rejected": [],
+            "round": 3,
+            "sha256": "255153d6dc857d7b8e6bc8f8dd15e43c08e5a074ca48ccaebd63007b2c74880c"
+          }
+        ],
+        "score_field": "development_inner_log_loss",
+        "snapshot_sha256": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "status": "complete",
+        "stop": "no_improving_refinement",
+        "submitted": [
+          "1fcbbe627c30ffc1f841b9346ab0ca12",
+          "19be849e16d5de6b1b4b0f555f356e0a"
+        ]
+      },
+      "wall_seconds": 8.6
+    }
+  ]
+}

@@ -10,6 +10,55 @@ Mac validation and a draft PR only. No production deployment or forecasting.
 - [x] Verify combined offline, installed-wheel, native Mac and separate live paths.
 - [x] Document deployment/rollback boundaries and publish draft PR #4 against main.
 
+## Integration I2 — release readiness (2026-10-22)
+
+The user authorized taking over integration and preparing Claude's next assignment.
+Starting candidate: PR #37 `757c73f986b4481beb2fbddbb596e58450fe2299`;
+main: `ebb58df9b89922db4828fda7d23891dd917a4b90`. The 30 draft PRs are one
+dependency stack. No production update, live activation, archive migration or
+holdout consumption is part of this integration pass.
+
+- [x] Reproduce and repair mechanical findings F39, F47, F48, F49 and F51.
+- [x] Verify the native combined candidate, focused regressions and installed wheel.
+- [x] Publish a reviewable integration checkpoint with the unresolved semantic gates (draft #38).
+- [x] Provide Claude a bounded assignment that preserves integration ownership.
+
+F50 settlement fallback, holdout-use policy and historical feature interpretation
+remain explicit policy gates. Existing defaults and archived meanings stay intact.
+The scoped implementation and verification contract is in executor.md, Integration I2.
+
+## Dashboard and game-specific agent farms — roadmap addition (2026-10-22)
+
+The owner requested a GUI to see system activity, run agent farms for selected
+games and actively monitor their work. Status: **planned, not implemented**.
+The initial assumption is a local browser dashboard for one operator on this Mac.
+
+- [ ] J1: Read-only overview of collection, games, research runs and worker health.
+- [ ] J2: Per-game workspace with canonical identity, cutoff timeline, evidence,
+  registered workers, forecasts, settlement and evaluation.
+- [ ] J3: Bounded per-game farm controls through the existing task coordinator,
+  with isolated run context, explicit budgets and durable command receipts.
+- [ ] J4: Engineering-improvement queue showing proposed patches, checks,
+  independent review and promotion decisions from a separately implemented coding farm.
+
+The monitoring slice can follow stabilization of its read interfaces; J3 depends
+on a verified game-farm execution adapter, and J4 on the coding-farm pilot.
+No dashboard framework, hosted service, migration or worker deployment is selected
+by this roadmap addition. Detailed interface, data and security design precede
+implementation. Requirements and acceptance gates:
+[dashboard and game farms](docs/roadmap/dashboard-and-game-farms.md).
+
+Prepared continuation assignment:
+[settlement closure and Command Center v1](docs/handoffs/claude-command-center-build-20261022.md).
+It sequences the remaining PR #39 acknowledgement-scope repair before isolated
+J1–J4 development. This document prepares the prompt; it starts no service or agent.
+
+### Replan log
+
+2026-10-22: owner added GUI visibility and per-game agent farms. Added J1–J4 as
+future phases; current stabilization, production configuration and completed
+historical phase evidence are unchanged.
+
 ## Requirements and design
 - Sports only: MLB `KXMLBGAME`, full single-game team winner contracts, pregame only.
 - One Python 3.11+ process, SQLite on the operator's Mac, public GET requests only.

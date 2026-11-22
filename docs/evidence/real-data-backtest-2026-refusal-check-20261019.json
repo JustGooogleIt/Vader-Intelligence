@@ -1,0 +1,63 @@
+{
+  "code_hash": "0d8674af2495ac145a32607b3d31fd08d4b1669ec0ba0e3c147b804c55502db7",
+  "command": "vader backtest run --registry R --history-db H --dataset a903238860b5c6bb2c07b3777421c559e0e4cd67f9fb8e110980fca7b9f94435 --model a6d69da1f90519eedc146c1d6b8ea50fa4b464cea96132f159268cb5ee7bc407 --development-through 2026-07-31 --validation-through 2026-08-31 --fee-schedule kalshi-2026-02-mlb-multiplier-0.5-assumed --assumed-depth 25 --ledger L",
+  "config": {
+    "assumed_depth": "25",
+    "clip_to_limits": false,
+    "depth_haircut": "0.5",
+    "extra_slippage_ticks": 0,
+    "initial_cash": "1000",
+    "latency": {
+      "decision_ms": [
+        0,
+        0
+      ],
+      "submit_ms": [
+        250,
+        250
+      ]
+    }
+  },
+  "contracts": "1968",
+  "fee_schedule": "kalshi-2026-02-mlb-multiplier-0.5-assumed",
+  "fee_verified": false,
+  "fill_quantity_counts": {
+    "10": 5,
+    "11": 6,
+    "12": 145,
+    "8": 5,
+    "9": 8
+  },
+  "fills": 169,
+  "forecasts": 401,
+  "forecasts_without_intent": {
+    "edge_below_threshold": 147
+  },
+  "kind": "single-ledger-refusal-check",
+  "mean_fill_price": "0.4207",
+  "open_markets": [],
+  "orders": 169,
+  "pnl": {
+    "cash": "951.69",
+    "equity_conservative": "951.69",
+    "equity_mid": "951.69",
+    "fees": "17.29",
+    "marks_missing": [],
+    "net_deposits": "1000",
+    "realized": "-48.31",
+    "reserved_cash": "0",
+    "unrealized_conservative": "0",
+    "unrealized_mid": "0"
+  },
+  "rejections_by_reason": {
+    "daily_loss_stop": 8,
+    "kill_switch_engaged": 84
+  },
+  "rows": 401,
+  "segment": "validation",
+  "selection_biased": true,
+  "settlements": 401,
+  "verification_failures": [],
+  "wall_seconds": 95,
+  "why": "the grid row (gradient boosting, kalshi-2026-02-mlb-multiplier-0.5-assumed, assumed depth 25) placed fewer orders than its no-fill row; the demo's grid summary had dropped rejections_by_reason"
+}

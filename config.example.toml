@@ -16,3 +16,7 @@ pregame_buffer = 120.0
 lookahead_days = 7
 health_stale_seconds = 180.0
 min_free_bytes = 536870912
+# Versioned eligibility/mapping rules (docs/roadmap/decisions.md D-002). rule-v1 is
+# always on. Adding rule-v2 admits date-only postseason rules whose official start is
+# corroborated by the event-ticker time; it changes the collector cohort hash.
+# eligibility_rules = ["rule-v1", "rule-v2"]

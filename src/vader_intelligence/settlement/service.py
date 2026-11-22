@@ -1,15 +1,13 @@
 import json
 import re
 import uuid
-from dataclasses import asdict
-from datetime import timedelta
+from datetime import date, timedelta
 
-from ..mapping import rule_identity
+from ..mapping import original_date, rule_identity
 from ..normalize import decode
 from ..provenance import RunProvenanceV1, source_hash
 from ..transport import KALSHI, MLB_SCHEDULE, CollectionError, DeadlineExceeded, HTTPFailure
 from .journal import TERMS_URL, latest, map_target, normalizer
-from .models import instant
 from .schema import require_schema
 
 
@@ -41,7 +39,7 @@ class SettlementRefresh:
             "budget": budget,
             "status": status,
         }
-        configuration = {"collector": asdict(self.config), "settlement": options}
+        configuration = {"collector": self.config.provenance(), "settlement": options}
         run_id = resume or str(uuid.uuid4())
         if resume:
             row = self.store.db.execute(
@@ -67,6 +65,7 @@ class SettlementRefresh:
                         "mode": "public_get",
                         "settlement_parser": 1,
                         "database_schema": 2,
+                        "source_lineage": "live" if self.reader.live else "synthetic",
                     },
                 )
             )
@@ -145,7 +144,8 @@ class SettlementRefresh:
                     event_id = ticker(market.get("event_ticker"))
                     get("settlement-event", target["id"], KALSHI + "/events/" + event_id)
                     try:
-                        original = instant(rule_identity(market)["original_start"]).date()
+                        identity = rule_identity(market, self.config.eligibility_rules)
+                        original = date.fromisoformat(original_date(identity))
                     except ValueError:
                         with self.store.transaction():
                             map_target(self.store.db, target["id"])

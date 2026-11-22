@@ -1,0 +1,1200 @@
+{
+  "kind": "pod-task-details",
+  "note": "read-only extract of the orchestration stores behind docs/evidence/real-data-demo-20261019.md \u00a71/\u00a71b (task parameters, pod outputs, robustness reports, symbolic search summaries); pod outputs are not evidence (the protected evaluator recomputes)",
+  "pods-2025-2026": [
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 4,
+        "development_rows": 2101,
+        "diagnostic_validation_log_loss": 0.68246795,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "logistic",
+        "grid": {
+          "C": [
+            0.01,
+            0.1,
+            1.0,
+            10.0
+          ]
+        },
+        "model_sha256": "d9d84aa49b5a8863bb2ca88d765f10f8fdbda1a292ae6d17261d52dcb9dcf51e",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "C": 0.01
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {},
+        "model_family": "logistic",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "baseline",
+      "state": "succeeded",
+      "task_id": "36d1fefc58492247e34aa6b4e0ec25e8"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 8,
+        "development_rows": 2101,
+        "diagnostic_validation_log_loss": 0.69153874,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "gbm",
+        "grid": {
+          "l2_regularization": [
+            1.0
+          ],
+          "learning_rate": [
+            0.05,
+            0.1
+          ],
+          "max_iter": [
+            100,
+            300
+          ],
+          "max_leaf_nodes": [
+            7,
+            15
+          ],
+          "min_samples_leaf": [
+            40
+          ]
+        },
+        "model_sha256": "86646fec31f2d4de5e1622fd573ef66e8c45c1eadcd9e302bc102e6052277ac4",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.05,
+          "max_iter": 100,
+          "max_leaf_nodes": 7,
+          "min_samples_leaf": 40
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {},
+        "model_family": "gradient_boosting",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "baseline",
+      "state": "succeeded",
+      "task_id": "c16d5c13b91c3c7226c30982e53d8759"
+    },
+    {
+      "operation": "symbolic_search",
+      "output": {
+        "candidates_evaluated": 3212,
+        "complexity": 1,
+        "diagnostic_validation_log_loss": 0.68164995,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "expression": "logit_mid_c",
+        "generations_completed": 30,
+        "model_sha256": "1ee191c40748cd6590ea430ef649db64bdcb8f0c779cfd63eaa83602a4e4dd4f",
+        "parity": 1.1102230246251565e-16,
+        "selection_biased": true,
+        "status": "complete",
+        "stop_reason": "generations"
+      },
+      "params": {
+        "dataset_manifest_hash": "701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904",
+        "max_candidates": 20000,
+        "max_generations": 30,
+        "max_seconds": 300.0,
+        "operator_set": "ops-v1",
+        "population": 200,
+        "seed": 0
+      },
+      "pod": "symbolic",
+      "search_summary": {
+        "counters": {
+          "candidates_evaluated": 3212,
+          "duplicates": {
+            "canonical": 6120,
+            "semantic": 744
+          },
+          "invalid": {
+            "near_constant": 221,
+            "non_finite": 0,
+            "platt_failure": 0,
+            "unstable": 0
+          },
+          "oversized_discarded": 5,
+          "valid": 2247
+        },
+        "generations_completed": 30,
+        "selected": {
+          "complexity": 1,
+          "description": "logit_mid_c",
+          "train_log_loss": 0.6798548715340629,
+          "validation_log_loss": 0.6731656894222653,
+          "validation_log_loss_se": 0.006702256942136194
+        },
+        "selection": {
+          "min_validation_log_loss": 0.6696026887869396,
+          "rule": "simplest_within_one_standard_error",
+          "standard_error": 0.0074229892623774545,
+          "threshold": 0.6770256780493171
+        },
+        "stop_reason": "generations"
+      },
+      "state": "succeeded",
+      "task_id": "484a7f7a1f224478e94a674122138ed6"
+    },
+    {
+      "operation": "robustness_analysis",
+      "output": {
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "model_sha256": "d9d84aa49b5a8863bb2ca88d765f10f8fdbda1a292ae6d17261d52dcb9dcf51e",
+        "slices": [
+          "by_month",
+          "drop_feature:mid_c",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread"
+        ]
+      },
+      "params": {
+        "candidate_id": "1947681b71e2b383691b84b4c2bff160",
+        "dataset_manifest_hash": "701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904",
+        "perturbations": [
+          "by_month",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread",
+          "drop_feature:mid_c"
+        ],
+        "seed": 0
+      },
+      "pod": "robust",
+      "robustness_report": {
+        "model_sha256": "d9d84aa49b5a8863bb2ca88d765f10f8fdbda1a292ae6d17261d52dcb9dcf51e",
+        "note": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "overall": {
+          "market_coverage": 2027,
+          "model_log_loss": 0.68246795,
+          "model_minus_market_log_loss": {
+            "ci95": [
+              -0.0030685,
+              0.00388351
+            ],
+            "estimate": 0.00040241
+          },
+          "n": 2027
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "slices": {
+          "by_month": {
+            "2026-03": {
+              "market_coverage": 76,
+              "model_log_loss": 0.6713795,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.01387858,
+                  0.02242302
+                ],
+                "estimate": 0.00509622
+              },
+              "n": 76
+            },
+            "2026-04": {
+              "market_coverage": 375,
+              "model_log_loss": 0.69546876,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.01099879,
+                  0.00623197
+                ],
+                "estimate": -0.00226406
+              },
+              "n": 375
+            },
+            "2026-05": {
+              "market_coverage": 409,
+              "model_log_loss": 0.67825425,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00899959,
+                  0.00699827
+                ],
+                "estimate": -0.000907
+              },
+              "n": 409
+            },
+            "2026-06": {
+              "market_coverage": 392,
+              "model_log_loss": 0.68367074,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00999783,
+                  0.00499745
+                ],
+                "estimate": -0.00206945
+              },
+              "n": 392
+            },
+            "2026-07": {
+              "market_coverage": 359,
+              "model_log_loss": 0.68754707,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00305609,
+                  0.01263358
+                ],
+                "estimate": 0.00474461
+              },
+              "n": 359
+            },
+            "2026-08": {
+              "market_coverage": 416,
+              "model_log_loss": 0.67140047,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00585983,
+                  0.00903946
+                ],
+                "estimate": 0.00181796
+              },
+              "n": 416
+            }
+          },
+          "drop_feature:mid_c": {
+            "market_coverage": 2027,
+            "model_log_loss": 0.68430013,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.00247054,
+                0.0069876
+              ],
+              "estimate": 0.00223459
+            },
+            "n": 2027
+          },
+          "regular_season_only": {
+            "market_coverage": 2027,
+            "model_log_loss": 0.68246795,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.0030685,
+                0.00388351
+              ],
+              "estimate": 0.00040241
+            },
+            "n": 2027
+          },
+          "tight_spread": {
+            "market_coverage": 2003,
+            "model_log_loss": 0.68211551,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.00282705,
+                0.00425613
+              ],
+              "estimate": 0.00068154
+            },
+            "n": 2003
+          },
+          "wide_spread": {
+            "market_coverage": 24,
+            "model_log_loss": 0.71188262,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.06443062,
+                0.02099221
+              ],
+              "estimate": -0.0228929
+            },
+            "n": 24
+          }
+        },
+        "spread_median": 0.01
+      },
+      "state": "succeeded",
+      "task_id": "ad588a8bb97b0e89156f3c9ae590eb71"
+    },
+    {
+      "operation": "robustness_analysis",
+      "output": {
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "model_sha256": "86646fec31f2d4de5e1622fd573ef66e8c45c1eadcd9e302bc102e6052277ac4",
+        "slices": [
+          "by_month",
+          "drop_feature:mid_c",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread"
+        ]
+      },
+      "params": {
+        "candidate_id": "4565618811b2d3bc27840fa24327ba2f",
+        "dataset_manifest_hash": "701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904",
+        "perturbations": [
+          "by_month",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread",
+          "drop_feature:mid_c"
+        ],
+        "seed": 0
+      },
+      "pod": "robust",
+      "robustness_report": {
+        "model_sha256": "86646fec31f2d4de5e1622fd573ef66e8c45c1eadcd9e302bc102e6052277ac4",
+        "note": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "overall": {
+          "market_coverage": 2027,
+          "model_log_loss": 0.69153874,
+          "model_minus_market_log_loss": {
+            "ci95": [
+              0.00346941,
+              0.01584201
+            ],
+            "estimate": 0.0094732
+          },
+          "n": 2027
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "slices": {
+          "by_month": {
+            "2026-03": {
+              "market_coverage": 76,
+              "model_log_loss": 0.67916183,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.02128704,
+                  0.04823049
+                ],
+                "estimate": 0.01287854
+              },
+              "n": 76
+            },
+            "2026-04": {
+              "market_coverage": 375,
+              "model_log_loss": 0.70148952,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.01263959,
+                  0.0200839
+                ],
+                "estimate": 0.00375669
+              },
+              "n": 375
+            },
+            "2026-05": {
+              "market_coverage": 409,
+              "model_log_loss": 0.68699428,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.0067259,
+                  0.02197628
+                ],
+                "estimate": 0.00783304
+              },
+              "n": 409
+            },
+            "2026-06": {
+              "market_coverage": 392,
+              "model_log_loss": 0.68944648,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00938793,
+                  0.01646714
+                ],
+                "estimate": 0.00370629
+              },
+              "n": 392
+            },
+            "2026-07": {
+              "market_coverage": 359,
+              "model_log_loss": 0.69479062,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00017702,
+                  0.02419248
+                ],
+                "estimate": 0.01198816
+              },
+              "n": 359
+            },
+            "2026-08": {
+              "market_coverage": 416,
+              "model_log_loss": 0.68846308,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  0.00591655,
+                  0.03136334
+                ],
+                "estimate": 0.01888057
+              },
+              "n": 416
+            }
+          },
+          "drop_feature:mid_c": {
+            "market_coverage": 2027,
+            "model_log_loss": 0.69275213,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                0.00437024,
+                0.01780922
+              ],
+              "estimate": 0.01068659
+            },
+            "n": 2027
+          },
+          "regular_season_only": {
+            "market_coverage": 2027,
+            "model_log_loss": 0.69153874,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                0.00346941,
+                0.01584201
+              ],
+              "estimate": 0.0094732
+            },
+            "n": 2027
+          },
+          "tight_spread": {
+            "market_coverage": 2003,
+            "model_log_loss": 0.6911393,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                0.00391739,
+                0.01601711
+              ],
+              "estimate": 0.00970533
+            },
+            "n": 2003
+          },
+          "wide_spread": {
+            "market_coverage": 24,
+            "model_log_loss": 0.72487504,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.06643726,
+                0.04658324
+              ],
+              "estimate": -0.00990048
+            },
+            "n": 24
+          }
+        },
+        "spread_median": 0.01
+      },
+      "state": "succeeded",
+      "task_id": "19b8e7d5f34210603c9e07ce0d68ee92"
+    },
+    {
+      "operation": "robustness_analysis",
+      "output": {
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "model_sha256": "1ee191c40748cd6590ea430ef649db64bdcb8f0c779cfd63eaa83602a4e4dd4f",
+        "slices": [
+          "by_month",
+          "drop_feature:mid_c",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread"
+        ]
+      },
+      "params": {
+        "candidate_id": "1ba3f65e9a1a818825a33f8ef3d8f0e9",
+        "dataset_manifest_hash": "701f77c4a29a78e8f1428ff98fea3fa9024bcd42f33a96f344ec55a71ed69904",
+        "perturbations": [
+          "by_month",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread",
+          "drop_feature:mid_c"
+        ],
+        "seed": 0
+      },
+      "pod": "robust",
+      "robustness_report": {
+        "model_sha256": "1ee191c40748cd6590ea430ef649db64bdcb8f0c779cfd63eaa83602a4e4dd4f",
+        "note": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "overall": {
+          "market_coverage": 2027,
+          "model_log_loss": 0.68164995,
+          "model_minus_market_log_loss": {
+            "ci95": [
+              -0.00172104,
+              0.00103538
+            ],
+            "estimate": -0.00041559
+          },
+          "n": 2027
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "slices": {
+          "by_month": {
+            "2026-03": {
+              "market_coverage": 76,
+              "model_log_loss": 0.66611418,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00884044,
+                  0.00843173
+                ],
+                "estimate": -0.00016911
+              },
+              "n": 76
+            },
+            "2026-04": {
+              "market_coverage": 375,
+              "model_log_loss": 0.69479011,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00646288,
+                  0.00032728
+                ],
+                "estimate": -0.00294272
+              },
+              "n": 375
+            },
+            "2026-05": {
+              "market_coverage": 409,
+              "model_log_loss": 0.6789151,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00313409,
+                  0.00275946
+                ],
+                "estimate": -0.00024615
+              },
+              "n": 409
+            },
+            "2026-06": {
+              "market_coverage": 392,
+              "model_log_loss": 0.68478361,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00387749,
+                  0.0018312
+                ],
+                "estimate": -0.00095658
+              },
+              "n": 392
+            },
+            "2026-07": {
+              "market_coverage": 359,
+              "model_log_loss": 0.68328456,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00260517,
+                  0.00355665
+                ],
+                "estimate": 0.0004821
+              },
+              "n": 359
+            },
+            "2026-08": {
+              "market_coverage": 416,
+              "model_log_loss": 0.67096844,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00183446,
+                  0.00445114
+                ],
+                "estimate": 0.00138593
+              },
+              "n": 416
+            }
+          },
+          "drop_feature:mid_c": {
+            "market_coverage": 2027,
+            "model_log_loss": 0.68164995,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.00172104,
+                0.00103538
+              ],
+              "estimate": -0.00041559
+            },
+            "n": 2027
+          },
+          "regular_season_only": {
+            "market_coverage": 2027,
+            "model_log_loss": 0.68164995,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.00172104,
+                0.00103538
+              ],
+              "estimate": -0.00041559
+            },
+            "n": 2027
+          },
+          "tight_spread": {
+            "market_coverage": 2003,
+            "model_log_loss": 0.68115984,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.00162563,
+                0.00116248
+              ],
+              "estimate": -0.00027413
+            },
+            "n": 2003
+          },
+          "wide_spread": {
+            "market_coverage": 24,
+            "model_log_loss": 0.72255338,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.02986834,
+                0.00312508
+              ],
+              "estimate": -0.01222214
+            },
+            "n": 24
+          }
+        },
+        "spread_median": 0.01
+      },
+      "state": "succeeded",
+      "task_id": "09592bde4e72377d437a88e6b9b16aae"
+    }
+  ],
+  "pods-2026": [
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 4,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.67612928,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "logistic",
+        "grid": {
+          "C": [
+            0.01,
+            0.1,
+            1.0,
+            10.0
+          ]
+        },
+        "model_sha256": "d316e849de67b8cd318606987d74208e866d8e1bba99d744179db788442b11b5",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "C": 0.01
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {},
+        "model_family": "logistic",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "baseline",
+      "state": "succeeded",
+      "task_id": "983f3d4b62fdd660686c0d6b7c9baac8"
+    },
+    {
+      "operation": "train_model",
+      "output": {
+        "configs_tried": 8,
+        "development_rows": 1611,
+        "diagnostic_validation_log_loss": 0.68531559,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "family": "gbm",
+        "grid": {
+          "l2_regularization": [
+            1.0
+          ],
+          "learning_rate": [
+            0.05,
+            0.1
+          ],
+          "max_iter": [
+            100,
+            300
+          ],
+          "max_leaf_nodes": [
+            7,
+            15
+          ],
+          "min_samples_leaf": [
+            40
+          ]
+        },
+        "model_sha256": "a6d69da1f90519eedc146c1d6b8ea50fa4b464cea96132f159268cb5ee7bc407",
+        "search_stop_reason": "exhausted",
+        "selected_config": {
+          "l2_regularization": 1.0,
+          "learning_rate": 0.05,
+          "max_iter": 100,
+          "max_leaf_nodes": 7,
+          "min_samples_leaf": 40
+        }
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "feature_set": "fs-market-v1",
+        "feature_set_version": "9c15ae73c8f511e2",
+        "hyperparameters": {},
+        "model_family": "gradient_boosting",
+        "seed": 0,
+        "split": "development"
+      },
+      "pod": "baseline",
+      "state": "succeeded",
+      "task_id": "576aa9060c1c7f905fb3e2f014d27169"
+    },
+    {
+      "operation": "symbolic_search",
+      "output": {
+        "candidates_evaluated": 2907,
+        "complexity": 1,
+        "diagnostic_validation_log_loss": 0.67331261,
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "expression": "pair_mid_c",
+        "generations_completed": 30,
+        "model_sha256": "06891d035c2156ad5c52b9be5a78656e934eea1926016de22c6e93ffdb287a01",
+        "parity": 1.1102230246251565e-16,
+        "selection_biased": true,
+        "status": "complete",
+        "stop_reason": "generations"
+      },
+      "params": {
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "max_candidates": 20000,
+        "max_generations": 30,
+        "max_seconds": 300.0,
+        "operator_set": "ops-v1",
+        "population": 200,
+        "seed": 0
+      },
+      "pod": "symbolic",
+      "search_summary": {
+        "counters": {
+          "candidates_evaluated": 2907,
+          "duplicates": {
+            "canonical": 6826,
+            "semantic": 1408
+          },
+          "invalid": {
+            "near_constant": 162,
+            "non_finite": 0,
+            "platt_failure": 0,
+            "unstable": 0
+          },
+          "oversized_discarded": 4,
+          "valid": 1337
+        },
+        "generations_completed": 30,
+        "selected": {
+          "complexity": 1,
+          "description": "pair_mid_c",
+          "train_log_loss": 0.6840180474871861,
+          "validation_log_loss": 0.6854477043793691,
+          "validation_log_loss_se": 0.006123678422234204
+        },
+        "selection": {
+          "min_validation_log_loss": 0.6829842428000897,
+          "rule": "simplest_within_one_standard_error",
+          "standard_error": 0.006084400560041501,
+          "threshold": 0.6890686433601312
+        },
+        "stop_reason": "generations"
+      },
+      "state": "succeeded",
+      "task_id": "1e1b97283d908d37caca65c185442e07"
+    },
+    {
+      "operation": "robustness_analysis",
+      "output": {
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "model_sha256": "d316e849de67b8cd318606987d74208e866d8e1bba99d744179db788442b11b5",
+        "slices": [
+          "by_month",
+          "drop_feature:mid_c",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread"
+        ]
+      },
+      "params": {
+        "candidate_id": "5c7d3401dfc7906f41221317e485123d",
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "perturbations": [
+          "by_month",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread",
+          "drop_feature:mid_c"
+        ],
+        "seed": 0
+      },
+      "pod": "robust",
+      "robustness_report": {
+        "model_sha256": "d316e849de67b8cd318606987d74208e866d8e1bba99d744179db788442b11b5",
+        "note": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "overall": {
+          "market_coverage": 401,
+          "model_log_loss": 0.67612928,
+          "model_minus_market_log_loss": {
+            "ci95": [
+              -0.00032207,
+              0.01086129
+            ],
+            "estimate": 0.0050756
+          },
+          "n": 401
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "slices": {
+          "by_month": {
+            "2026-08": {
+              "market_coverage": 401,
+              "model_log_loss": 0.67612928,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00032207,
+                  0.01086129
+                ],
+                "estimate": 0.0050756
+              },
+              "n": 401
+            }
+          },
+          "drop_feature:mid_c": {
+            "market_coverage": 401,
+            "model_log_loss": 0.67865743,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.00070118,
+                0.01566266
+              ],
+              "estimate": 0.00760375
+            },
+            "n": 401
+          },
+          "regular_season_only": {
+            "market_coverage": 401,
+            "model_log_loss": 0.67612928,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.00032207,
+                0.01086129
+              ],
+              "estimate": 0.0050756
+            },
+            "n": 401
+          },
+          "tight_spread": {
+            "market_coverage": 397,
+            "model_log_loss": 0.67617585,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.00073817,
+                0.01057365
+              ],
+              "estimate": 0.00486921
+            },
+            "n": 397
+          },
+          "wide_spread": {
+            "n": 4,
+            "status": "too_few_rows"
+          }
+        },
+        "spread_median": 0.01
+      },
+      "state": "succeeded",
+      "task_id": "120602253b75f23e482d13a545d581cb"
+    },
+    {
+      "operation": "robustness_analysis",
+      "output": {
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "model_sha256": "a6d69da1f90519eedc146c1d6b8ea50fa4b464cea96132f159268cb5ee7bc407",
+        "slices": [
+          "by_month",
+          "drop_feature:mid_c",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread"
+        ]
+      },
+      "params": {
+        "candidate_id": "1b72ae970acc421c01087c0acbab1f25",
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "perturbations": [
+          "by_month",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread",
+          "drop_feature:mid_c"
+        ],
+        "seed": 0
+      },
+      "pod": "robust",
+      "robustness_report": {
+        "model_sha256": "a6d69da1f90519eedc146c1d6b8ea50fa4b464cea96132f159268cb5ee7bc407",
+        "note": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "overall": {
+          "market_coverage": 401,
+          "model_log_loss": 0.68531559,
+          "model_minus_market_log_loss": {
+            "ci95": [
+              -3.98e-05,
+              0.02929781
+            ],
+            "estimate": 0.01426191
+          },
+          "n": 401
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "slices": {
+          "by_month": {
+            "2026-08": {
+              "market_coverage": 401,
+              "model_log_loss": 0.68531559,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -3.98e-05,
+                  0.02929781
+                ],
+                "estimate": 0.01426191
+              },
+              "n": 401
+            }
+          },
+          "drop_feature:mid_c": {
+            "market_coverage": 401,
+            "model_log_loss": 0.6874451,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -3.699e-05,
+                0.03285301
+              ],
+              "estimate": 0.01639142
+            },
+            "n": 401
+          },
+          "regular_season_only": {
+            "market_coverage": 401,
+            "model_log_loss": 0.68531559,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -3.98e-05,
+                0.02929781
+              ],
+              "estimate": 0.01426191
+            },
+            "n": 401
+          },
+          "tight_spread": {
+            "market_coverage": 397,
+            "model_log_loss": 0.68542622,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -1.176e-05,
+                0.02927986
+              ],
+              "estimate": 0.01411958
+            },
+            "n": 397
+          },
+          "wide_spread": {
+            "n": 4,
+            "status": "too_few_rows"
+          }
+        },
+        "spread_median": 0.01
+      },
+      "state": "succeeded",
+      "task_id": "ba4cf7e16b980bfecb9814cc43a28786"
+    },
+    {
+      "operation": "robustness_analysis",
+      "output": {
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "model_sha256": "06891d035c2156ad5c52b9be5a78656e934eea1926016de22c6e93ffdb287a01",
+        "slices": [
+          "by_month",
+          "drop_feature:mid_c",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread"
+        ]
+      },
+      "params": {
+        "candidate_id": "783d05112ac4c70569062eb929fa2c1e",
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "perturbations": [
+          "by_month",
+          "regular_season_only",
+          "tight_spread",
+          "wide_spread",
+          "drop_feature:mid_c"
+        ],
+        "seed": 0
+      },
+      "pod": "robust",
+      "robustness_report": {
+        "model_sha256": "06891d035c2156ad5c52b9be5a78656e934eea1926016de22c6e93ffdb287a01",
+        "note": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "overall": {
+          "market_coverage": 401,
+          "model_log_loss": 0.67331261,
+          "model_minus_market_log_loss": {
+            "ci95": [
+              -0.00547543,
+              0.00959298
+            ],
+            "estimate": 0.00225893
+          },
+          "n": 401
+        },
+        "segment": "validation",
+        "selection_biased": true,
+        "slices": {
+          "by_month": {
+            "2026-08": {
+              "market_coverage": 401,
+              "model_log_loss": 0.67331261,
+              "model_minus_market_log_loss": {
+                "ci95": [
+                  -0.00547543,
+                  0.00959298
+                ],
+                "estimate": 0.00225893
+              },
+              "n": 401
+            }
+          },
+          "drop_feature:mid_c": {
+            "market_coverage": 401,
+            "model_log_loss": 0.67331261,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.00547543,
+                0.00959298
+              ],
+              "estimate": 0.00225893
+            },
+            "n": 401
+          },
+          "regular_season_only": {
+            "market_coverage": 401,
+            "model_log_loss": 0.67331261,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.00547543,
+                0.00959298
+              ],
+              "estimate": 0.00225893
+            },
+            "n": 401
+          },
+          "tight_spread": {
+            "market_coverage": 397,
+            "model_log_loss": 0.67376676,
+            "model_minus_market_log_loss": {
+              "ci95": [
+                -0.00489418,
+                0.00999119
+              ],
+              "estimate": 0.00246011
+            },
+            "n": 397
+          },
+          "wide_spread": {
+            "n": 4,
+            "status": "too_few_rows"
+          }
+        },
+        "spread_median": 0.01
+      },
+      "state": "succeeded",
+      "task_id": "b223e07b296faaf745d6486a2421c7fa"
+    },
+    {
+      "operation": "paper_backtest",
+      "output": {
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "forecasts": 401,
+        "model_sha256": "d316e849de67b8cd318606987d74208e866d8e1bba99d744179db788442b11b5",
+        "scenarios": 12
+      },
+      "params": {
+        "assumed_depths": [
+          "5",
+          "25"
+        ],
+        "candidate_id": "5c7d3401dfc7906f41221317e485123d",
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "execution_assumptions": "conservative",
+        "execution_inputs_hash": "6d5a616e194a2f14a49425e85afc346f5d37d8116f9d78a0b790c1ee7ed01d70",
+        "fee_schedule_version": "kalshi-2026-02-general",
+        "min_edge": "0.02"
+      },
+      "pod": "robust",
+      "state": "succeeded",
+      "task_id": "475416991e1f2dd5818cb5c39ad855ce"
+    },
+    {
+      "operation": "paper_backtest",
+      "output": {
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "forecasts": 401,
+        "model_sha256": "a6d69da1f90519eedc146c1d6b8ea50fa4b464cea96132f159268cb5ee7bc407",
+        "scenarios": 12
+      },
+      "params": {
+        "assumed_depths": [
+          "5",
+          "25"
+        ],
+        "candidate_id": "1b72ae970acc421c01087c0acbab1f25",
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "execution_assumptions": "conservative",
+        "execution_inputs_hash": "6d5a616e194a2f14a49425e85afc346f5d37d8116f9d78a0b790c1ee7ed01d70",
+        "fee_schedule_version": "kalshi-2026-02-general",
+        "min_edge": "0.02"
+      },
+      "pod": "robust",
+      "state": "succeeded",
+      "task_id": "c744e57386d54317bd7c32576af67a95"
+    },
+    {
+      "operation": "paper_backtest",
+      "output": {
+        "evidence": "pod diagnostic: not promotion evidence; the protected evaluator recomputes every metric from the registry",
+        "forecasts": 401,
+        "model_sha256": "06891d035c2156ad5c52b9be5a78656e934eea1926016de22c6e93ffdb287a01",
+        "scenarios": 12
+      },
+      "params": {
+        "assumed_depths": [
+          "5",
+          "25"
+        ],
+        "candidate_id": "783d05112ac4c70569062eb929fa2c1e",
+        "dataset_manifest_hash": "77ffe832cba58405d1f8ae4a1ea7f9e845206075f4da57c660e5c384aff64b4a",
+        "execution_assumptions": "conservative",
+        "execution_inputs_hash": "6d5a616e194a2f14a49425e85afc346f5d37d8116f9d78a0b790c1ee7ed01d70",
+        "fee_schedule_version": "kalshi-2026-02-general",
+        "min_edge": "0.02"
+      },
+      "pod": "robust",
+      "state": "succeeded",
+      "task_id": "158a0d990dfce2963da8535ce98aadae"
+    }
+  ]
+}
