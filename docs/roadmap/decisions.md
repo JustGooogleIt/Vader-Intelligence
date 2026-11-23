@@ -407,3 +407,32 @@ Alternatives considered:
 - A witness pass after collection: this reverses the plan's explicit rule.
 
 Reversibility. selection-v2 is opt-in, and selection-v1 is untouched.
+
+## D-017 F50: a game proven final keeps its identity across a failed refresh; `evaluation-v3` (2026-11-23)
+
+**Owner decision, 2026-11-23:** adopt the recovered F50 fallback (chat instruction to
+Claude, "adopt it").
+
+Context. Since #33 the outcome join takes the settlement mapping only from the run of
+the latest Kalshi attempt in view. One refresh whose MLB schedule fetch failed turned a
+game proven by complete earlier evidence into `identity_unresolved` (F50); scores could
+disappear between two reports. The recovered fix `37c7bac` was reviewed as mechanically
+sound but changes outcome selection, so it could not ship under the `evaluation-v2`
+label.
+
+Decision. Apply `37c7bac` unchanged (cherry-picked with `-x`) and raise the evaluator to
+`evaluation-v3`. When the selected run's mapping is incomplete and the label is a
+finalized binary, the most recent earlier run with complete mapping evidence inside the
+view stands in, only if it is `mapped`, its own MLB record shows the game final, and its
+own Kalshi record is the same finalized label. Any other complete mapping ends the search,
+so newer contrary evidence is never skipped.
+
+Consequences.
+- New evaluations are `evaluation-v3`. Existing `evaluation-v2` reports keep their
+  meaning; re-evaluating the same cohort supersedes them with reason `evaluator_changed`.
+- `reports.compare` now refuses two evaluations with different evaluator versions, as it
+  already refused different views, modes, protocols, contracts and forecaster sets.
+
+Reversibility. Code-only; no schema or record-contract change. Reverting restores v2
+behaviour for new runs; v3 reports stay labelled v3.
+

@@ -42,7 +42,9 @@ from . import outcomes, scoring
 
 # evaluation-v2: one record contract per evaluation (D-001) and the
 # schedule_changed_after_decision disposition (D-003).
-EVALUATOR_VERSION = "evaluation-v2"
+# evaluation-v3 (D-017): a game proven final keeps its identity when a later
+# refresh run's schedule fetch failed (F50 stand-in mapping in outcomes.join).
+EVALUATOR_VERSION = "evaluation-v3"
 HORIZON = 3600
 VIEWS = {
     "forward-shadow": "forward_shadow",
