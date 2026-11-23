@@ -74,6 +74,9 @@ Reversibility: additive; migration 005 has no DDL and touches no row.
 
 ## D-002 Time-less postseason rules: eligibility/mapping rule v2 (2026-10-18)
 
+**Accepted by the owner on 2026-11-23** (chat instruction to Claude, accepting the
+recommendation in `claude-release-validation.md` "as is").
+
 Context. From about 2026-10-09 Kalshi `KXMLBGAME` rules read "...game originally
 scheduled for Oct 19, 2026, then..." with no time. Rule v1 requires the stated time to
 equal the official start. Production archive (read-only query, 30 events): every one of
@@ -117,6 +120,9 @@ Implementation facts (PR `feat/eligibility-rule-v2`):
 
 ## D-003 Schedule revisions: explicit abstention before C, unscored disposition after C (2026-10-19)
 
+**Accepted by the owner on 2026-11-23** (chat instruction to Claude, accepting the
+recommendation in `claude-release-validation.md` "as is").
+
 Context. The previous release deferred a schedule-revision state machine (binding
 revision chains, a moving C) and abstained with `schedule_revised`. Real archived evidence
 shows revisions are common (official times moved for `26OCT122000LADMIL` and
@@ -145,6 +151,9 @@ labelled bucket as long-horizon forecasts of the same contract. Not done: it cha
 meaning of a T-60 score.
 
 ## D-004 Registered forecasters in the forward path: decision contract 4 (2026-10-19)
+
+**Accepted by the owner on 2026-11-23** (chat instruction to Claude, accepting the
+recommendation in `claude-release-validation.md` "as is").
 
 Context. Forward-shadow decisions (contracts 1–3) carry exactly the baseline pair. A
 candidate model can only be shadow-tested if the tick computes its forecast at C from the
@@ -407,6 +416,41 @@ Alternatives considered:
 - A witness pass after collection: this reverses the plan's explicit rule.
 
 Reversibility. selection-v2 is opt-in, and selection-v1 is untouched.
+
+## Q-M1-1 accepted: later-tick publication (2026-11-23)
+
+**Accepted by the owner on 2026-11-23**, as recommended. A decision without a publication
+record is published by the next tick at its actual time: `allowed` inside the window,
+`missed` after it, never backdated. Forward reports already count `missed`. No code
+change.
+
+## D-017 F50: a game proven final keeps its identity across a failed refresh; `evaluation-v3` (2026-11-23)
+
+**Owner decision, 2026-11-23:** adopt the recovered F50 fallback (chat instruction to
+Claude, "adopt it").
+
+Context. Since #33 the outcome join takes the settlement mapping only from the run of
+the latest Kalshi attempt in view. One refresh whose MLB schedule fetch failed turned a
+game proven by complete earlier evidence into `identity_unresolved` (F50); scores could
+disappear between two reports. The recovered fix `37c7bac` was reviewed as mechanically
+sound but changes outcome selection, so it could not ship under the `evaluation-v2`
+label.
+
+Decision. Apply `37c7bac` unchanged (cherry-picked with `-x`) and raise the evaluator to
+`evaluation-v3`. When the selected run's mapping is incomplete and the label is a
+finalized binary, the most recent earlier run with complete mapping evidence inside the
+view stands in, only if it is `mapped`, its own MLB record shows the game final, and its
+own Kalshi record is the same finalized label. Any other complete mapping ends the search,
+so newer contrary evidence is never skipped.
+
+Consequences.
+- New evaluations are `evaluation-v3`. Existing `evaluation-v2` reports keep their
+  meaning; re-evaluating the same cohort supersedes them with reason `evaluator_changed`.
+- `reports.compare` now refuses two evaluations with different evaluator versions, as it
+  already refused different views, modes, protocols, contracts and forecaster sets.
+
+Reversibility. Code-only; no schema or record-contract change. Reverting restores v2
+behaviour for new runs; v3 reports stay labelled v3.
 
 ## D-018 Real coding agents in the Command Center: Claude first (2026-11-23)
 

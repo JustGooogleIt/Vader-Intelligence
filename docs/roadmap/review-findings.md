@@ -32,7 +32,7 @@ Status values:
 | F15 | P3 | #16 | `shadow_health` misses two collection failure statuses | #37 |
 | F16 | P3 | #16 | `shadow-evaluate` overlap report name collides | #37 |
 | F17 | P3 | #17 | exact retry of a legacy receipt fails the current link check first | #37 |
-| Q-M1-1 | — | #13 | later-tick publication path | owner |
+| Q-M1-1 | — | #13 | later-tick publication path | accepted by the owner 2026-11-23 (as is) |
 
 ## In the roadmap stack (#17–#27)
 
@@ -90,13 +90,18 @@ independently re-run on this branch (`docs/handoffs/claude-release-validation.md
 | F47 | P3 | configure accepted artifacts the tick's runner refuses | #38, validated (the recovered wt-grok-h cases are ported as probes) |
 | F48 | P2 | legacy init deposit re-added cash | #38, validated; Decimal comparison, ambiguous histories refused |
 | F49 | P2 | a removed registry aborted the tick | #38, validated; corrupt/wrong-schema files also abstain, nothing is created |
-| F50 | P2 | a refresh without a schedule turns a scored game `identity_unresolved` | **owner**: reconstructed; recovered `37c7bac` reviewed, mechanically sound, not applied; adopt only as `evaluation-v3` (proposed D-017) |
+| F50 | P2 | a refresh without a schedule turns a scored game `identity_unresolved` | fixed as `evaluation-v3` (D-017, owner decision 2026-11-23): `37c7bac` applied unchanged |
 | F51 | P3 | headerless wrapped key bodies passed the paste guard | #38, validated; release validation narrowed a false positive (consecutive hex digests, absolute paths) |
 | N-34a | P2 | an acknowledged settlement token hid a later venue revision | **fixed on `fix/claude-release-validation-20261022`** (`500c993`): acknowledgements cover only markets the ledger has not settled |
 | N-34a / PR #39 P2 | P2 | a ticker-wide acknowledgement still covered a newly observed contradictory record while an old record agreed with the ledger (Codex review of `bde8bc3`: 4 failed / 1 passed probes) | **fixed on `fix/claude-release-validation-20261022`** (`f24af41`): acknowledgements name the content fingerprints of the records resolved and cover exactly those; legacy evidence-less acknowledgements cover nothing |
 | N-37a/b/c/d | — | F30 lag residual; 1 ms run-start resolution; direct `ForecasterRunner` admits non-library artifacts (abstains); non-canonical split dates fail closed | notes, unchanged |
 
-Owner decisions still open: #8 plan r3, Q-M1-1, D-002, D-003, D-004, D-005, D-015,
+Update 2026-11-23: the owner accepted #8 plan r3 (note added in #41), Q-M1-1, D-002,
+D-003 and D-004 as recommended, adopted F50 as `evaluation-v3` (D-017), delegated the
+D-005 source choice and the D-015 feature choice to Claude, and enabled Claude coding
+agents (D-018). Still open: D-016 default, N-20c interpretation version and F34.
+
+Owner decisions open before 2026-11-23: #8 plan r3, Q-M1-1, D-002, D-003, D-004, D-005, D-015,
 D-016 default, N-20c interpretation version, F34 (one holdout slot, either kind, is the
 implemented rule), and F50. D-001 is accepted (owner comment on #17, 2026-10-19). The
 reconciled table with recommendations is in `docs/handoffs/claude-release-validation.md`.

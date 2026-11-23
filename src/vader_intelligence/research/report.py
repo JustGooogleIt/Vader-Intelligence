@@ -180,7 +180,8 @@ def _counts(mapping):
 
 def compare(db, first_id, second_id):
     """Compare two evaluations on the opportunities both scored (paired), exposing the
-    coverage difference. Refuses different views, modes or protocols."""
+    coverage difference. Refuses different views, modes, protocols, record contracts,
+    forecaster sets or evaluator versions."""
     a, b = load(db, first_id), load(db, second_id)
     ea, eb = a["evaluation"], b["evaluation"]
     for field in ("view", "mode", "protocol"):
@@ -194,6 +195,8 @@ def compare(db, first_id, second_id):
         eb["report"].get("forecasters") or {}
     ):
         raise ValueError("evaluations score different forecaster sets; never pooled or compared")
+    if ea["evaluator_version"] != eb["evaluator_version"]:
+        raise ValueError("evaluations use different evaluator versions; never pooled or compared")
     keys_a, keys_b = set(a["items"]), set(b["items"])
     scored_a = {k for k, i in a["items"].items() if i["paired_delta"] is not None}
     scored_b = {k for k, i in b["items"].items() if i["paired_delta"] is not None}
