@@ -1,7 +1,9 @@
 """J4: the bounded coding-improvement loop on a THROWAWAY git repository (never this
 checkout): frozen brief, isolated writer worktree/branch, trusted checks on the exact
 commit, independent reviewer, review packet, accept/reject; policy and budget bounds;
-real agent executors stay disabled without an authorization record."""
+real agent executors stay disabled without an authorization record, and with one they
+run as a separate process (a fake `claude` executable here; the real CLI is never called
+by the tests)."""
 
 import json
 import subprocess
@@ -278,7 +280,117 @@ def test_real_agents_stay_disabled_without_an_authorization_record(ctl, cfg):
         ctl, {**brief(None), "executor": "codex_cli", "patch": None, "prompt": "fix clamp"}
     )
     run = drive(ctl, run_id)
-    assert run["state"] == "failed" and "not exercised in this pilot" in run["detail"]["error"]
+    # Authorized executor but no per-run budget cap: still disabled, nothing spawned.
+    assert run["state"] == "failed" and run["outcome"] == "execution_disabled"
+    assert "max_budget_usd" in run["detail"]["blocker"]
+    assert not (cfg.root / "coding" / run_id / "agent-output.json").exists()
+
+
+FAKE_FIX = """
+import json, pathlib
+mod = pathlib.Path("src/tiny/mod.py")
+mod.write_text(mod.read_text().replace("return max(low, value)", "return min(high, max(low, value))"))
+tests = pathlib.Path("tests/test_mod.py")
+tests.write_text(tests.read_text() + "\\n\\ndef test_high():\\n    assert clamp(99, 0, 10) == 10\\n")
+print(json.dumps({"type": "result", "is_error": False, "result": "clamp now honours high",
+                  "num_turns": 4, "total_cost_usd": 0.0, "session_id": "fake"}))
+"""
+FAKE_NOTHING = """
+import json
+print(json.dumps({"type": "result", "is_error": False, "result": "nothing to do", "num_turns": 1}))
+"""
+FAKE_ERROR = """
+import json, sys
+print(json.dumps({"type": "result", "is_error": True, "result": "budget exceeded"}))
+sys.exit(1)
+"""
+
+
+def authorize(cfg, **extra):
+    (cfg.root / "authorization.json").write_text(
+        json.dumps(
+            {
+                "usage": "established",
+                "incremental_cost_usd": 0,
+                "executors": ["claude_cli"],
+                "by": "owner",
+                "at": "2026-11-23T00:00:00Z",
+                "max_budget_usd": 5,
+                **extra,
+            }
+        )
+    )
+
+
+@pytest.fixture
+def fake_claude(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    def install(body):
+        exe = bin_dir / "claude"
+        exe.write_text(f"#!{sys.executable}\n" + textwrap.dedent(body))
+        exe.chmod(0o755)
+
+    monkeypatch.setenv("PATH", f"{bin_dir}:{__import__('os').environ['PATH']}")
+    return install
+
+
+def agent_brief():
+    return {**brief(None), "executor": "claude_cli", "patch": None, "prompt": "keep it small"}
+
+
+def test_an_authorized_agent_writes_and_the_pipeline_reviews_it(ctl, cfg, repo, fake_claude):
+    authorize(cfg)
+    fake_claude(FAKE_FIX)
+    run_id = start(ctl, agent_brief())
+    run = drive(ctl, run_id)
+    d = run["detail"]
+    assert run["state"] == "completed" and d["recommendation"] == "accept", d
+    assert d["writer"]["simulated"] is False and d["writer"]["executor"] == "claude_cli"
+    assert d["writer"]["max_budget_usd"] == 5 and d["writer"]["exit_code"] == 0
+    assert d["writer"]["summary"] == "clamp now honours high"
+    argv = d["executor_argv"]
+    assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
+    assert argv[argv.index("--max-budget-usd") + 1] == "5"
+    tools = argv[argv.index("--allowedTools") + 1]
+    assert "Bash(git" not in tools and f"Bash({sys.executable} -m pytest *)" in tools
+    prompt = argv[2]
+    assert "clamp ignores the upper bound" in prompt and "Do not run git" in prompt
+    assert "keep it small" in prompt
+    # The service, not the agent, made the commit; checks and review ran on that commit.
+    author = git(repo, "log", "-1", "--format=%an", d["commit"])
+    assert author == "cc-claude_cli"
+    assert {c["commit"] for c in d["checks"] + d["reviewer_checks"]} == {d["commit"]}
+    assert all(c["exit_code"] == 0 for c in d["checks"] + d["reviewer_checks"])
+    assert "src/tiny/mod.py" in d["files_changed"]
+    assert git(repo, "rev-parse", "main") == run["pins"]["base_commit"]  # nothing merged
+
+
+def test_an_agent_that_changes_nothing_is_rejected(ctl, cfg, fake_claude):
+    authorize(cfg)
+    fake_claude(FAKE_NOTHING)
+    run = drive(ctl, start(ctl, agent_brief()))
+    assert run["state"] == "completed" and run["outcome"] == "reject"
+    assert run["detail"]["review"]["reason"] == "no_change"
+    assert "commit" not in run["detail"]
+
+
+def test_an_agent_error_fails_the_run(ctl, cfg, fake_claude):
+    authorize(cfg)
+    fake_claude(FAKE_ERROR)
+    run = drive(ctl, start(ctl, agent_brief()))
+    assert run["state"] == "failed" and run["outcome"] == "agent_failed"
+    assert run["detail"]["writer"]["is_error"] is True
+
+
+@pytest.mark.parametrize("budget", [0, -1, 101, "5", True])
+def test_an_out_of_range_budget_keeps_agents_disabled(ctl, cfg, fake_claude, budget):
+    authorize(cfg, max_budget_usd=budget)
+    fake_claude(FAKE_FIX)
+    run = drive(ctl, start(ctl, agent_brief()))
+    assert run["state"] == "failed" and run["outcome"] == "execution_disabled"
+    assert "max_budget_usd" in run["detail"]["blocker"]
 
 
 def test_budget_writer_cap_cancel_and_invalid_briefs(ctl, cfg):
