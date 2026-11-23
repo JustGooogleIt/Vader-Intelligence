@@ -175,6 +175,8 @@ not an amendment.
 
 ## D-005 NBA and NFL adapters: blocked on an authoritative schedule source (2026-10-19)
 
+**Superseded 2026-11-23 by D-020** (owner delegated the source choice).
+
 Context. A5 asks for NBA/NFL adapters only if they can reuse the architecture with
 league-specific identity, schedule and settlement semantics. Research (16 public GETs and
 documentation, `docs/evidence/nba-nfl-sources-20261019.md`): Kalshi is ready
@@ -511,4 +513,23 @@ use the v2 sets; models must be retrained to use them. Rows keep the feature nam
 `last_trade_gap_c`; the dataset's feature set name records which version it is.
 
 Reversibility. Additive; nothing existing changes meaning.
+
+## D-020 NFL and NBA schedule sources: open-data releases on GitHub (2026-11-23)
+
+The owner delegated the D-005 source choice ("do due diligence and choose after stack
+ranking approaches, no need for my sign off").
+
+Decision. NFL uses the nflverse `schedules` release (`nflverse/nflverse-data`,
+CC-BY-4.0, regenerated every 10–30 min). NBA uses the sportsdataverse
+`espn_nba_schedules` release (`sportsdataverse/sportsdataverse-data`, MIT, refreshed
+about daily). Both are permitted programmatic downloads; neither is league-official.
+Rejected: ESPN and nfl.com (terms forbid automated access), `cdn.nba.com` /
+`stats.nba.com` (blocked to scripts and restrictive terms), FixtureDownload (start times
+look mislabelled). balldontlie is the NBA upgrade path once a key is supplied.
+
+Consequences. Pregame status is bounded by each source's content time (NFL 2 h, NBA 36 h
+in v1); same-day postponements can lag, which the plan's eligibility guards make
+explicit rather than hide. Settlement stays Kalshi's result. Separate protocols
+(`nfl-t60-v1`, `nba-t60-v1`) and collector cohorts. Ranking, constraints and increments:
+`docs/specs/nfl-nba-v1-plan.md`. The backlog item A5 moves from blocked to planned.
 
