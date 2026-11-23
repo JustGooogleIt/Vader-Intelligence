@@ -426,6 +426,65 @@ record is published by the next tick at its actual time: `allowed` inside the wi
 `missed` after it, never backdated. Forward reports already count `missed`. No code
 change.
 
+## D-017 F50: a game proven final keeps its identity across a failed refresh; `evaluation-v3` (2026-11-23)
+
+**Owner decision, 2026-11-23:** adopt the recovered F50 fallback (chat instruction to
+Claude, "adopt it").
+
+Context. Since #33 the outcome join takes the settlement mapping only from the run of
+the latest Kalshi attempt in view. One refresh whose MLB schedule fetch failed turned a
+game proven by complete earlier evidence into `identity_unresolved` (F50); scores could
+disappear between two reports. The recovered fix `37c7bac` was reviewed as mechanically
+sound but changes outcome selection, so it could not ship under the `evaluation-v2`
+label.
+
+Decision. Apply `37c7bac` unchanged (cherry-picked with `-x`) and raise the evaluator to
+`evaluation-v3`. When the selected run's mapping is incomplete and the label is a
+finalized binary, the most recent earlier run with complete mapping evidence inside the
+view stands in, only if it is `mapped`, its own MLB record shows the game final, and its
+own Kalshi record is the same finalized label. Any other complete mapping ends the search,
+so newer contrary evidence is never skipped.
+
+Consequences.
+- New evaluations are `evaluation-v3`. Existing `evaluation-v2` reports keep their
+  meaning; re-evaluating the same cohort supersedes them with reason `evaluator_changed`.
+- `reports.compare` now refuses two evaluations with different evaluator versions, as it
+  already refused different views, modes, protocols, contracts and forecaster sets.
+
+Reversibility. Code-only; no schema or record-contract change. Reverting restores v2
+behaviour for new runs; v3 reports stay labelled v3.
+
+## D-018 Real coding agents in the Command Center: Claude first (2026-11-23)
+
+**Owner decision, 2026-11-23:** "enable them and launch them … start with claude agents";
+keys for other subscriptions to follow.
+
+Context. J4 built the coding loop with a scripted writer and refused real agents without
+an authorization record of established, $0-incremental usage. The execution path itself
+was never implemented ("not exercised in this pilot even when authorized"), and the
+recorded Claude argv no longer matched the CLI (permission mode `default` was removed;
+budget 0; `Bash(git *)` allowed pushes).
+
+Decision.
+- Implement the agent path: the CLI runs in the writer worktree as its own process group,
+  counted against the global cap, killed on cancel or wall-budget exhaustion.
+- Claude argv: `--permission-mode dontAsk`, tools limited to file tools plus the trusted
+  check commands through the controller's interpreter, `--max-budget-usd` from the record.
+  No git or network tool: the service makes the commit.
+- The authorization record must also grant `max_budget_usd` in (0, 100]; without it the
+  agent stays disabled.
+- The record for this Mac names `claude_cli` only, signed in through claude.ai (a
+  subscription, not an API key), on the owner's statement that this usage is covered.
+  Codex stays disabled until its own record exists.
+
+Unchanged limits. The checks still run the patched code without an OS sandbox, so their
+exit codes are evidence against a non-adversarial writer only. The agent has the
+operator's HOME and therefore the CLI's own configuration. Nothing merges: every run ends
+in a review packet with an accept/reject recommendation, and promotion stays manual.
+
+Reversibility. Delete or edit `authorization.json` in the Command Center root to disable
+agents immediately; the code path is inert without it.
+
 ## D-019 `last_trade_gap_c@2` and `fs-market-v2`: recompute from witnessed trades (2026-11-23)
 
 The owner delegated D-015 ("leaning recompute but I trust your judgement").

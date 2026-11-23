@@ -67,7 +67,7 @@ def test_a_game_postponed_after_the_decision_is_reported_and_not_scored(store, c
     assert report["scores"]["paired"]["n"] == 0 and result["status"] == "inconclusive"
     (item,) = items_of(store, result["evaluation_id"]).values()
     assert item["y"] is None and all(v is None for v in item["scores"].values())
-    assert report["evaluator_version"] == "evaluation-v2"
+    assert report["evaluator_version"] == "evaluation-v3"
 
 
 def test_the_same_game_at_the_decided_start_still_scores(store, config, monkeypatch):

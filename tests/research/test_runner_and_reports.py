@@ -401,6 +401,23 @@ def test_compare_restricts_to_common_scored_opportunities(store, config, monkeyp
         reports.compare(store.db, second, fourth)
 
 
+def test_compare_refuses_different_evaluator_versions(store, config, monkeypatch):
+    """D-017: evaluation-v3 changes outcome selection; a v2 report is never compared with it."""
+    from vader_intelligence.evaluation import service as evaluation_service
+
+    forward_slice(store, config)
+    settle(store, config, monkeypatch, settlement_evidence())
+    monkeypatch.setattr(evaluation_service, "EVALUATOR_VERSION", "evaluation-v2")
+    older = run_at(store, at(23, 40), view="forward-shadow")
+    monkeypatch.setattr(evaluation_service, "EVALUATOR_VERSION", "evaluation-v3")
+    newer = run_at(store, at(23, 50), view="forward-shadow")
+    first = next(iter(older["segments"]["whole"]["cohorts"].values()))["evaluation_id"]
+    second = next(iter(newer["segments"]["whole"]["cohorts"].values()))["evaluation_id"]
+    assert first != second
+    with pytest.raises(ValueError, match="different evaluator versions"):
+        reports.compare(store.db, first, second)
+
+
 def test_export_never_overwrites(tmp_path, store, config, monkeypatch):
     forward_slice(store, config)
     settle(store, config, monkeypatch, settlement_evidence())

@@ -197,11 +197,16 @@ commits it (labelled **simulated writer**); trusted checks run with ruff/pytest
 configuration taken from the **base commit** (`--config`/`-c` on a copy, `--rootdir`
 pinned), and any change to `conftest.py`, pytest/ruff configuration or `pyproject.toml`
 is a policy finding (the protected floor cannot be removed by a brief; a brief only adds); `claude_cli` / `codex_cli` build the exact
-argv from the inspected CLI (`claude -p --permission-mode plan|default
---allowedTools … --max-budget-usd 0 --output-format json`; `codex exec --sandbox
-workspace-write -a never --json -C <worktree>`), but `execute()` refuses unless an
-`authorization.json` in the root names `{"usage": "established", "incremental_cost_usd":
-0, "by": …, "at": …}` (not created by this assignment). Controller-run checks: `ruff check`,
+argv from the inspected CLI (`claude -p --permission-mode dontAsk --allowedTools
+Read,Edit,Write,Grep,Glob,Bash(<python> -m pytest *),Bash(<python> -m ruff *)
+--max-budget-usd <cap> --output-format json`; `codex exec --sandbox workspace-write -a
+never --json -C <worktree>`), and run only when an `authorization.json` in the root names
+`{"usage": "established", "incremental_cost_usd": 0, "executors": [...], "by": …, "at": …,
+"max_budget_usd": <0 < cap <= 100>}`. Amended 2026-11-23 (D-018): the agent runs in the
+writer worktree as its own process group under the global cap, with the operator's HOME
+(for the CLI's own sign-in) and no git or network tool; the service commits its changes,
+then the unchanged checks, independent review and packet follow. An agent that changes
+nothing is rejected (`no_change`); a CLI error fails the run (`agent_failed`). Controller-run checks: `ruff check`,
 `ruff format --check`, focused pytest on the exact commit in the writer worktree, run by
 the controller with the base commit's configuration, recorded with argv, exit codes,
 collected-test count and SHA. Their exit codes are evidence only against a

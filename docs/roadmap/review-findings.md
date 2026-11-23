@@ -90,7 +90,7 @@ independently re-run on this branch (`docs/handoffs/claude-release-validation.md
 | F47 | P3 | configure accepted artifacts the tick's runner refuses | #38, validated (the recovered wt-grok-h cases are ported as probes) |
 | F48 | P2 | legacy init deposit re-added cash | #38, validated; Decimal comparison, ambiguous histories refused |
 | F49 | P2 | a removed registry aborted the tick | #38, validated; corrupt/wrong-schema files also abstain, nothing is created |
-| F50 | P2 | a refresh without a schedule turns a scored game `identity_unresolved` | **owner**: reconstructed; recovered `37c7bac` reviewed, mechanically sound, not applied; adopt only as `evaluation-v3` (proposed D-017) |
+| F50 | P2 | a refresh without a schedule turns a scored game `identity_unresolved` | fixed as `evaluation-v3` (D-017, owner decision 2026-11-23): `37c7bac` applied unchanged |
 | F51 | P3 | headerless wrapped key bodies passed the paste guard | #38, validated; release validation narrowed a false positive (consecutive hex digests, absolute paths) |
 | N-34a | P2 | an acknowledged settlement token hid a later venue revision | **fixed on `fix/claude-release-validation-20261022`** (`500c993`): acknowledgements cover only markets the ledger has not settled |
 | N-34a / PR #39 P2 | P2 | a ticker-wide acknowledgement still covered a newly observed contradictory record while an old record agreed with the ledger (Codex review of `bde8bc3`: 4 failed / 1 passed probes) | **fixed on `fix/claude-release-validation-20261022`** (`f24af41`): acknowledgements name the content fingerprints of the records resolved and cover exactly those; legacy evidence-less acknowledgements cover nothing |
