@@ -8,10 +8,14 @@ the same commit in a fresh worktree and applies the policy review; a review pack
 an accept/reject recommendation are produced. Nothing merges.
 
 Executors: `scripted` applies an operator-supplied patch (labelled **simulated writer**:
-it establishes the pipeline, not an agent); `claude_cli` and `codex_cli` build the exact
-argv from the inspected CLIs but refuse to run unless an authorization record in the root
-names established, $0-incremental usage. Private worktrees and process groups limit
-accidents; they are not an OS security sandbox.
+it establishes the pipeline, not an agent); `claude_cli` and `codex_cli` run a real coding
+agent, and only when an authorization record in the root names established,
+$0-incremental usage for that executor and a positive per-run budget cap. The agent runs
+in the writer worktree as its own process group, counted against the global cap; it may
+edit files and run the trusted check commands, but has no git or network tool, and the
+service makes the commit itself. Private worktrees and process groups limit accidents;
+they are not an OS security sandbox, and the agent uses the operator's real HOME so the
+CLI can find its own sign-in.
 """
 
 import hashlib
@@ -31,6 +35,7 @@ from .store import TERMINAL_RUN_STATES, new_id
 EXECUTORS = ("scripted", "claude_cli", "codex_cli")
 AUTHORIZATION_FILE = "authorization.json"
 MAX_WRITERS = 2
+MAX_AGENT_BUDGET_USD = 100
 MAX_PATCH_BYTES = 200 * 1024
 LOG_TAIL = 4000
 # The floor every maintenance run keeps, whatever the brief says (a brief can only add):
@@ -153,22 +158,33 @@ def authorization(root):
     return data if ok else None
 
 
-def agent_argv(executor, worktree, prompt, output_path):
+def agent_budget(record):
+    """The per-run budget cap the authorization record grants, or None."""
+    value = (record or {}).get("max_budget_usd")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value if 0 < value <= MAX_AGENT_BUDGET_USD else None
+
+
+def agent_argv(executor, worktree, prompt, output_path, *, python=None, budget=0):
     """Exact argv for a real coding agent, from the inspected CLIs (never guessed flags).
-    Claude Code 2.1.309: `-p` print mode, `--permission-mode`, `--allowedTools`,
-    `--max-budget-usd`, `--output-format json`. codex-cli 0.153.4: `exec`, `--sandbox`,
-    `-a never`, `--json`, `-C`, `-o`."""
+    Claude Code 2.1.310: `-p` print mode, `--permission-mode dontAsk` (anything not in
+    `--allowedTools` is refused without a prompt), `--max-budget-usd`,
+    `--output-format json`. The only shell commands allowed are the trusted checks run
+    with the controller's interpreter: no git (the service commits), no network tool.
+    codex-cli 0.153.4: `exec`, `--sandbox`, `-a never`, `--json`, `-C`, `-o`."""
     if executor == "claude_cli":
+        python = python or sys.executable
         return [
             "claude",
             "-p",
             prompt,
             "--permission-mode",
-            "default",
+            "dontAsk",
             "--allowedTools",
-            "Read,Edit,Write,Grep,Glob,Bash(git *),Bash(python -m pytest *),Bash(ruff *)",
+            f"Read,Edit,Write,Grep,Glob,Bash({python} -m pytest *),Bash({python} -m ruff *)",
             "--max-budget-usd",
-            "0",
+            str(budget),
             "--output-format",
             "json",
         ]
@@ -197,6 +213,48 @@ def _git(repo, *args, timeout=60):
     if done.returncode != 0:
         raise RuntimeError(f"git {args[0]}: {done.stderr.strip()[:300]}")
     return done.stdout.strip()
+
+
+def agent_env(worktree):
+    """The agent's environment: the operator's real HOME (the CLI reads its own sign-in
+    there) and nothing else beyond what a shell needs; the worktree's sources first."""
+    env = {
+        "PATH": os.environ.get("PATH", os.defpath),
+        "HOME": os.environ.get("HOME", str(Path.home())),
+        "PYTHONHASHSEED": "0",
+        "TZ": "UTC",
+        "PYTHONPATH": str(Path(worktree) / "src"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+    for key in ("USER", "LOGNAME", "LANG", "TMPDIR", "SHELL"):
+        if key in os.environ:
+            env[key] = os.environ[key]
+    return env
+
+
+def agent_prompt(brief, python):
+    """The writer's instructions: the frozen brief plus the rules the pipeline enforces."""
+    lines = [
+        f"Issue: {brief['issue']}",
+        "",
+        brief.get("description") or "",
+        "",
+        "Acceptance criteria:",
+        *[f"- {c}" for c in brief.get("acceptance_criteria", [])],
+        "",
+        "Rules:",
+        "- Work only inside the current directory, a git worktree made for this task.",
+        "- Do not run git and do not commit; the pipeline commits your changes and then runs",
+        "  the trusted checks and an independent review on that exact commit.",
+        "- Do not edit tests to make them pass, delete tests, or change configuration files",
+        "  (pyproject.toml, conftest.py, ruff/pytest settings); those changes are rejected.",
+        f"- Check your work with `{python} -m pytest -q -p no:cacheprovider <paths>` and",
+        f"  `{python} -m ruff check <paths>` / `{python} -m ruff format --check <paths>`.",
+        "- Finish with a short summary of what you changed and why.",
+    ]
+    if brief.get("prompt"):
+        lines += ["", "Operator notes:", brief["prompt"]]
+    return "\n".join(lines)
 
 
 def scrubbed_env(home, worktree):
@@ -327,6 +385,8 @@ class CodingService:
                 phase = detail.get("phase")
                 if phase == "writer":
                     self._writer(run, detail, now)
+                elif phase == "agent":
+                    self._poll_agent(run, detail, now)
                 elif phase in ("checks", "review_checks"):
                     self._poll_checks(run, detail, now)
                 elif phase == "review":
@@ -349,6 +409,8 @@ class CodingService:
 
     def _kill(self, run_id):
         record = self.processes.pop(run_id, None)
+        for handle in (record or {}).get("handles", ()):
+            handle.close()
         if record and record["popen"].poll() is None:
             try:
                 os.killpg(record["popen"].pid, signal.SIGTERM)
@@ -413,25 +475,146 @@ class CodingService:
                 "note": "operator-supplied patch; not an agent",
             }
         else:
-            prompt = (
-                json.loads((run_dir / "brief.json").read_text())["prompt"]
-                or f"{run['pins']['issue']}"
+            self._spawn_agent(run, detail, run_dir, worktree)
+            return
+        self._after_commit(run, detail)
+
+    def _spawn_agent(self, run, detail, run_dir, worktree):
+        executor = run["pins"]["executor"]
+        brief = json.loads((run_dir / "brief.json").read_text())
+        record = authorization(self.cfg.root)
+        budget = agent_budget(record)
+        argv = agent_argv(
+            executor,
+            worktree,
+            agent_prompt(brief, self.python),
+            run_dir / "agent-last-message.json",
+            python=self.python,
+            budget=budget or 0,
+        )
+        detail["executor_argv"] = argv
+        if record is None or executor not in record.get("executors", []):
+            detail["blocker"] = (
+                f"execution_disabled: no {AUTHORIZATION_FILE} in the root names established $0-incremental usage for "
+                f"{executor}; a signed-in CLI is not proof of a billing allowance"
             )
-            argv = agent_argv(
-                run["pins"]["executor"], worktree, prompt, run_dir / "agent-last-message.json"
+            detail["outcome"] = "execution_disabled"
+            raise ValueError(detail["blocker"])
+        if budget is None:
+            detail["blocker"] = (
+                f"execution_disabled: {AUTHORIZATION_FILE} grants no max_budget_usd in "
+                f"(0, {MAX_AGENT_BUDGET_USD}] for agent runs"
             )
-            detail["executor_argv"] = argv
-            record = authorization(self.cfg.root)
-            if record is None or run["pins"]["executor"] not in record.get("executors", []):
-                detail["blocker"] = (
-                    f"execution_disabled: no {AUTHORIZATION_FILE} in the root names established $0-incremental usage for "
-                    f"{run['pins']['executor']}; a signed-in CLI is not proof of a billing allowance"
-                )
-                detail["outcome"] = "execution_disabled"
-                raise ValueError(detail["blocker"])
-            raise ValueError(
-                "real agent execution is not exercised in this pilot even when authorized"
-            )
+            detail["outcome"] = "execution_disabled"
+            raise ValueError(detail["blocker"])
+        if run["paused"]:
+            return
+        if self.headroom() < 1:
+            detail["waiting_for_capacity"] = True
+            return  # the global cap counts the agent process too
+        detail.pop("waiting_for_capacity", None)
+        out = open(run_dir / "agent-output.json", "wb")
+        err = open(run_dir / "agent-stderr.log", "wb")
+        popen = subprocess.Popen(
+            argv,
+            cwd=str(worktree),
+            env=agent_env(worktree),
+            stdin=subprocess.DEVNULL,
+            stdout=out,
+            stderr=err,
+            start_new_session=True,
+        )
+        self.processes[run["run_id"]] = {
+            "popen": popen,
+            "handle": out,
+            "handles": (out, err),
+            "kind": "agent",
+            "started": time.time(),
+        }
+        detail["writer"] = {
+            "executor": executor,
+            "simulated": False,
+            "authorized_by": record["by"],
+            "authorized_at": record["at"],
+            "max_budget_usd": budget,
+            "started_at": time.time(),
+        }
+        detail["phase"] = "agent"
+
+    def _poll_agent(self, run, detail, now):
+        record = self.processes.get(run["run_id"])
+        if record is None:
+            detail["outcome"] = "agent_lost"
+            raise RuntimeError("the agent process is not owned by this controller (restart?)")
+        code = record["popen"].poll()
+        if code is None:
+            return
+        for handle in record["handles"]:
+            handle.close()
+        self.processes.pop(run["run_id"], None)
+        run_dir = self._run_dir(run)
+        raw = (run_dir / "agent-output.json").read_bytes()
+        try:
+            result = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            result = {}
+        if not isinstance(result, dict):
+            result = {}
+        writer = detail.setdefault("writer", {})
+        writer.update(
+            exit_code=code,
+            ended_at=time.time(),
+            is_error=result.get("is_error"),
+            num_turns=result.get("num_turns"),
+            reported_cost_usd=result.get("total_cost_usd"),
+            session_id=result.get("session_id"),
+            summary=str(result.get("result") or "")[:LOG_TAIL],
+            stderr_tail=(run_dir / "agent-stderr.log")
+            .read_bytes()[-LOG_TAIL:]
+            .decode("utf-8", errors="replace"),
+        )
+        if code != 0 or result.get("is_error") is not False:
+            detail["outcome"] = "agent_failed"
+            raise RuntimeError(f"agent exited {code} (is_error={result.get('is_error')!r})")
+        worktree = Path(detail["writer_worktree"])
+        _git(worktree, "add", "-A")
+        if not _git(worktree, "status", "--porcelain"):
+            detail["recommendation"] = "reject"
+            detail["review"] = {
+                "verdict": "reject",
+                "reason": "no_change",
+                "reviewer": run["pins"]["reviewer_id"],
+            }
+            detail["phase"] = "done"
+            return
+        executor = run["pins"]["executor"]
+        env = {
+            **scrubbed_env(run_dir, worktree),
+            "GIT_AUTHOR_NAME": f"cc-{executor}",
+            "GIT_AUTHOR_EMAIL": "writer-1@command-center.invalid",
+            "GIT_COMMITTER_NAME": "cc-writer-1",
+            "GIT_COMMITTER_EMAIL": "writer-1@command-center.invalid",
+        }
+        message = (
+            f"cc({run['run_id'][:8]}): {run['pins']['issue']}\n\n"
+            f"Agent writer ({executor}); committed by the Command Center pipeline.\n\n"
+            + writer["summary"][:2000]
+        )
+        done = subprocess.run(
+            ["git", "-C", str(worktree), "commit", "-q", "-m", message],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+        if done.returncode != 0:
+            raise RuntimeError("commit failed: " + done.stderr.strip()[:200])
+        detail["commit"] = _git(worktree, "rev-parse", "HEAD")
+        self._after_commit(run, detail)
+
+    def _after_commit(self, run, detail):
+        run_dir = self._run_dir(run)
+        worktree = Path(detail["writer_worktree"])
         span = f"{run['pins']['base_commit']}..{detail['commit']}"
         changed = _git(worktree, "diff", "--no-renames", "--name-only", span).splitlines()
         deleted = _git(

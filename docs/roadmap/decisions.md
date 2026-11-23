@@ -407,3 +407,35 @@ Alternatives considered:
 - A witness pass after collection: this reverses the plan's explicit rule.
 
 Reversibility. selection-v2 is opt-in, and selection-v1 is untouched.
+
+## D-018 Real coding agents in the Command Center: Claude first (2026-11-23)
+
+**Owner decision, 2026-11-23:** "enable them and launch them … start with claude agents";
+keys for other subscriptions to follow.
+
+Context. J4 built the coding loop with a scripted writer and refused real agents without
+an authorization record of established, $0-incremental usage. The execution path itself
+was never implemented ("not exercised in this pilot even when authorized"), and the
+recorded Claude argv no longer matched the CLI (permission mode `default` was removed;
+budget 0; `Bash(git *)` allowed pushes).
+
+Decision.
+- Implement the agent path: the CLI runs in the writer worktree as its own process group,
+  counted against the global cap, killed on cancel or wall-budget exhaustion.
+- Claude argv: `--permission-mode dontAsk`, tools limited to file tools plus the trusted
+  check commands through the controller's interpreter, `--max-budget-usd` from the record.
+  No git or network tool: the service makes the commit.
+- The authorization record must also grant `max_budget_usd` in (0, 100]; without it the
+  agent stays disabled.
+- The record for this Mac names `claude_cli` only, signed in through claude.ai (a
+  subscription, not an API key), on the owner's statement that this usage is covered.
+  Codex stays disabled until its own record exists.
+
+Unchanged limits. The checks still run the patched code without an OS sandbox, so their
+exit codes are evidence against a non-adversarial writer only. The agent has the
+operator's HOME and therefore the CLI's own configuration. Nothing merges: every run ends
+in a review packet with an accept/reject recommendation, and promotion stays manual.
+
+Reversibility. Delete or edit `authorization.json` in the Command Center root to disable
+agents immediately; the code path is inert without it.
+
