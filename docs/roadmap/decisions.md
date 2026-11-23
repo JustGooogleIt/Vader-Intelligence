@@ -336,6 +336,8 @@ Decision (#31).
 
 ## D-015 `last_trade_gap_c` is not the same feature in history and forward (open, 2026-10-19)
 
+**Resolved 2026-11-23 by D-019** (`fs-market-v2`, recompute from witnessed trades).
+
 Context. An independent pre-review of #21 found that `last_trade_gap_c` in `fs-market-v1`
 has two meanings. The feature is the latest trade price within 60 minutes of C minus
 `mid_c` (`features/definitions.py`), and `None` when there is no such trade. What
@@ -482,4 +484,31 @@ in a review packet with an accept/reject recommendation, and promotion stays man
 
 Reversibility. Delete or edit `authorization.json` in the Command Center root to disable
 agents immediately; the code path is inert without it.
+
+## D-019 `last_trade_gap_c@2` and `fs-market-v2`: recompute from witnessed trades (2026-11-23)
+
+The owner delegated D-015 ("leaning recompute but I trust your judgement").
+
+Options considered.
+1. **Recompute from witnessed trades** (chosen). A trade counts only when two
+   observations bound it: in candles, a period with volume and a traded price; in
+   listings, a rise in cumulative volume between consecutive retrievals. The feature is
+   present only when even the earliest possible trade time is within 60 min of C.
+   Needs no new data source: the evidence is already archived and witnessed.
+2. Drop the feature. Simplest, but discards a signal that the archive can support.
+3. Add Kalshi's public trades endpoint to collection for exact trade times. A new
+   source and collector stage for one feature; disproportionate now.
+
+Decision. `last_trade_gap_c@2` implements option 1 and has the same meaning in history
+and forward: a quiet market is missing in both. Its time resolution is the observation
+interval (a minute for candles, the collection cadence for listings), and it errs
+towards missing, never towards claiming a more recent trade. `fs-market-v2` and
+`fs-full-v2` equal their v1 sets with only this feature replaced.
+
+Consequences. `fs-market-v1` and `fs-full-v1` are unchanged, so trained models and the
+October shadow results keep their meaning and their D-015 caveat. New research should
+use the v2 sets; models must be retrained to use them. Rows keep the feature name
+`last_trade_gap_c`; the dataset's feature set name records which version it is.
+
+Reversibility. Additive; nothing existing changes meaning.
 
