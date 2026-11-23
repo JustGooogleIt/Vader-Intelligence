@@ -74,6 +74,9 @@ Reversibility: additive; migration 005 has no DDL and touches no row.
 
 ## D-002 Time-less postseason rules: eligibility/mapping rule v2 (2026-10-18)
 
+**Accepted by the owner on 2026-11-23** (chat instruction to Claude, accepting the
+recommendation in `claude-release-validation.md` "as is").
+
 Context. From about 2026-10-09 Kalshi `KXMLBGAME` rules read "...game originally
 scheduled for Oct 19, 2026, then..." with no time. Rule v1 requires the stated time to
 equal the official start. Production archive (read-only query, 30 events): every one of
@@ -117,6 +120,9 @@ Implementation facts (PR `feat/eligibility-rule-v2`):
 
 ## D-003 Schedule revisions: explicit abstention before C, unscored disposition after C (2026-10-19)
 
+**Accepted by the owner on 2026-11-23** (chat instruction to Claude, accepting the
+recommendation in `claude-release-validation.md` "as is").
+
 Context. The previous release deferred a schedule-revision state machine (binding
 revision chains, a moving C) and abstained with `schedule_revised`. Real archived evidence
 shows revisions are common (official times moved for `26OCT122000LADMIL` and
@@ -145,6 +151,9 @@ labelled bucket as long-horizon forecasts of the same contract. Not done: it cha
 meaning of a T-60 score.
 
 ## D-004 Registered forecasters in the forward path: decision contract 4 (2026-10-19)
+
+**Accepted by the owner on 2026-11-23** (chat instruction to Claude, accepting the
+recommendation in `claude-release-validation.md` "as is").
 
 Context. Forward-shadow decisions (contracts 1–3) carry exactly the baseline pair. A
 candidate model can only be shadow-tested if the tick computes its forecast at C from the
@@ -407,3 +416,11 @@ Alternatives considered:
 - A witness pass after collection: this reverses the plan's explicit rule.
 
 Reversibility. selection-v2 is opt-in, and selection-v1 is untouched.
+
+## Q-M1-1 accepted: later-tick publication (2026-11-23)
+
+**Accepted by the owner on 2026-11-23**, as recommended. A decision without a publication
+record is published by the next tick at its actual time: `allowed` inside the window,
+`missed` after it, never backdated. Forward reports already count `missed`. No code
+change.
+
