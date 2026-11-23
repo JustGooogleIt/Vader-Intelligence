@@ -189,14 +189,14 @@ def compare(db, first_id, second_id):
             raise ValueError(f"evaluations differ in {field}; never pooled or compared")
     if ea["config_hash"] != eb["config_hash"]:
         raise ValueError("evaluations use different research protocol configurations")
-    if ea["evaluator_version"] != eb["evaluator_version"]:
-        raise ValueError("evaluations use different evaluator versions; never pooled or compared")
     if ea["report"].get("record_contract") != eb["report"].get("record_contract"):
         raise ValueError("evaluations cover different record contracts; never pooled or compared")
     if sorted(ea["report"].get("forecasters") or {}) != sorted(
         eb["report"].get("forecasters") or {}
     ):
         raise ValueError("evaluations score different forecaster sets; never pooled or compared")
+    if ea["evaluator_version"] != eb["evaluator_version"]:
+        raise ValueError("evaluations use different evaluator versions; never pooled or compared")
     keys_a, keys_b = set(a["items"]), set(b["items"])
     scored_a = {k for k, i in a["items"].items() if i["paired_delta"] is not None}
     scored_b = {k for k, i in b["items"].items() if i["paired_delta"] is not None}
