@@ -144,6 +144,44 @@ def last_trade_gap_c(ctx):
     return None
 
 
+def trade_events(series):
+    """Witnessed trades of one series as (earliest, latest, price): a trade is known to
+    have happened after the previous quote and no later than this one.
+
+    Candles ("period" volume): a period with positive volume and a traded price. Listings
+    ("cumulative" volume): cumulative volume rose between two consecutive retrievals; the
+    price is the last traded price as listed at the later one. The earliest time is the
+    previous quote's time in both cases, so a feature never claims a trade more recent
+    than two observations prove.
+    """
+    events = []
+    quotes = series.quotes if series is not None else ()
+    for before, quote in zip(quotes, quotes[1:]):
+        if quote.trade_price is None or quote.volume is None:
+            continue
+        if series.volume_kind == "period":
+            traded = quote.volume > 0
+        else:
+            traded = before.volume is not None and quote.volume > before.volume
+        if traded:
+            events.append((before.at, quote.at, quote.trade_price))
+    return events
+
+
+def last_trade_gap_c_v2(ctx):
+    """D-015: the latest witnessed trade's price − mid_c, only when that trade provably
+    happened within 60 min of C. A quiet market is missing from candles and listings
+    alike (v1 kept a listing's stale last price as if it were recent)."""
+    now = _mid(ctx.selected, ctx.cutoff)
+    events = trade_events(ctx.selected)
+    if now is None or not events:
+        return None
+    earliest, _, price = events[-1]
+    if (ctx.cutoff - earliest).total_seconds() > 3600:
+        return None
+    return _f(price - now)
+
+
 def log_volume_60m(ctx):
     series, start = ctx.selected, ctx.cutoff - timedelta(minutes=60)
     if series.volume_kind == "period":
@@ -268,6 +306,15 @@ define(
     last_trade_gap_c,
 )
 define(
+    "last_trade_gap_c",
+    2,
+    "market",
+    "zero_indicator",
+    True,
+    "latest witnessed trade price − mid_c, trade provably within 60 min of C (D-015)",
+    last_trade_gap_c_v2,
+)
+define(
     "log_volume_60m",
     1,
     "market",
@@ -375,12 +422,19 @@ FEATURE_SETS = {
         "postseason@1",
     ),
 }
-FEATURE_SETS["fs-full-v1"] = FEATURE_SETS["fs-market-v1"] + (
+TEAM_FEATURES = (
     "win_pct_diff@1",
     "run_diff_pg_diff@1",
     "last10_diff@1",
     "rest_days_diff@1",
 )
+FEATURE_SETS["fs-full-v1"] = FEATURE_SETS["fs-market-v1"] + TEAM_FEATURES
+# D-015: v2 replaces only the trade-gap feature; v1 stays as trained models know it.
+FEATURE_SETS["fs-market-v2"] = tuple(
+    "last_trade_gap_c@2" if key == "last_trade_gap_c@1" else key
+    for key in FEATURE_SETS["fs-market-v1"]
+)
+FEATURE_SETS["fs-full-v2"] = FEATURE_SETS["fs-market-v2"] + TEAM_FEATURES
 
 
 def feature_set(name):
